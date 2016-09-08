@@ -40,6 +40,10 @@ class TestLib():
 
         self.assertIsInstance(self.poque.NUMERICOID, int)
         self.assertIsInstance(self.poque.NUMERICARRAYOID, int)
+        self.assertEqual(self.poque.JSONBOID, 3802)
+        self.assertEqual(self.poque.JSONBARRAYOID, 3807)
+        self.assertEqual(self.poque.LINEOID, 628)
+        self.assertEqual(self.poque.LINEARRAYOID, 629)
 
     def test_conn_defaults(self):
         d = self.poque.conn_defaults()

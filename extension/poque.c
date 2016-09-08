@@ -166,6 +166,8 @@ PyInit__poque(void)
     if (PyModule_AddIntMacro(m, OIDVECTOROID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, JSONOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, JSONBOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, JSONBARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, XMLOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, XMLARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, JSONARRAYOID) == -1) return NULL;
@@ -175,6 +177,8 @@ PyInit__poque(void)
     if (PyModule_AddIntMacro(m, PATHOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, BOXOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, POLYGONOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, LINEOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, LINEARRAYOID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, ABSTIMEOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, RELTIMEOID) == -1) return NULL;

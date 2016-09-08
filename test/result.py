@@ -532,6 +532,20 @@ class ResultTestValues():
             "SELECT '{\"{\\\"hi\\\": 23}\",\"[3, 4]\"}'::json[];",
             [{"hi": 23}, [3, 4]], self.poque.JSONARRAYOID)
 
+    def test_jsonb_value_bin(self):
+        self._test_value_and_type_bin("SELECT '{\"hi\": 23}'::jsonb",
+                                      {"hi": 23}, self.poque.JSONBOID)
+
+    def test_jsonb_value_str(self):
+        res = self.cn.execute("SELECT '{\"hi\": 23}'::jsonb", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), {"hi": 23})
+        self.assertEqual(res.ftype(0), self.poque.JSONBOID)
+
+    def test_jsonb_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '{\"{\\\"hi\\\": 23}\",\"[3, 4]\"}'::jsonb[];",
+            [{"hi": 23}, [3, 4]], self.poque.JSONBARRAYOID)
+
     def test_xml_value_bin(self):
         self._test_value_and_type_bin("SELECT '<el>hi</el>'::xml",
                                       '<el>hi</el>', self.poque.XMLOID)
@@ -571,6 +585,15 @@ class ResultTestValues():
         self.assertEqual(val[1], None)
         self.assert_point(val[2], (-1.2, 5))
         self.assertEqual(res.ftype(0), self.poque.POINTARRAYOID)
+
+    def test_line_value_bin(self):
+        res = self.cn.execute("SELECT '{1.2, 3.0, 4}'::line;")
+        self.assertEqual(res.getvalue(0, 0), (1.2, 3.0, 4))
+
+    def test_linearray_value_bin(self):
+        res = self.cn.execute(
+            "SELECT ARRAY['{1.2, 3.0, 4}', '{1.2, 3.0, 5}']::line[];")
+        self.assertEqual(res.getvalue(0, 0), [(1.2, 3.0, 4), (1.2, 3.0, 5)])
 
     def assert_lseg(self, val, lseg):
         self.assert_tuple(val)

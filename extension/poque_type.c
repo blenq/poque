@@ -96,6 +96,18 @@ advance_cursor_len(data_crs *curs, int len)
 }
 
 
+static char *
+advance_cursor_len_reset(data_crs *curs, int len)
+{
+    char *data;
+
+    curs->item_len = len;
+    data = advance_cursor(curs);
+    curs->item_len = curs->len;
+    return data;
+}
+
+
 static int
 read_uint16_binval(data_crs *curs, uint16_t *value)
 {
@@ -696,7 +708,20 @@ json_val(data_crs *curs)
     return ret;
 }
 
+
+static PyObject *
+jsonb_bin_val(data_crs *curs)
+{
+    char *version;
+
+    version = advance_cursor_len_reset(curs, 1);
+    if (version[0] != 1)
+        PyErr_SetString(PoqueError, "Invalid jsonb version");
+    return json_val(curs);
+}
+
 #define UUID_LEN    16
+
 
 static PyObject *
 uuid_binval(data_crs *curs) {
@@ -749,7 +774,24 @@ add_float_to_tuple(PyObject *tup, data_crs *curs, int idx)
 
 
 static PyObject *
+float_tuple_binval(data_crs *curs, int len) {
+    PyObject *tup;
+    int i;
+
+    tup = PyTuple_New(len);
+    if (tup == NULL)
+        return NULL;
+    for (i=0; i < len; i++) {
+        if (add_float_to_tuple(tup, curs, i) < 0)
+            return NULL;
+    }
+    return tup;
+}
+
+static PyObject *
 point_binval(data_crs *curs) {
+    return float_tuple_binval(curs, 2);
+/*
     PyObject *point;
 
     point = PyTuple_New(2);
@@ -759,7 +801,13 @@ point_binval(data_crs *curs) {
         return NULL;
     if (add_float_to_tuple(point, curs, 1) < 0)
         return NULL;
-    return point;
+    return point; */
+}
+
+
+static PyObject *
+line_binval(data_crs *curs) {
+    return float_tuple_binval(curs, 3);
 }
 
 
@@ -902,12 +950,13 @@ static PyObject *
 circle_binval(data_crs *curs) {
     PyObject *circle, *center;
 
-    center = point_binval(curs);
-    if (center == NULL)
-        return NULL;
     circle = PyTuple_New(2);
     if (circle == NULL) {
-        Py_DECREF(center);
+        return NULL;
+    }
+    center = point_binval(curs);
+    if (center == NULL) {
+        Py_DECREF(circle);
         return NULL;
     }
     PyTuple_SET_ITEM(circle, 0, center);
@@ -1364,10 +1413,14 @@ static PoqueTypeEntry type_table[] = {
     {CIDOID, uint32_binval, int_strval, NULL},
     {OIDVECTOROID, array_binval, NULL, NULL},
     {JSONOID, json_val, json_val, NULL},
+    {JSONBOID, jsonb_bin_val, json_val, NULL},
     {XMLOID, text_val, text_val, NULL},
     {XMLARRAYOID, array_binval, NULL, NULL},
     {JSONARRAYOID, array_binval, NULL, NULL},
+    {JSONBARRAYOID, array_binval, NULL, NULL},
     {POINTOID, point_binval, NULL, NULL},
+    {LINEOID, line_binval, NULL, NULL},
+    {LINEARRAYOID, array_binval, NULL, NULL},
     {LSEGOID, lseg_binval, NULL, NULL},
     {PATHOID, path_binval, NULL, NULL},
     {BOXOID, lseg_binval, NULL, NULL},
@@ -1415,26 +1468,11 @@ static PoqueTypeEntry type_table[] = {
     {FLOAT8OID, float64_binval, float_strval, NULL},
     {FLOAT4OID, float32_binval, float_strval, NULL},
     {INT4ARRAYOID, array_binval, NULL, NULL },
-    {UUIDOID,
-        uuid_binval,
-        uuid_strval,
-        NULL
-    }, {
-        DATEOID,
-        date_binval,
-        NULL,
-        NULL
-    }, {
-        TIMEOID,
-        time_binval,
-        NULL,
-        NULL
-    }, {
-        TIMESTAMPOID,
-        timestamp_binval,
-        NULL,
-        NULL
-    }, {
+    {UUIDOID, uuid_binval, uuid_strval, NULL},
+    {DATEOID, date_binval, NULL, NULL},
+    {TIMEOID, time_binval, NULL, NULL},
+    {TIMESTAMPOID, timestamp_binval, NULL, NULL},
+    {
         TIMESTAMPTZOID,
         timestamp_binval,
         NULL,
@@ -1483,6 +1521,7 @@ static PoqueTypeEntry *type_map[TYPEMAP_SIZE];
 int
 init_type_map(void) {
     PoqueTypeEntry *entry;
+//    int j = 0;
 
     PyDecimal = load_python_object("decimal", "Decimal");
     if (PyDecimal == NULL)
@@ -1502,6 +1541,7 @@ init_type_map(void) {
             prev->next = entry;
         }
         entry++;
+        //j++;
     }
 /*    int i;
     int filled = 0;
@@ -1509,6 +1549,7 @@ init_type_map(void) {
         if (type_map[i])
             filled++;
     }
+    printf("%f\n", 1.0 * j / TYPEMAP_SIZE);
     printf("%f\n", 1.0 * filled / TYPEMAP_SIZE); */
     return 0;
 }

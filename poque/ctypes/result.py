@@ -279,6 +279,12 @@ def _read_point_bin(crs, length=16):
     return crs.advance_struct_format("!dd")
 
 
+def _read_line_bin(crs, length=24):
+    if length != 24:
+        raise ValueError("Invalid value")
+    return crs.advance_struct_format("!ddd")
+
+
 def _read_lseg_bin(crs, length=32):
     if length != 32:
         raise ValueError("Invalid value")
@@ -352,6 +358,13 @@ def _read_mac_bin(crs, length=6):
 def _read_json_bin(crs, length=None):
     value = _read_text(crs, length)
     return json.loads(value)
+
+
+def _read_jsonb_bin(crs, length=None):
+    version = crs.advance_struct_format("!B")[0]
+    if version != 1:
+        raise Error("Invalid version")
+    return _read_json_bin(crs, length - 1 if length else None)
 
 
 def _read_numeric_str(crs, length=None):
@@ -594,8 +607,12 @@ class Result(c_void_p):
         CASHARRAYOID: (None, _read_array_bin),
         JSONOID: (_read_json_bin, _read_json_bin),
         JSONARRAYOID: (None, _read_array_bin),
+        JSONBOID: (_read_json_bin, _read_jsonb_bin),
+        JSONBARRAYOID: (None, _read_array_bin),
         NUMERICOID: (_read_numeric_str, _read_numeric_bin),
         NUMERICARRAYOID: (None, _read_array_bin),
+        LINEOID: (None, _read_line_bin),
+        LINEARRAYOID: (None, _read_array_bin),
     }
 
     _getvalue = pq.PQgetvalue

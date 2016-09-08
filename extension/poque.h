@@ -69,6 +69,8 @@ PyObject *Poque_value(Oid oid, int format, char *data, int len);
 
 /* complex types */
 #define JSONOID             114
+#define JSONBOID            3802
+#define JSONBARRAYOID       3807
 #define XMLOID              142
 #define JSONARRAYOID        199
 #define XMLARRAYOID         143
@@ -79,6 +81,8 @@ PyObject *Poque_value(Oid oid, int format, char *data, int len);
 #define PATHOID             602
 #define BOXOID              603
 #define POLYGONOID          604
+#define LINEOID             628
+#define LINEARRAYOID        629
 #define POINTARRAYOID       1017
 #define LSEGARRAYOID        1018
 #define PATHARRAYOID        1019
