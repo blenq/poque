@@ -31,4 +31,4 @@ setup(name='poque',
       version='0.1',
       description='PostgreSQL client library',
       ext_modules=[poque_ext],
-      packages=['poque'])
+      packages=['poque', 'poque.ctypes'])

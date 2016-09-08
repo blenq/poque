@@ -1,5 +1,17 @@
 import os
 
+import poque.extension
+import poque.ctypes
+
+
+class BaseExtensionTest():
+    poque = poque.extension
+
+
+class BaseCTypesTest():
+    poque = poque.ctypes
+
+
 params = {
     param: os.environ.get('POQUE_TEST_' + param.upper(), default)
     for param, default in [('dbname', 'poque_test'),

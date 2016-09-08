@@ -83,7 +83,7 @@ static PyMethodDef PoqueMethods[] = {
      PyDoc_STR("default connection options")},
     {"conninfo_parse", Poque_conninfo_parse,  METH_VARARGS,
      PyDoc_STR("parse a connection string")},
-    {"libversion", poque_libversion, METH_NOARGS, PyDoc_STR("libpq version")},
+    {"lib_version", poque_libversion, METH_NOARGS, PyDoc_STR("libpq version")},
     {NULL}
 };
 
@@ -179,6 +179,17 @@ PyInit__poque(void)
     if (PyModule_AddIntMacro(m, ABSTIMEOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, RELTIMEOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, TINTERVALOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, DATEOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TIMEOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TIMESTAMPOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TIMESTAMPARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, DATEARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TIMEARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TIMESTAMPTZOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TIMESTAMPTZARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, INTERVALOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, INTERVALARRAYOID) == -1) return NULL;
+
     if (PyModule_AddIntMacro(m, UNKNOWNOID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, CIRCLEOID) == -1) return NULL;
@@ -188,12 +199,52 @@ PyInit__poque(void)
     if (PyModule_AddIntMacro(m, CASHARRAYOID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, MACADDROID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, INETOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, CIDROID) == -1) return NULL;
+
+    if (PyModule_AddIntMacro(m, BOOLARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, BYTEAARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, CHARARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, NAMEARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, INT2ARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, INT2VECTORARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, REGPROCARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TEXTARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, OIDARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TIDARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, XIDARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, CIDARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, OIDVECTORARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, BPCHARARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, VARCHARARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, INT8ARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, POINTARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, LSEGARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, PATHARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, BOXARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, FLOAT4ARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, FLOAT8ARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, ABSTIMEARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, RELTIMEARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TINTERVALARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, POLYGONARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, MACADDRARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, INETARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, CIDRARRAYOID) == -1) return NULL;
+
+    if (PyModule_AddIntMacro(m, CSTRINGOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, BPCHAROID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, VARCHAROID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, CSTRINGARRAYOID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, FLOAT4OID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, FLOAT8OID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, INT4ARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, UUIDOID) == -1) return NULL;
+
+    if (PyModule_AddIntMacro(m, NUMERICOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, NUMERICARRAYOID) == -1) return NULL;
 
     if (PyModule_AddIntConstant(m, "TRANS_IDLE", PQTRANS_IDLE) == -1)
         return NULL;
@@ -218,10 +269,10 @@ PyInit__poque(void)
     if (PyModule_AddObject(m, "INVALID_OID", PyLong_FromUnsignedLong(InvalidOid)) == -1)
         return NULL;
 
-    if (PyModule_AddObject(m, "INVALID_OID", PyLong_FromUnsignedLong(InvalidOid)) == -1)
+    if (init_datetime() < 0)
         return NULL;
 
-    init_datetime();
-
+    if (init_type_map() < 0)
+        return NULL;
     return m;
 }

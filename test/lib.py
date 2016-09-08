@@ -1,6 +1,6 @@
 import unittest
-import poque
-import sys
+
+from .config import BaseExtensionTest, BaseCTypesTest
 
 
 def assert_is_conninfo(self, info):
@@ -12,44 +12,57 @@ def assert_is_conninfo(self, info):
         self.assertIsInstance(v[5], int)
 
 
-class TestLib(unittest.TestCase):
+class TestLib():
 
     def test_constants(self):
-        self.assertIsInstance(poque.CONNECTION_OK, int)
-        self.assertIsInstance(poque.CONNECTION_BAD, int)
-        self.assertIsInstance(poque.CONNECTION_MADE, int)
-        self.assertIsInstance(poque.CONNECTION_AWAITING_RESPONSE, int)
-        self.assertIsInstance(poque.CONNECTION_STARTED, int)
-        self.assertIsInstance(poque.CONNECTION_AUTH_OK, int)
-        self.assertIsInstance(poque.CONNECTION_SSL_STARTUP, int)
-        self.assertIsInstance(poque.CONNECTION_SETENV, int)
+        self.assertIsInstance(self.poque.CONNECTION_OK, int)
+        self.assertIsInstance(self.poque.CONNECTION_BAD, int)
+        self.assertIsInstance(self.poque.CONNECTION_MADE, int)
+        self.assertIsInstance(self.poque.CONNECTION_AWAITING_RESPONSE, int)
+        self.assertIsInstance(self.poque.CONNECTION_STARTED, int)
+        self.assertIsInstance(self.poque.CONNECTION_AUTH_OK, int)
+        self.assertIsInstance(self.poque.CONNECTION_SSL_STARTUP, int)
+        self.assertIsInstance(self.poque.CONNECTION_SETENV, int)
 
-        self.assertIsInstance(poque.TRANS_IDLE, int)
-        self.assertIsInstance(poque.TRANS_ACTIVE, int)
-        self.assertIsInstance(poque.TRANS_INTRANS, int)
-        self.assertIsInstance(poque.TRANS_INERROR, int)
-        self.assertIsInstance(poque.TRANS_UNKNOWN, int)
+        self.assertIsInstance(self.poque.TRANS_IDLE, int)
+        self.assertIsInstance(self.poque.TRANS_ACTIVE, int)
+        self.assertIsInstance(self.poque.TRANS_INTRANS, int)
+        self.assertIsInstance(self.poque.TRANS_INERROR, int)
+        self.assertIsInstance(self.poque.TRANS_UNKNOWN, int)
 
-        self.assertIsInstance(poque.POLLING_READING, int)
-        self.assertIsInstance(poque.POLLING_WRITING, int)
-        self.assertIsInstance(poque.POLLING_OK, int)
+        self.assertIsInstance(self.poque.POLLING_READING, int)
+        self.assertIsInstance(self.poque.POLLING_WRITING, int)
+        self.assertIsInstance(self.poque.POLLING_OK, int)
 
-        self.assertIsInstance(poque.INVALID_OID, int)
-        self.assertIsInstance(poque.INT4OID, int)
-        self.assertIsInstance(poque.OIDOID, int)
+        self.assertIsInstance(self.poque.INVALID_OID, int)
+        self.assertIsInstance(self.poque.INT4OID, int)
+        self.assertIsInstance(self.poque.OIDOID, int)
+
+        self.assertIsInstance(self.poque.NUMERICOID, int)
+        self.assertIsInstance(self.poque.NUMERICARRAYOID, int)
 
     def test_conn_defaults(self):
-        d = poque.conn_defaults()
+        d = self.poque.conn_defaults()
         assert_is_conninfo(self, d)
 
     def test_conninfo_parse(self):
-        d = poque.conninfo_parse('dbname=postgres')
+        d = self.poque.conninfo_parse('dbname=postgres')
         assert_is_conninfo(self, d)
         self.assertEqual(d['dbname'][2], 'postgres')
 
     def test_conninfo_parse_wrong(self):
-        with self.assertRaises(poque.Error):
-            poque.conninfo_parse('zut')
+        with self.assertRaises(self.poque.Error):
+            self.poque.conninfo_parse('zut')
 
     def test_libversion(self):
-        self.assertGreaterEqual(poque.libversion(), 90100)
+        self.assertGreaterEqual(self.poque.lib_version(), 90100)
+
+
+class TestLibExtension(
+        BaseExtensionTest, TestLib, unittest.TestCase):
+    pass
+
+
+class TestLibCtypes(
+        BaseCTypesTest, TestLib, unittest.TestCase):
+    pass

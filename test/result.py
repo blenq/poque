@@ -1,4 +1,6 @@
 import datetime
+from decimal import Decimal
+from ipaddress import IPv4Interface, IPv6Interface, IPv4Network, IPv6Network
 import sys
 import unittest
 import weakref
@@ -6,13 +8,15 @@ import weakref
 import poque
 
 from . import config
-from uuid import uuid4
+from .config import BaseExtensionTest, BaseCTypesTest
+
+from uuid import uuid4, UUID
 
 
-class ResultTestBasic(unittest.TestCase):
+class ResultTestBasic():
 
     def setUp(self):
-        cn = poque.Conn(config.conninfo())
+        cn = self.poque.Conn(config.conninfo())
         self.res = cn.execute("SELECT 1 AS yo")
 
     def test_execute(self):
@@ -52,12 +56,13 @@ class ResultTestBasic(unittest.TestCase):
         self.assertEqual(self.res.fnumber('yo'), -1)
 
     def test_ftable(self):
-        self.assertEqual(self.res.ftable(0), poque.INVALID_OID)
-        self.assertEqual(self.res.ftable(column_number=0), poque.INVALID_OID)
+        self.assertEqual(self.res.ftable(0), self.poque.INVALID_OID)
+        self.assertEqual(
+            self.res.ftable(column_number=0), self.poque.INVALID_OID)
 
     def test_invalid_ftable(self):
         self.res.clear()
-        self.assertEqual(self.res.ftable(0), poque.INVALID_OID)
+        self.assertEqual(self.res.ftable(0), self.poque.INVALID_OID)
 
     def test_ftablecol(self):
         self.assertEqual(self.res.ftablecol(0), 0)
@@ -78,7 +83,7 @@ class ResultTestBasic(unittest.TestCase):
             self.res.fformat()
 
     def test_ftype(self):
-        self.assertEqual(self.res.ftype(0), poque.INT4OID)
+        self.assertEqual(self.res.ftype(0), self.poque.INT4OID)
         self.assertEqual(self.res.ftype(3), 0)
 
     def test_fmod(self):
@@ -94,301 +99,452 @@ class ResultTestBasic(unittest.TestCase):
         self.assertEqual(self.res.getlength(0, 1), 0)
 
 
-class ResultTestValues(unittest.TestCase):
+class ResultTestBasicExtension(
+        BaseExtensionTest, ResultTestBasic, unittest.TestCase):
+    pass
+
+
+class ResultTestBasicCtypes(
+        BaseCTypesTest, ResultTestBasic, unittest.TestCase):
+    pass
+
+
+class ResultTestValues():
 
     def setUp(self):
-        self.cn = poque.Conn(config.conninfo())
+        self.cn = self.poque.Conn(config.conninfo())
+
+    def tearDown(self):
+        self.cn.finish()
+
+    def test_is_null(self):
+        res = self.cn.execute("SELECT NULL")
+        self.assertIs(res.getisnull(0, 0), True)
+        res = self.cn.execute("SELECT 1")
+        self.assertIs(res.getisnull(0, 0), False)
+
+    def _test_value_and_type_bin(self, command, value, type_oid):
+        res = self.cn.execute(command)
+        self.assertEqual(res.getvalue(0, 0), value)
+        self.assertEqual(res.ftype(0), type_oid)
 
     def test_format(self):
-        res = self.cn.execute(command="SELECT 1", format=0)
+        res = self.cn.execute(command="SELECT 1", fmt=0)
         self.assertEqual(res.fformat(0), 0)
 
     def test_formats(self):
-        res = self.cn.execute(command="SELECT 6::int4", format=0)
-        self.assertEqual(res.getvalue(0, 0), "6")
-        self.assertEqual(res.getvalue(2, 3), "")
-        res = self.cn.execute(command="SELECT 'hoi'", format=1)
-        self.assertEqual(res.getvalue(0, 0), b"hoi")
-        self.assertEqual(res.getvalue(2, 3), "")
+        res = self.cn.execute(command="SELECT 6::int4", fmt=0)
+        self.assertEqual(res.pq_getvalue(0, 0), "6")
+        self.assertEqual(res.pq_getvalue(2, 3), "")
+        res = self.cn.execute(command="SELECT 'hoi'", fmt=1)
+        self.assertEqual(res.pq_getvalue(0, 0), b"hoi")
+        self.assertEqual(res.pq_getvalue(2, 3), "")
+
+    def _test_int_getvalue(self, fmt, typ, oid):
+        res = self.cn.execute(command="SELECT 6::{0}".format(typ), fmt=fmt)
+        self.assertEqual(res.getvalue(0, 0), 6)
+        res = self.cn.execute(command="SELECT -1::{0}".format(typ), fmt=fmt)
+        self.assertEqual(res.getvalue(0, 0), -1)
+        self.assertEqual(res.ftype(0), oid)
 
     def test_int4_value_text(self):
-        res = self.cn.execute(command="SELECT 6::int4", format=0)
-        self.assertEqual(res.value(0, 0), 6)
-        res = self.cn.execute(command="SELECT -1::int4", format=1)
-        self.assertEqual(res.value(0, 0), -1)
+        self._test_int_getvalue(0, 'int4', self.poque.INT4OID)
 
     def test_int4_value_bin(self):
-        res = self.cn.execute(command="SELECT 6::int4", format=1)
-        self.assertEqual(res.value(0, 0), 6)
-        res = self.cn.execute(command="SELECT -1::int4", format=1)
-        self.assertEqual(res.value(0, 0), -1)
-
-    def test_int2_value_text(self):
-        res = self.cn.execute(command="SELECT 6::int2", format=0)
-        self.assertEqual(res.value(0, 0), 6)
-        self.assertEqual(res.ftype(0), poque.INT2OID)
-        res = self.cn.execute(command="SELECT -1::int2", format=1)
-        self.assertEqual(res.value(0, 0), -1)
-
-    def test_int2_value_bin(self):
-        res = self.cn.execute(command="SELECT 6::int2", format=1)
-        self.assertEqual(res.value(0, 0), 6)
-        res = self.cn.execute(command="SELECT -1::int2", format=1)
-        self.assertEqual(res.value(0, 0), -1)
-
-    def test_bool_value_str(self):
-        res = self.cn.execute(command="SELECT true", format=0)
-        self.assertIs(res.value(0, 0), True)
-        res = self.cn.execute(command="SELECT false", format=0)
-        self.assertIs(res.value(0, 0), False)
-
-    def test_bool_value_bin(self):
-        res = self.cn.execute(command="SELECT true", format=1)
-        self.assertIs(res.value(0, 0), True)
-        self.assertEqual(res.ftype(0), poque.BOOLOID)
-        res = self.cn.execute(command="SELECT false", format=1)
-        self.assertIs(res.value(0, 0), False)
-
-    def test_bytea_value_str(self):
-        self.cn.execute("SET bytea_output TO hex")
-        res = self.cn.execute(command="SELECT 'hi'::bytea", format=0)
-        self.assertEqual(res.value(0, 0), b'hi')
-        self.assertEqual(res.ftype(0), poque.BYTEAOID)
-        res = self.cn.execute(command="SELECT ''::bytea", format=0)
-        self.assertEqual(res.value(0, 0), b'')
-        self.assertEqual(res.ftype(0), poque.BYTEAOID)
-        res = self.cn.execute(command="SELECT '\t'::bytea", format=0)
-        self.assertEqual(res.value(0, 0), b'\t')
-        self.assertEqual(res.ftype(0), poque.BYTEAOID)
-        self.cn.execute("SET bytea_output TO escape")
-        res = self.cn.execute(command="SELECT convert_to('\t \\', 'utf8')",
-                              format=0)
-        self.assertEqual(res.value(0, 0), b'\t \\')
-        self.assertEqual(res.ftype(0), poque.BYTEAOID)
-
-    def test_bytea_value_bin(self):
-        res = self.cn.execute(command="SELECT 'hi'::bytea", format=1)
-        self.assertEqual(res.value(0, 0), b'hi')
-        self.assertEqual(res.ftype(0), poque.BYTEAOID)
-        res = self.cn.execute(command="SELECT ''::bytea", format=1)
-        self.assertEqual(res.value(0, 0), b'')
-        self.assertEqual(res.ftype(0), poque.BYTEAOID)
-        res = self.cn.execute(command="SELECT convert_to('\t \\', 'utf8')",
-                              format=1)
-        self.assertEqual(res.value(0, 0), b'\t \\')
-        self.assertEqual(res.ftype(0), poque.BYTEAOID)
-
-    def test_char_value_str(self):
-        res = self.cn.execute(command="SELECT 'a'::\"char\"", format=0)
-        self.assertEqual(res.value(0, 0), b'a')
-        self.assertEqual(res.ftype(0), poque.CHAROID)
-        res = self.cn.execute(command="SELECT '€'::\"char\"", format=0)
-        self.assertEqual(res.value(0, 0), "€".encode()[:1])
-
-    def test_char_value_bin(self):
-        res = self.cn.execute(command="SELECT 'a'::\"char\"", format=1)
-        self.assertEqual(res.value(0, 0), b'a')
-        self.assertEqual(res.ftype(0), poque.CHAROID)
-        res = self.cn.execute(command="SELECT '€'::\"char\"", format=1)
-        self.assertEqual(res.value(0, 0), "€".encode()[:1])
-
-    def test_name_value_bin(self):
-        res = self.cn.execute(command="SELECT 'hel''lo €'::name", format=1)
-        self.assertEqual(res.value(0, 0), "hel'lo €")
-        self.assertEqual(res.ftype(0), poque.NAMEOID)
-
-    def test_name_value_str(self):
-        res = self.cn.execute(command="SELECT 'hel''lo €'::name", format=0)
-        self.assertEqual(res.value(0, 0), "hel'lo €")
-        self.assertEqual(res.ftype(0), poque.NAMEOID)
-
-    def test_int8_value_bin(self):
-        res = self.cn.execute(command="SELECT 6::int8", format=1)
-        self.assertEqual(res.value(0, 0), 6)
-        self.assertEqual(res.ftype(0), poque.INT8OID)
-        res = self.cn.execute(command="SELECT -1::int8", format=1)
-        self.assertEqual(res.value(0, 0), -1)
-        self.assertEqual(res.getlength(0, 0), 8)
-
-    def test_int8_value_str(self):
-        res = self.cn.execute(command="SELECT 6::int8", format=0)
-        self.assertEqual(res.value(0, 0), 6)
-        self.assertEqual(res.ftype(0), poque.INT8OID)
-        self.assertEqual(res.getlength(0, 0), 1)
-        res = self.cn.execute(command="SELECT -1::int8", format=0)
-        self.assertEqual(res.value(0, 0), -1)
-
-    def test_null_value_str(self):
-        res = self.cn.execute(command="SELECT NULL", format=0)
-        self.assertIsNone(res.value(0, 0))
-        self.assertEqual(res.getlength(0, 0), 0)
-
-    def test_int2vector_value_bin(self):
-        res = self.cn.execute(command="SELECT '6 8'::int2vector", format=1)
-        self.assertEqual(res.value(0, 0), [6, 8])
-        self.assertEqual(res.ftype(0), poque.INT2VECTOROID)
+        self._test_int_getvalue(1, 'int4', self.poque.INT4OID)
 
     def test_int4array_value_bin(self):
         # nested aray
         res = self.cn.execute(
-            command="SELECT '{{1,NULL,3},{4,5,6}}'::int4[][]", format=1)
-        self.assertEqual(res.value(0, 0), [[1, None, 3], [4, 5, 6]])
-        self.assertEqual(res.ftype(0), poque.INT4ARRAYOID)
+            command="SELECT '{{1,NULL,3},{4,5,6}}'::int4[][]", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), [[1, None, 3], [4, 5, 6]])
+        self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
 
         # zero dimensions
         res = self.cn.execute(
-            command="SELECT '{}'::int4[][][]", format=1)
-        self.assertEqual(res.value(0, 0), [])
-        self.assertEqual(res.ftype(0), poque.INT4ARRAYOID)
+            command="SELECT '{}'::int4[][][]", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), [])
+        self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
 
         # maximum number of dimensions
         res = self.cn.execute(
-            command="SELECT '{{{{{{-1}}}}}}'::int4[][][][][]", format=1)
-        self.assertEqual(res.value(0, 0), [[[[[[-1]]]]]])
-        self.assertEqual(res.ftype(0), poque.INT4ARRAYOID)
+            command="SELECT '{{{{{{-1}}}}}}'::int4[][][][][]", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), [[[[[[-1]]]]]])
+        self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
 
         # maximum number of dimensions exceeded
-        with self.assertRaises(poque.Error):
+        with self.assertRaises(self.poque.Error):
             self.cn.execute("SELECT '{{{{{{{-1}}}}}}}'::int4[][][][][][]",
-                            format=1)
+                            fmt=1)
+
+    def test_int2_value_text(self):
+        self._test_int_getvalue(0, 'int2', self.poque.INT2OID)
+
+    def test_int2_value_bin(self):
+        self._test_int_getvalue(1, 'int2', self.poque.INT2OID)
+
+    def test_int2_array_value_bin(self):
+        self._test_value_and_type_bin("SELECT '{6, NULL, -4}'::int2[]",
+                                      [6, None, -4], self.poque.INT2ARRAYOID)
+
+    def test_int8_value_bin(self):
+        self._test_int_getvalue(1, 'int8', self.poque.INT8OID)
+
+    def test_int8_value_str(self):
+        self._test_int_getvalue(0, 'int8', self.poque.INT8OID)
+
+    def test_int8_array_value_bin(self):
+        self._test_value_and_type_bin("SELECT '{6, NULL, -1}'::int8[]",
+                                      [6, None, -1], self.poque.INT8ARRAYOID)
+
+    def assertNumericEqual(self, val1, val2):
+        self.assertEqual(val1, val2)
+        # comparing tuples makes sure that values are equal including trailing
+        # zeroes behind the comma
+        self.assertEqual(val1.as_tuple(), val2.as_tuple())
+
+    def _test_numeric_value(self, fmt):
+        res = self.cn.execute(
+            command="SELECT '123.456'::numeric(12, 5), 'NaN'::numeric, "
+                    " '123456789012345678901234567890'::numeric, "
+                    " '0.000000000000001230'::numeric, "
+                    " '-123456789012345678901234567890'::numeric, "
+                    " '-0.000000000000001230'::numeric",
+            fmt=fmt)
+        self.assertNumericEqual(res.getvalue(0, 0), Decimal('123.45600'))
+        self.assertTrue(res.getvalue(0, 1).is_nan())
+        self.assertNumericEqual(
+            res.getvalue(0, 2), Decimal('123456789012345678901234567890'))
+        self.assertNumericEqual(
+            res.getvalue(0, 3), Decimal('0.000000000000001230'))
+        self.assertNumericEqual(
+            res.getvalue(0, 4), Decimal('-123456789012345678901234567890'))
+
+    def test_numeric_value_str(self):
+        self._test_numeric_value(0)
+
+    def test_numeric_value_bin(self):
+        self._test_numeric_value(1)
+
+    def test_numeric_array_value_bin(self):
+        res = self.cn.execute(
+            command="SELECT '{123.456, NULL, "
+                    "123456789012345678901234567890}'::numeric[]",
+            fmt=1)
+        self.assertEqual(res.getvalue(0, 0), [
+            Decimal('123.456'), None,
+            Decimal('123456789012345678901234567890')])
+
+    def test_bool_value_str(self):
+        res = self.cn.execute(command="SELECT true", fmt=0)
+        self.assertIs(res.getvalue(0, 0), True)
+        res = self.cn.execute(command="SELECT false", fmt=0)
+        self.assertIs(res.getvalue(0, 0), False)
+
+    def test_bool_value_bin(self):
+        self._test_value_and_type_bin("SELECT true", True, self.poque.BOOLOID)
+        self._test_value_and_type_bin(
+            "SELECT false", False, self.poque.BOOLOID)
+
+    def test_bytea_value_str(self):
+        self.cn.execute("SET bytea_output TO hex")
+        res = self.cn.execute(command="SELECT 'hi'::bytea", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), b'hi')
+        self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
+        res = self.cn.execute(command="SELECT ''::bytea", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), b'')
+        self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
+        res = self.cn.execute(command="SELECT '\t'::bytea", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), b'\t')
+        self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
+        self.cn.execute("SET bytea_output TO escape")
+        res = self.cn.execute(command="SELECT convert_to('\t \\', 'utf8')",
+                              fmt=0)
+        self.assertEqual(res.getvalue(0, 0), b'\t \\')
+        self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
+        res = self.cn.execute(command="SELECT ''::bytea", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), b'')
+
+    def test_bytea_value_bin(self):
+        self._test_value_and_type_bin("SELECT 'hi'::bytea", b'hi',
+                                      self.poque.BYTEAOID)
+        self._test_value_and_type_bin(
+            "SELECT ''::bytea", b'', self.poque.BYTEAOID)
+        self._test_value_and_type_bin("SELECT convert_to('\t \\', 'utf8')",
+                                      b'\t \\', self.poque.BYTEAOID)
+
+    def test_char_value_str(self):
+        res = self.cn.execute(command="SELECT 'a'::\"char\"", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), b'a')
+        self.assertEqual(res.ftype(0), self.poque.CHAROID)
+        res = self.cn.execute(command="SELECT '€'::\"char\"", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), "€".encode()[:1])
+
+    def test_char_value_bin(self):
+        self._test_value_and_type_bin("SELECT 'a'::\"char\"", b'a',
+                                      self.poque.CHAROID)
+        self._test_value_and_type_bin("SELECT '€'::\"char\"", "€".encode()[:1],
+                                      self.poque.CHAROID)
+
+    def test_char_array_value_bin(self):
+        res = self.cn.execute(command="SELECT '{a, b}'::\"char\"[]")
+        self.assertEqual(res.getvalue(0, 0), [b'a', b'b'])
+        self.assertEqual(res.ftype(0), self.poque.CHARARRAYOID)
+
+    def test_name_value_bin(self):
+        res = self.cn.execute(command="SELECT 'hel''lo €'::name", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), "hel'lo €")
+        self.assertEqual(res.ftype(0), self.poque.NAMEOID)
+
+    def test_name_value_str(self):
+        res = self.cn.execute(command="SELECT 'hel''lo €'::name", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), "hel'lo €")
+        self.assertEqual(res.ftype(0), self.poque.NAMEOID)
+
+    def test_name_array_value_bin(self):
+        res = self.cn.execute(command="SELECT '{hello, hi}'::name[]")
+        self.assertEqual(res.getvalue(0, 0), ['hello', 'hi'])
+        self.assertEqual(res.ftype(0), self.poque.NAMEARRAYOID)
+
+    def test_null_value_str(self):
+        res = self.cn.execute(command="SELECT NULL", fmt=0)
+        self.assertIsNone(res.getvalue(0, 0))
+        self.assertEqual(res.getlength(0, 0), 0)
+
+    def test_int2vector_value_bin(self):
+        res = self.cn.execute(command="SELECT '6 8'::int2vector", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), [6, 8])
+        self.assertEqual(res.ftype(0), self.poque.INT2VECTOROID)
+
+    def test_int2vector_array_value_bin(self):
+        res = self.cn.execute("SELECT '{1 2 6, NULL, 3 4}'::int2vector[];")
+        self.assertEqual(res.getvalue(0, 0), [[1, 2, 6], None, [3, 4]])
+        self.assertEqual(res.ftype(0), self.poque.INT2VECTORARRAYOID)
 
     def test_regproc_value_bin(self):
         res = self.cn.execute(
             "SELECT oid::int4, oid::regproc FROM pg_catalog.pg_proc "
-            "WHERE proname='int4recv'", format=1)
-        self.assertEqual(res.value(0, 0), res.value(0, 1))
-        self.assertEqual(res.ftype(1), poque.REGPROCOID)
+            "WHERE proname='int4recv'", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), res.getvalue(0, 1))
+        self.assertEqual(res.ftype(1), self.poque.REGPROCOID)
         res = self.cn.execute(
-            "SELECT 1::regproc", format=1)
-        self.assertEqual(res.value(0, 0), 1)
-        self.assertEqual(res.ftype(0), poque.REGPROCOID)
+            "SELECT 1::regproc", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), 1)
+        self.assertEqual(res.ftype(0), self.poque.REGPROCOID)
+
+    def test_regproc_array_value_bin(self):
+        res = self.cn.execute(
+            "SELECT oid::int4, ARRAY[oid::regproc, NULL, oid::regproc] "
+            "FROM pg_catalog.pg_proc "
+            "WHERE proname='int4recv'")
+        val = res.getvalue(0, 0)
+        self.assertEqual(res.getvalue(0, 1), [val, None, val])
+        self.assertEqual(res.ftype(1), self.poque.REGPROCARRAYOID)
 
     def test_regproc_value_str(self):
         res = self.cn.execute(
             "SELECT oid::regproc FROM pg_catalog.pg_proc "
-            "WHERE proname='int4recv'", format=0)
-        self.assertEqual(res.value(0, 0), 'int4recv')
-        self.assertEqual(res.ftype(0), poque.REGPROCOID)
+            "WHERE proname='int4recv'", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), 'int4recv')
+        self.assertEqual(res.ftype(0), self.poque.REGPROCOID)
         res = self.cn.execute(
-            "SELECT 1::regproc", format=0)
-        self.assertEqual(res.value(0, 0), '1')
-        self.assertEqual(res.ftype(0), poque.REGPROCOID)
+            "SELECT 1::regproc", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), '1')
+        self.assertEqual(res.ftype(0), self.poque.REGPROCOID)
 
     def test_text_value_bin(self):
-        res = self.cn.execute("SELECT 'hello'::text", format=1)
-        self.assertEqual(res.value(0, 0), 'hello')
-        self.assertEqual(res.ftype(0), poque.TEXTOID)
-        res = self.cn.execute("SELECT ''::text", format=1)
-        self.assertEqual(res.value(0, 0), '')
-        self.assertEqual(res.ftype(0), poque.TEXTOID)
+        res = self.cn.execute("SELECT 'hello'::text", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), 'hello')
+        self.assertEqual(res.ftype(0), self.poque.TEXTOID)
+        res = self.cn.execute("SELECT ''::text", fmt=1)
+        self.assertEqual(res.getvalue(0, 0), '')
+        self.assertEqual(res.ftype(0), self.poque.TEXTOID)
 
     def test_text_value_str(self):
-        res = self.cn.execute("SELECT 'hello'::text", format=0)
-        self.assertEqual(res.value(0, 0), 'hello')
-        self.assertEqual(res.ftype(0), poque.TEXTOID)
-        res = self.cn.execute("SELECT E'he\nllo'::text", format=0)
-        self.assertEqual(res.value(0, 0), 'he\nllo')
-        self.assertEqual(res.ftype(0), poque.TEXTOID)
-        res = self.cn.execute("SELECT ''::text", format=0)
-        self.assertEqual(res.value(0, 0), '')
-        self.assertEqual(res.ftype(0), poque.TEXTOID)
+        res = self.cn.execute("SELECT 'hello'::text", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), 'hello')
+        self.assertEqual(res.ftype(0), self.poque.TEXTOID)
+        res = self.cn.execute("SELECT E'he\nllo'::text", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), 'he\nllo')
+        self.assertEqual(res.ftype(0), self.poque.TEXTOID)
+        res = self.cn.execute("SELECT ''::text", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), '')
+        self.assertEqual(res.ftype(0), self.poque.TEXTOID)
+
+    def test_text_array_value_str(self):
+        res = self.cn.execute("SELECT ARRAY['hello', NULL, 'hi']::text[]")
+        self.assertEqual(res.getvalue(0, 0), ['hello', None, 'hi'])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
+
+    def test_bpchar_value_bin(self):
+        res = self.cn.execute("SELECT 'hello'::char(6)")
+        self.assertEqual(res.getvalue(0, 0), 'hello ')
+        self.assertEqual(res.ftype(0), self.poque.BPCHAROID)
+
+    def test_bpchar_value_str(self):
+        res = self.cn.execute("SELECT 'hello'::char(6)", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), 'hello ')
+        self.assertEqual(res.ftype(0), self.poque.BPCHAROID)
+
+    def test_bpchar_array_value_bin(self):
+        res = self.cn.execute("SELECT '{hello, NULL, hi}'::char(4)[];")
+        self.assertEqual(res.getvalue(0, 0), ['hell', None, 'hi  '])
+        self.assertEqual(res.ftype(0), self.poque.BPCHARARRAYOID)
+
+    def _test_varchar_getvalue(self, fmt):
+        res = self.cn.execute("SELECT 'hello'::varchar(6)", fmt=fmt)
+        self.assertEqual(res.getvalue(0, 0), 'hello')
+        self.assertEqual(res.ftype(0), self.poque.VARCHAROID)
+
+    def test_varchar_value_bin(self):
+        self._test_varchar_getvalue(0)
+
+    def test_varchar_value_str(self):
+        self._test_varchar_getvalue(1)
+
+    def test_varchar_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '{hello, NULL, hi}'::varchar(6)[]", ['hello', None, 'hi'],
+            self.poque.VARCHARARRAYOID)
+
+    def test_cstring_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT 'hello'::cstring", 'hello', self.poque.CSTRINGOID)
+
+    def test_cstring_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['hello'::cstring]", ['hello'], self.poque.CSTRINGARRAYOID)
 
     def test_oid_value_bin(self):
-        res = self.cn.execute("SELECT 3::oid", format=1)
-        self.assertEqual(res.value(0, 0), 3)
-        self.assertEqual(res.ftype(0), poque.OIDOID)
+        self._test_value_and_type_bin("SELECT 3::oid", 3, self.poque.OIDOID)
 
     def test_oid_value_str(self):
-        res = self.cn.execute("SELECT 3::oid", format=0)
-        self.assertEqual(res.value(0, 0), 3)
-        self.assertEqual(res.ftype(0), poque.OIDOID)
+        res = self.cn.execute("SELECT 3::oid", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), 3)
+        self.assertEqual(res.ftype(0), self.poque.OIDOID)
+
+    def test_oid_array_value_bin(self):
+        self._test_value_and_type_bin("SELECT ARRAY[3, NULL, 4]::oid[]",
+                                      [3, None, 4], self.poque.OIDARRAYOID)
 
     def test_tid_value_bin(self):
-        res = self.cn.execute("SELECT '(3,4)'::tid", format=1)
-        self.assertEqual(res.value(0, 0), (3, 4))
-        self.assertEqual(res.ftype(0), poque.TIDOID)
+        self._test_value_and_type_bin("SELECT '(3,4)'::tid", (3, 4),
+                                      self.poque.TIDOID)
 
     def test_tid_value_str(self):
-        res = self.cn.execute("SELECT '(3, 4)'::tid", format=0)
-        self.assertEqual(res.value(0, 0), (3, 4))
-        self.assertEqual(res.ftype(0), poque.TIDOID)
+        res = self.cn.execute("SELECT '(3, 4)'::tid", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), (3, 4))
+        self.assertEqual(res.ftype(0), self.poque.TIDOID)
+
+    def test_tid_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '{\"(3, 4)\", NULL, \"(6, 2)\"}'::tid[];",
+            [(3, 4), None, (6, 2)], self.poque.TIDARRAYOID)
 
     def test_xid_value_bin(self):
-        res = self.cn.execute("SELECT '2147483648'::xid;", format=1)
-        self.assertEqual(res.value(0, 0), 2147483648)
-        self.assertEqual(res.ftype(0), poque.XIDOID)
+        self._test_value_and_type_bin("SELECT '2147483648'::xid;", 2147483648,
+                                      self.poque.XIDOID)
 
     def test_xid_value_str(self):
-        res = self.cn.execute("SELECT '2147483648'::xid;", format=0)
-        self.assertEqual(res.value(0, 0), 2147483648)
-        self.assertEqual(res.ftype(0), poque.XIDOID)
+        res = self.cn.execute("SELECT '2147483648'::xid;", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), 2147483648)
+        self.assertEqual(res.ftype(0), self.poque.XIDOID)
+
+    def test_xid_array_value_bin(self):
+        self._test_value_and_type_bin("SELECT '{2147483648, NULL, 3}'::xid[];",
+                                      [2147483648, None, 3], self.poque.XIDARRAYOID)
 
     def test_cid_value_bin(self):
-        res = self.cn.execute("SELECT '2147483648'::cid;", format=1)
-        self.assertEqual(res.value(0, 0), 2147483648)
-        self.assertEqual(res.ftype(0), poque.CIDOID)
+        self._test_value_and_type_bin("SELECT '2147483648'::cid;", 2147483648,
+                                      self.poque.CIDOID)
 
     def test_cid_value_str(self):
-        res = self.cn.execute("SELECT '2147483648'::cid;", format=0)
-        self.assertEqual(res.value(0, 0), 2147483648)
-        self.assertEqual(res.ftype(0), poque.CIDOID)
+        res = self.cn.execute("SELECT '2147483648'::cid;", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), 2147483648)
+        self.assertEqual(res.ftype(0), self.poque.CIDOID)
+
+    def test_cid_array_value_bin(self):
+        self._test_value_and_type_bin("SELECT '{2147483648, NULL, 3}'::cid[];",
+                                      [2147483648, None, 3], self.poque.CIDARRAYOID)
 
     def test_oidvector_value_bin(self):
-        res = self.cn.execute("SELECT '3 8 2147483648'::oidvector", format=1)
-        self.assertEqual(res.value(0, 0), [3, 8, 2147483648])
-        self.assertEqual(res.ftype(0), poque.OIDVECTOROID)
+        self._test_value_and_type_bin("SELECT '3 8 2147483648'::oidvector",
+                                      [3, 8, 2147483648], self.poque.OIDVECTOROID)
+
+    def test_oidvector_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '{3 8 2147483648, NULL, 7 3}'::oidvector[]",
+            [[3, 8, 2147483648], None, [7, 3]], self.poque.OIDVECTORARRAYOID)
 
     def test_float8_value_bin(self):
-        res = self.cn.execute("SELECT 1.4::float8", format=1)
-        self.assertAlmostEqual(res.value(0, 0), 1.4)
-        self.assertEqual(res.ftype(0), poque.FLOAT8OID)
+        res = self.cn.execute("SELECT 1.4::float8", fmt=1)
+        self.assertAlmostEqual(res.getvalue(0, 0), 1.4)
+        self.assertEqual(res.ftype(0), self.poque.FLOAT8OID)
 
     def test_float8_value_str(self):
-        res = self.cn.execute("SELECT 1.4::float8", format=0)
-        self.assertAlmostEqual(res.value(0, 0), 1.4)
-        self.assertEqual(res.ftype(0), poque.FLOAT8OID)
+        res = self.cn.execute("SELECT 1.4::float8", fmt=0)
+        self.assertAlmostEqual(res.getvalue(0, 0), 1.4)
+        self.assertEqual(res.ftype(0), self.poque.FLOAT8OID)
+
+    def test_float8_array_value_bin(self):
+        res = self.cn.execute("SELECT '{1.4, NULL, 3, -2.5}'::float8[]")
+        val = res.getvalue(0, 0)
+        self.assertIsInstance(val, list)
+        self.assertEqual(len(val), 4)
+        self.assertAlmostEqual(val[0], 1.4)
+        self.assertIsNone(val[1])
+        self.assertAlmostEqual(val[2], 3)
+        self.assertAlmostEqual(val[3], -2.5)
+        self.assertEqual(res.ftype(0), self.poque.FLOAT8ARRAYOID)
 
     def test_float4_value_bin(self):
-        res = self.cn.execute("SELECT 1.4::float4", format=1)
-        self.assertAlmostEqual(res.value(0, 0), 1.4)
-        self.assertEqual(res.ftype(0), poque.FLOAT4OID)
+        res = self.cn.execute("SELECT 1.4::float4", fmt=1)
+        self.assertAlmostEqual(res.getvalue(0, 0), 1.4)
+        self.assertEqual(res.ftype(0), self.poque.FLOAT4OID)
 
     def test_float4_value_str(self):
-        res = self.cn.execute("SELECT 1.4::float4", format=0)
-        self.assertAlmostEqual(res.value(0, 0), 1.4)
-        self.assertEqual(res.ftype(0), poque.FLOAT4OID)
+        res = self.cn.execute("SELECT 1.4::float4", fmt=0)
+        self.assertAlmostEqual(res.getvalue(0, 0), 1.4)
+        self.assertEqual(res.ftype(0), self.poque.FLOAT4OID)
+
+    def test_float4_array_value_bin(self):
+        res = self.cn.execute("SELECT '{1.4, NULL, 3, -2.5}'::float4[]")
+        val = res.getvalue(0, 0)
+        self.assertIsInstance(val, list)
+        self.assertEqual(len(val), 4)
+        self.assertAlmostEqual(val[0], 1.4)
+        self.assertIsNone(val[1])
+        self.assertAlmostEqual(val[2], 3)
+        self.assertAlmostEqual(val[3], -2.5)
+        self.assertEqual(res.ftype(0), self.poque.FLOAT4ARRAYOID)
 
     def test_json_value_bin(self):
-        res = self.cn.execute("SELECT '{\"hi\": 23}'::json", format=1)
-        self.assertEqual(res.value(0, 0), {"hi": 23})
-        self.assertEqual(res.ftype(0), poque.JSONOID)
+        self._test_value_and_type_bin("SELECT '{\"hi\": 23}'::json",
+                                      {"hi": 23}, self.poque.JSONOID)
 
     def test_json_value_str(self):
-        res = self.cn.execute("SELECT '{\"hi\": 23}'::json", format=0)
-        self.assertEqual(res.value(0, 0), {"hi": 23})
-        self.assertEqual(res.ftype(0), poque.JSONOID)
+        res = self.cn.execute("SELECT '{\"hi\": 23}'::json", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), {"hi": 23})
+        self.assertEqual(res.ftype(0), self.poque.JSONOID)
 
-    def test_json_array_value_str(self):
-        res = self.cn.execute(
-            "SELECT '{\"{\\\"hi\\\": 23}\",\"[3, 4]\"}'::json[];")
-        self.assertEqual(res.value(0, 0), [{"hi": 23}, [3, 4]])
-        self.assertEqual(res.ftype(0), poque.JSONARRAYOID)
+    def test_json_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '{\"{\\\"hi\\\": 23}\",\"[3, 4]\"}'::json[];",
+            [{"hi": 23}, [3, 4]], self.poque.JSONARRAYOID)
 
     def test_xml_value_bin(self):
-        res = self.cn.execute("SELECT '<el>hi</el>'::xml", format=1)
-        self.assertEqual(res.value(0, 0), '<el>hi</el>')
-        self.assertEqual(res.ftype(0), poque.XMLOID)
+        self._test_value_and_type_bin("SELECT '<el>hi</el>'::xml",
+                                      '<el>hi</el>', self.poque.XMLOID)
 
     def test_xml_value_str(self):
-        res = self.cn.execute("SELECT '<el>hi</el>'::xml", format=0)
-        self.assertEqual(res.value(0, 0), '<el>hi</el>')
-        self.assertEqual(res.ftype(0), poque.XMLOID)
+        res = self.cn.execute("SELECT '<el>hi</el>'::xml", fmt=0)
+        self.assertEqual(res.getvalue(0, 0), '<el>hi</el>')
+        self.assertEqual(res.ftype(0), self.poque.XMLOID)
 
     def test_xml_array_value_bin(self):
-        res = self.cn.execute("SELECT E'{<el>\n1</el>, <el>2</el>}'::xml[];",
-                              format=1)
-        self.assertEqual(res.value(0, 0), ['<el>\n1</el>', '<el>2</el>'])
-        self.assertEqual(res.ftype(0), poque.XMLARRAYOID)
+        self._test_value_and_type_bin(
+            "SELECT E'{<el>\n1</el>, <el>2</el>}'::xml[];",
+            ['<el>\n1</el>', '<el>2</el>'], self.poque.XMLARRAYOID)
 
     def assert_tuple(self, val, length=2):
         self.assertIsInstance(val, tuple)
@@ -400,81 +556,164 @@ class ResultTestValues(unittest.TestCase):
         self.assertAlmostEqual(point[1], vals[1])
 
     def test_point_value_bin(self):
-        res = self.cn.execute("SELECT '(1.24, 3.4)'::point;", format=1)
-        val = res.value(0, 0)
+        res = self.cn.execute("SELECT '(1.24, 3.4)'::point;", fmt=1)
+        val = res.getvalue(0, 0)
         self.assert_point(val, (1.24, 3.4))
-        self.assertEqual(res.ftype(0), poque.POINTOID)
+        self.assertEqual(res.ftype(0), self.poque.POINTOID)
+
+    def test_point_array_value_bin(self):
+        res = self.cn.execute(
+            "SELECT ARRAY['(1.24, 3.4)', NULL, '(-1.2, 5)']::point[]")
+        val = res.getvalue(0, 0)
+        self.assertEqual(len(val), 3)
+        self.assertIsInstance(val, list)
+        self.assert_point(val[0], (1.24, 3.4))
+        self.assertEqual(val[1], None)
+        self.assert_point(val[2], (-1.2, 5))
+        self.assertEqual(res.ftype(0), self.poque.POINTARRAYOID)
+
+    def assert_lseg(self, val, lseg):
+        self.assert_tuple(val)
+        self.assert_point(val[0], lseg[0])
+        self.assert_point(val[1], lseg[1])
 
     def test_lseg_value_bin(self):
         res = self.cn.execute("SELECT '((1.3, 3.45), (2, 5.6))'::lseg;",
-                              format=1)
-        val = res.value(0, 0)
-        self.assert_tuple(val)
-        self.assert_point(val[0], (1.3, 3.45))
-        self.assert_point(val[1], (2, 5.6))
-        self.assertEqual(res.ftype(0), poque.LSEGOID)
+                              fmt=1)
+        val = res.getvalue(0, 0)
+        self.assert_lseg(val, ((1.3, 3.45), (2, 5.6)))
+        self.assertEqual(res.ftype(0), self.poque.LSEGOID)
+
+    def test_lseg_array_value_bin(self):
+        res = self.cn.execute("""
+            SELECT ARRAY['((1.3, 3.45), (2, 5.6))', NULL,
+                         '((-1.1, 2), (3, 4.12))']::lseg[]""")
+        val = res.getvalue(0, 0)
+        self.assertIsInstance(val, list)
+        self.assertEqual(len(val), 3)
+        self.assert_lseg(val[0], ((1.3, 3.45), (2, 5.6)))
+        self.assertIsNone(val[1])
+        self.assert_lseg(val[2], ((-1.1, 2), (3, 4.12)))
+        self.assertEqual(res.ftype(0), self.poque.LSEGARRAYOID)
+
+    def assert_path(self, val, path):
+        self.assertIsInstance(val, dict)
+        val_path = val['path']
+        self.assertIsInstance(val_path, list)
+        self.assertEqual(len(val_path), len(path["path"]))
+        for p1, p2 in zip(val_path, path["path"]):
+            self.assert_point(p1, p2)
+        del val['path']
+        self.assertEqual(val, {'closed': path['closed']})
 
     def test_path_value_bin(self):
         res = self.cn.execute(
             "SELECT '((1.3, 3.45), (2, 5.6), (-1.3, -4))'::path;")
-        val = res.value(0, 0)
-        self.assertIsInstance(val, dict)
-        self.assert_point(val['path'][0], (1.3, 3.45))
-        self.assert_point(val['path'][1], (2, 5.6))
-        self.assert_point(val['path'][2], (-1.3, -4))
-        self.assertIs(val['closed'], True)
-        del val['path']
-        self.assertEqual(val, {'closed': True})
-        self.assertEqual(res.ftype(0), poque.PATHOID)
+        val = res.getvalue(0, 0)
+        self.assert_path(val, {'path': [(1.3, 3.45), (2, 5.6), (-1.3, -4)],
+                               'closed': True})
+        self.assertEqual(res.ftype(0), self.poque.PATHOID)
+
+    def test_path_array_value_bin(self):
+        res = self.cn.execute("""
+            SELECT ARRAY['((1.3, 3.45), (2, 5.6), (-1.3, -4))', NULL,
+                         '[(1.3, 3.45), (2, 5.6), (-1.3, -4)]']::path[];""")
+        val = res.getvalue(0, 0)
+        self.assertIsInstance(val, list)
+        self.assertEqual(len(val), 3)
+        self.assert_path(val[0], {'path': [(1.3, 3.45), (2, 5.6), (-1.3, -4)],
+                                  'closed': True})
+        self.assertIs(val[1], None)
+        self.assert_path(val[2], {'path': [(1.3, 3.45), (2, 5.6), (-1.3, -4)],
+                                  'closed': False})
+        self.assertEqual(res.ftype(0), self.poque.PATHARRAYOID)
 
     def test_box_value_bin(self):
         res = self.cn.execute("SELECT '((1.3, 3.45), (2, 5.6))'::box;")
-        val = res.value(0, 0)
-        self.assert_tuple(val)
-        self.assert_point(val[1], (1.3, 3.45))
-        self.assert_point(val[0], (2, 5.6))
-        self.assertEqual(res.ftype(0), poque.BOXOID)
+        val = res.getvalue(0, 0)
+        self.assert_lseg(val, ((2, 5.6), (1.3, 3.45)))
+        self.assertEqual(res.ftype(0), self.poque.BOXOID)
+
+    def test_box_array_value_bin(self):
+        res = self.cn.execute("""
+            SELECT ARRAY['((1.3, 3.45), (2, 5.6))', NULL,
+                         '((1.3, 3.45), (2, 5.6))']::box[];""")
+        val = res.getvalue(0, 0)
+        self.assertIsInstance(val, list)
+        self.assertEqual(len(val), 3)
+        self.assert_lseg(val[0], ((2, 5.6), (1.3, 3.45)))
+        self.assertIs(val[1], None)
+        self.assert_lseg(val[2], ((2, 5.6), (1.3, 3.45)))
+        self.assertEqual(res.ftype(0), self.poque.BOXARRAYOID)
 
     def test_polygon_value_bin(self):
         res = self.cn.execute(
             "SELECT '((1.3, 3.45), (2, 5.6), (-1.3, -4))'::polygon;")
-        val = res.value(0, 0)
+        val = res.getvalue(0, 0)
         self.assertIsInstance(val, list)
         self.assertEqual(len(val), 3)
         self.assert_point(val[0], (1.3, 3.45))
         self.assert_point(val[1], (2, 5.6))
         self.assert_point(val[2], (-1.3, -4))
-        self.assertEqual(res.ftype(0), poque.POLYGONOID)
+        self.assertEqual(res.ftype(0), self.poque.POLYGONOID)
+
+    def test_polygon_array_value_bin(self):
+        res = self.cn.execute("""
+            SELECT ARRAY['((1.3, 3.45), (2, 5.6), (-1.3, -4))'::polygon,
+                         NULL]""")
+        val = res.getvalue(0, 0)
+        self.assertIsInstance(val, list)
+        self.assertEqual(len(val), 2)
+        self.assertIsNone(val[1])
+        val = val[0]
+        self.assertIsInstance(val, list)
+        self.assertEqual(len(val), 3)
+        self.assert_point(val[0], (1.3, 3.45))
+        self.assert_point(val[1], (2, 5.6))
+        self.assert_point(val[2], (-1.3, -4))
+        self.assertEqual(res.ftype(0), self.poque.POLYGONARRAYOID)
 
     def test_abstime_value_bin(self):
-        res = self.cn.execute("SELECT 1000000000::abstime;")
-        val = res.value(0, 0)
-        self.assertEqual(val, datetime.datetime.fromtimestamp(1000000000))
-        self.assertEqual(res.ftype(0), poque.ABSTIMEOID)
+        self._test_value_and_type_bin(
+            "SELECT 1000000000::abstime;",
+            datetime.datetime.fromtimestamp(1000000000), self.poque.ABSTIMEOID)
+
+    def test_abstime_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY[1000000000::abstime, 100::abstime]",
+            [datetime.datetime.fromtimestamp(1000000000),
+             datetime.datetime.fromtimestamp(100)], self.poque.ABSTIMEARRAYOID)
 
     def test_reltime_value_bin(self):
-        res = self.cn.execute("SELECT 100::reltime;")
-        val = res.value(0, 0)
-        self.assertEqual(val, datetime.timedelta(seconds=100))
-        self.assertEqual(res.ftype(0), poque.RELTIMEOID)
+        self._test_value_and_type_bin(
+            "SELECT 100::reltime;", datetime.timedelta(seconds=100),
+            self.poque.RELTIMEOID)
+
+    def test_reltime_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY[100::reltime, 1000::reltime]",
+            [datetime.timedelta(seconds=100),
+             datetime.timedelta(seconds=1000)], self.poque.RELTIMEARRAYOID)
 
     def test_tinterval_value_bin(self):
-        res = self.cn.execute(
-            "SELECT '[\"2014-01-01\" \"2015-01-01\"]'::tinterval")
-        val = res.value(0, 0)
-        self.assertEqual(val, (datetime.datetime(2014, 1, 1),
-                               datetime.datetime(2015, 1, 1)))
-        self.assertEqual(res.ftype(0), poque.TINTERVALOID)
+        self._test_value_and_type_bin(
+            "SELECT '[\"2014-01-01\" \"2015-01-01\"]'::tinterval",
+            (datetime.datetime(2014, 1, 1), datetime.datetime(2015, 1, 1)),
+            self.poque.TINTERVALOID)
+
+    def test_tinterval_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['[\"2014-01-01\" \"2015-01-01\"]'::tinterval, NULL]",
+            [(datetime.datetime(2014, 1, 1), datetime.datetime(2015, 1, 1)),
+             None], self.poque.TINTERVALARRAYOID)
 
     def test_unknown_value_bin(self):
-        res = self.cn.execute("SELECT 'hello'::unknown")
-        val = res.value(0, 0)
-        self.assertEqual(val, "hello")
-        self.assertEqual(res.ftype(0), poque.UNKNOWNOID)
+        self._test_value_and_type_bin("SELECT 'hello'::unknown", 'hello',
+                                      self.poque.UNKNOWNOID)
 
     def test_circle_value_bin(self):
         res = self.cn.execute("SELECT '<(2.3, -4.5), 3.75>'::circle;")
-        val = res.value(0, 0)
+        val = res.getvalue(0, 0)
         self.assertIsInstance(val, tuple)
         self.assertEqual(len(val), 2)
         self.assertIsInstance(val[0], tuple)
@@ -482,12 +721,13 @@ class ResultTestValues(unittest.TestCase):
         self.assertAlmostEqual(val[0][0], 2.3)
         self.assertAlmostEqual(val[0][1], -4.5)
         self.assertAlmostEqual(val[1], 3.75)
-        self.assertEqual(res.ftype(0), poque.CIRCLEOID)
+        self.assertEqual(res.ftype(0), self.poque.CIRCLEOID)
 
     def test_circle_array_value_bin(self):
-        res = self.cn.execute(
-            'SELECT \'{"<(2.3, -4.5), 3.75>", "<(2.3, -4.5), 3.75>"}\'::circle[];')
-        value = res.value(0, 0)
+        res = self.cn.execute('''
+            SELECT '{"<(2.3, -4.5), 3.75>", "<(2.3, -4.5), 3.75>"}'::circle[];
+            ''')
+        value = res.getvalue(0, 0)
         self.assertIsInstance(value, list)
         self.assertEqual(len(value), 2)
         for val in value:
@@ -498,41 +738,176 @@ class ResultTestValues(unittest.TestCase):
             self.assertAlmostEqual(val[0][0], 2.3)
             self.assertAlmostEqual(val[0][1], -4.5)
             self.assertAlmostEqual(val[1], 3.75)
-            self.assertEqual(res.ftype(0), poque.CIRCLEARRAYOID)
+            self.assertEqual(res.ftype(0), self.poque.CIRCLEARRAYOID)
 
     def test_money_value_bin(self):
-        res = self.cn.execute("SELECT 3::money")
-        value = res.value(0, 0)
-        self.assertEqual(value, 300)
-        self.assertEqual(res.ftype(0), poque.CASHOID)
+        self._test_value_and_type_bin(
+            "SELECT 3::money", 300, self.poque.CASHOID)
 
     def test_money_array_value_bin(self):
-        res = self.cn.execute("SELECT '{3.4, -52}'::numeric[]::money[];")
-        val = res.value(0, 0)
-        self.assertEqual(val, [340, -5200])
-        self.assertEqual(res.ftype(0), poque.CASHARRAYOID)
+        self._test_value_and_type_bin(
+            "SELECT '{3.4, -52}'::numeric[]::money[];", [340, -5200],
+            self.poque.CASHARRAYOID)
 
     def test_mac_addr_value_bin(self):
-        res = self.cn.execute("SELECT '24:0a:64:dd:58:c4'::macaddr;")
-        val = res.value(0, 0)
-        self.assertEqual(val, 0x240a64dd58c4)
-        self.assertEqual(res.ftype(0), poque.MACADDROID)
+        self._test_value_and_type_bin("SELECT '24:0a:64:dd:58:c4'::macaddr;",
+                                      0x240a64dd58c4, self.poque.MACADDROID)
+
+    def test_mac_addr_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['24:0a:64:dd:58:c4'::macaddr];", [0x240a64dd58c4],
+            self.poque.MACADDRARRAYOID)
+
+    def test_ipv4_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '192.168.0.1'::inet", IPv4Interface('192.168.0.1'),
+            self.poque.INETOID)
+        self._test_value_and_type_bin(
+            "SELECT '192.168.10.1/24'::inet", IPv4Interface('192.168.10.1/24'),
+            self.poque.INETOID)
+
+    def test_ipv4_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['192.168.0.1'::inet, NULL]",
+            [IPv4Interface('192.168.0.1'), None], self.poque.INETARRAYOID)
+
+    def test_ipv6_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '2001:db8:85a3:0:0:8a2e:370:7334'::inet",
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334'), self.poque.INETOID)
+        self._test_value_and_type_bin(
+            "SELECT '2001:db8:85a3:0:0:8a2e:370:7334/64'::inet",
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334/64'), self.poque.INETOID)
+
+    def test_ipv6_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY[NULL, '2001:db8:85a3:0:0:8a2e:370:7334'::inet]",
+            [None, IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334')],
+            self.poque.INETARRAYOID)
+
+    def test_cidrv4_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '192.168.0.0/24'::cidr", IPv4Network('192.168.0.0/24'),
+            self.poque.CIDROID)
+
+    def test_cidrv4_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '{192.168.0.0/24}'::cidr[]",
+            [IPv4Network('192.168.0.0/24')], self.poque.CIDRARRAYOID)
+
+    def test_cidrv6_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '2001:db8:85a3:0:0:8a2e:0:0/96'::cidr",
+            IPv6Network('2001:db8:85a3:0:0:8a2e:0:0/96'), self.poque.CIDROID)
+
+    def test_bool_array_bin(self):
+        self._test_value_and_type_bin("SELECT '{true, NULL, false}'::bool[]",
+                                      [True, None, False], self.poque.BOOLARRAYOID)
+
+    def test_bytea_array_bin(self):
+        self._test_value_and_type_bin(
+            r"SELECT '{\\x2020, NULL, \\x2020}'::bytea[]",
+            [b'  ', None, b'  '], self.poque.BYTEAARRAYOID)
 
     def test_uuid_value_bin(self):
         val = uuid4()
-        res = self.cn.execute("SELECT '{0}'::uuid".format(val), format=1)
-        v = res.value(0, 0)
+        res = self.cn.execute("SELECT '{0}'::uuid".format(val), fmt=1)
+        v = res.getvalue(0, 0)
         self.assertEqual(sys.getrefcount(v), 2)
         self.assertEqual(v, val)
-        self.assertEqual(res.ftype(0), poque.UUIDOID)
+        self._test_value_and_type_bin(
+            "SELECT '12345678123456781234567800345678'::uuid",
+            UUID(hex='12345678123456781234567800345678'), self.poque.UUIDOID)
 
     def test_uuid_value_str(self):
         val = uuid4()
-        res = self.cn.execute("SELECT '{0}'::uuid".format(val), format=0)
-        v = res.value(0, 0)
+        res = self.cn.execute("SELECT '{0}'::uuid".format(val), fmt=0)
+        v = res.getvalue(0, 0)
         self.assertEqual(sys.getrefcount(v), 2)
         self.assertEqual(v, val)
-        self.assertEqual(res.ftype(0), poque.UUIDOID)
+        self.assertEqual(res.ftype(0), self.poque.UUIDOID)
+
+    def test_date_value_bin(self):
+        self._test_value_and_type_bin("SELECT '2014-03-01'::date",
+                                      datetime.date(2014, 3, 1), self.poque.DATEOID)
+        self._test_value_and_type_bin("SELECT '20140-03-01'::date",
+                                      '20140-03-01', self.poque.DATEOID)
+        self._test_value_and_type_bin("SELECT '500-03-01 BC'::date",
+                                      '0500-03-01 BC', self.poque.DATEOID)
+        self._test_value_and_type_bin("SELECT '0001-01-01'::date",
+                                      datetime.date.min, self.poque.DATEOID)
+        self._test_value_and_type_bin("SELECT '0001-12-31 BC'::date",
+                                      '0001-12-31 BC', self.poque.DATEOID)
+
+    def test_date_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['2014-03-01'::date]", [datetime.date(2014, 3, 1)],
+            self.poque.DATEARRAYOID)
+
+    def test_time_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '13:09:25.123'::time", datetime.time(13, 9, 25, 123000),
+            self.poque.TIMEOID)
+
+    def test_time_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY[NULL, '13:09:25.123'::time]",
+            [None, datetime.time(13, 9, 25, 123000)], self.poque.TIMEARRAYOID)
+
+    def test_timestamp_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '2013-04-02 13:09:25.123'::timestamp",
+            datetime.datetime(2013, 4, 2, 13, 9, 25, 123000),
+            self.poque.TIMESTAMPOID)
+        self._test_value_and_type_bin(
+            "SELECT '500-04-02 13:09:25.123 BC'::timestamp",
+            "0500-04-02 13:09:25.123000 BC", self.poque.TIMESTAMPOID)
+        self._test_value_and_type_bin(
+            "SELECT '20130-04-02 13:09:25.123'::timestamp",
+            "20130-04-02 13:09:25.123000",
+            self.poque.TIMESTAMPOID)
+
+    def test_timestamp_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['2013-04-02 13:09:25.123'::timestamp, NULL]",
+            [datetime.datetime(2013, 4, 2, 13, 9, 25, 123000), None],
+            self.poque.TIMESTAMPARRAYOID)
+
+    def test_timestamptz_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '2013-04-02 13:09:25.123 +3'::timestamptz",
+            datetime.datetime(2013, 4, 2, 10, 9, 25, 123000),
+            self.poque.TIMESTAMPTZOID)
+
+    def test_timestamptz_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['2013-04-02 13:09:25.123 +3'::timestamptz, NULL]",
+            [datetime.datetime(2013, 4, 2, 10, 9, 25, 123000), None],
+            self.poque.TIMESTAMPTZARRAYOID)
+
+    def test_interval_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '1 century 4 month 2 days 3 hour'::interval;",
+            (1204, datetime.timedelta(days=2, hours=3)), self.poque.INTERVALOID)
+        self._test_value_and_type_bin(
+            "SELECT '1 century 4 month 2 days 3 hour ago'::interval;",
+            (-1204, datetime.timedelta(days=-2, hours=-3)), self.poque.INTERVALOID)
+
+    def test_interval_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['1 century 4 month 2 days 3 hour'::interval, NULL];",
+            [(1204, datetime.timedelta(days=2, hours=3)), None],
+            self.poque.INTERVALARRAYOID)
+
+
+class ResultTestValuesExtension(
+        BaseExtensionTest, ResultTestValues, unittest.TestCase):
+    pass
+
+
+class ResultTestValuesCtypes(
+        BaseCTypesTest, ResultTestValues, unittest.TestCase):
+    pass
 
 
 class ResultTest(unittest.TestCase):

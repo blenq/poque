@@ -2,49 +2,59 @@ import select
 import unittest
 import weakref
 
-import poque
 
 from . import config
+from .config import BaseExtensionTest, BaseCTypesTest
 from .lib import assert_is_conninfo
 
 
-class TestConnectionOpen(unittest.TestCase):
+class TestConnectionOpen():
 
     def test_connect_params(self):
         kwargs = config.connparams()
-        cn = poque.connect(**kwargs)
-        self.assertEquals(cn.status, poque.CONNECTION_OK)
+        cn = self.poque.connect(**kwargs)
+        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_params_expand(self):
         connstring = config.conninfo()
-        cn = poque.Conn(dbname=connstring, expand_dbname=True)
-        self.assertEquals(cn.status, poque.CONNECTION_OK)
+        cn = self.poque.Conn(dbname=connstring, expand_dbname=True)
+        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_conninfo(self):
         connstring = config.conninfo()
-        cn = poque.Conn(connstring)
-        self.assertEquals(cn.status, poque.CONNECTION_OK)
+        cn = self.poque.Conn(connstring)
+        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_url(self):
         connstring = config.connurl()
-        cn = poque.Conn(connstring)
-        self.assertEquals(cn.status, poque.CONNECTION_OK)
+        cn = self.poque.Conn(connstring)
+        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_params_invalid_arg(self):
         kwargs = config.connstringparams()
         kwargs['yoyo'] = None
-        cn = poque.Conn(**kwargs)
-        self.assertEquals(cn.status, poque.CONNECTION_OK)
+        cn = self.poque.Conn(**kwargs)
+        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_wrong_params(self):
-        with self.assertRaises(poque.Error):
-            poque.Conn(zut='zut')
+        with self.assertRaises(self.poque.Error):
+            self.poque.Conn(zut='zut')
 
 
-class TestConnectionBasic(unittest.TestCase):
+class TestConnectionOpenExtension(
+        BaseExtensionTest, TestConnectionOpen, unittest.TestCase):
+    pass
+
+
+class TestConnectionOpenCtypes(
+        BaseCTypesTest, TestConnectionOpen, unittest.TestCase):
+    pass
+
+
+class TestConnectionBasic():
 
     def setUp(self):
-        self.cn = poque.Conn(config.conninfo())
+        self.cn = self.poque.Conn(config.conninfo())
 
     def test_db(self):
         self.assertEqual(self.cn.db, config.connparams()['dbname'])
@@ -71,7 +81,7 @@ class TestConnectionBasic(unittest.TestCase):
         self.assertIn(self.cn.protocol_version, [2, 3])
 
     def test_transaction_status(self):
-        self.assertEquals(self.cn.transaction_status, poque.TRANS_IDLE)
+        self.assertEquals(self.cn.transaction_status, self.poque.TRANS_IDLE)
 
     def test_server_version(self):
         self.assertIsInstance(self.cn.server_version, int)
@@ -97,32 +107,42 @@ class TestConnectionBasic(unittest.TestCase):
 
     def test_reset(self):
         self.cn.reset()
-        self.assertEquals(self.cn.status, poque.CONNECTION_OK)
+        self.assertEquals(self.cn.status, self.poque.CONNECTION_OK)
 
     def test_reset_async(self):
         cn = self.cn
         cn.reset_start()
-        state = poque.POLLING_WRITING
-        while state != poque.POLLING_OK:
-            if state == poque.POLLING_WRITING:
+        state = self.poque.POLLING_WRITING
+        while state != self.poque.POLLING_OK:
+            if state == self.poque.POLLING_WRITING:
                 select.select([], [cn], [])
-            elif state == poque.POLLING_READING:
+            elif state == self.poque.POLLING_READING:
                 select.select([cn], [], [])
             state = cn.reset_poll()
-        self.assertEquals(cn.status, poque.CONNECTION_OK)
+        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
 
     def test_finish(self):
         self.cn.finish()
-        self.assertEquals(self.cn.status, poque.CONNECTION_BAD)
+        self.assertEquals(self.cn.status, self.poque.CONNECTION_BAD)
 
     def test_weakref(self):
         self.assertEquals(weakref.ref(self.cn)(), self.cn)
 
 
-class TestConnectionBasicClosed(unittest.TestCase):
+class TestConnectionBasicExtension(
+        BaseExtensionTest, TestConnectionBasic, unittest.TestCase):
+    pass
+
+
+class TestConnectionBasicCtypes(
+        BaseCTypesTest, TestConnectionBasic, unittest.TestCase):
+    pass
+
+
+class TestConnectionClosed():
 
     def setUp(self):
-        self.cn = poque.Conn(config.conninfo())
+        self.cn = self.poque.Conn(config.conninfo())
         self.cn.finish()
 
     def test_db(self):
@@ -150,7 +170,7 @@ class TestConnectionBasicClosed(unittest.TestCase):
         self.assertEquals(self.cn.protocol_version, 0)
 
     def test_transaction_status(self):
-        self.assertEquals(self.cn.transaction_status, poque.TRANS_UNKNOWN)
+        self.assertEquals(self.cn.transaction_status, self.poque.TRANS_UNKNOWN)
 
     def test_server_version(self):
         self.assertEquals(self.cn.server_version, 0)
@@ -179,29 +199,49 @@ class TestConnectionBasicClosed(unittest.TestCase):
 
     def test_finish(self):
         self.cn.finish()
-        self.assertEquals(self.cn.status, poque.CONNECTION_BAD)
+        self.assertEquals(self.cn.status, self.poque.CONNECTION_BAD)
 
 
-class TestConnectionAsync(unittest.TestCase):
+class TestConnectionClosedExtension(
+        BaseExtensionTest, TestConnectionClosed, unittest.TestCase):
+    pass
+
+
+class TestConnectionClosedCtypes(
+        BaseCTypesTest, TestConnectionClosed, unittest.TestCase):
+    pass
+
+
+class TestConnectionAsync():
 
     def async_connect(self, cn):
-        state = poque.POLLING_WRITING
-        while state != poque.POLLING_OK:
-            if state == poque.POLLING_WRITING:
+        state = self.poque.POLLING_WRITING
+        while state != self.poque.POLLING_OK:
+            if state == self.poque.POLLING_WRITING:
                 select.select([], [cn], [])
-            elif state == poque.POLLING_READING:
+            elif state == self.poque.POLLING_READING:
                 select.select([cn], [], [])
             state = cn.connect_poll()
 
     def test_async(self):
-        cn = poque.Conn(config.conninfo(), True)
+        cn = self.poque.Conn(config.conninfo(), True)
         self.async_connect(cn)
-        self.assertEqual(cn.status, poque.CONNECTION_OK)
+        self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
     def test_async_wrong(self):
         dbparams = config.connstringparams()
         dbparams['dbname'] = 'nonsense'
-        cn = poque.Conn(async=True, **dbparams)
-        with self.assertRaises(poque.Error):
+        cn = self.poque.Conn(async=True, **dbparams)
+        with self.assertRaises(self.poque.Error):
             self.async_connect(cn)
-        self.assertEqual(cn.status, poque.CONNECTION_BAD)
+        self.assertEqual(cn.status, self.poque.CONNECTION_BAD)
+
+
+class TestConnectionAsyncExtension(
+        BaseExtensionTest, TestConnectionAsync, unittest.TestCase):
+    pass
+
+
+class TestConnectionAsyncCtypes(
+        BaseCTypesTest, TestConnectionAsync, unittest.TestCase):
+    pass

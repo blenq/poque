@@ -167,7 +167,7 @@ Result_fsize(poque_Result *self, PyObject *args, PyObject *keywds)
 static int
 Result_colrow_args(PyObject *args, PyObject *kwds, int *row, int *column)
 {
-    static char *kwlist[] = {"row", "column", NULL};
+    static char *kwlist[] = {"row_number", "column_number", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "ii", kwlist, row, column))
         return -1;
     return 0;
@@ -214,6 +214,20 @@ Result_value(poque_Result *self, PyObject *args, PyObject *kwds)
                        PQfformat(self->result, column),
                        PQgetvalue(self->result, row, column),
                        PQgetlength(self->result, row, column));
+}
+
+static PyObject *
+Result_isnull(poque_Result *self, PyObject *args, PyObject *kwds)
+{
+    int row, column;
+
+    if (Result_colrow_args(args, kwds, &row, &column) == -1) {
+        return NULL;
+    }
+    if (PQgetisnull(self->result, row, column))
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
 }
 
 
@@ -276,14 +290,17 @@ static PyMethodDef Result_methods[] = {{
         "fsize", (PyCFunction)Result_fsize, METH_VARARGS| METH_KEYWORDS,
         PyDoc_STR("field size")
     }, {
-        "getvalue", (PyCFunction)Result_getvalue, METH_VARARGS | METH_KEYWORDS,
+        "pq_getvalue", (PyCFunction)Result_getvalue, METH_VARARGS | METH_KEYWORDS,
         PyDoc_STR("raw value")
     }, {
         "getlength", (PyCFunction)Result_getlength, METH_VARARGS | METH_KEYWORDS,
         PyDoc_STR("length of value")
     }, {
-        "value", (PyCFunction)Result_value, METH_VARARGS | METH_KEYWORDS,
+        "getvalue", (PyCFunction)Result_value, METH_VARARGS | METH_KEYWORDS,
         PyDoc_STR("Python value")
+    }, {
+        "getisnull", (PyCFunction)Result_isnull, METH_VARARGS | METH_KEYWORDS,
+        PyDoc_STR("is null")
     },  {
         NULL
 }};
