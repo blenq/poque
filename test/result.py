@@ -11,6 +11,7 @@ from . import config
 from .config import BaseExtensionTest, BaseCTypesTest
 
 from uuid import uuid4, UUID
+from poque.ctypes.constants import LINEOID, LINEARRAYOID
 
 
 class ResultTestBasic():
@@ -123,10 +124,16 @@ class ResultTestValues():
         res = self.cn.execute("SELECT 1")
         self.assertIs(res.getisnull(0, 0), False)
 
-    def _test_value_and_type_bin(self, command, value, type_oid):
-        res = self.cn.execute(command)
+    def _test_value_and_type(self, command, value, type_oid, format):
+        res = self.cn.execute(command, format)
         self.assertEqual(res.getvalue(0, 0), value)
         self.assertEqual(res.ftype(0), type_oid)
+
+    def _test_value_and_type_bin(self, command, value, type_oid):
+        self._test_value_and_type(command, value, type_oid, 1)
+
+    def _test_value_and_type_str(self, command, value, type_oid):
+        self._test_value_and_type(command, value, type_oid, 0)
 
     def test_format(self):
         res = self.cn.execute(command="SELECT 1", fmt=0)
@@ -197,11 +204,26 @@ class ResultTestValues():
         self._test_value_and_type_bin("SELECT '{6, NULL, -1}'::int8[]",
                                       [6, None, -1], self.poque.INT8ARRAYOID)
 
+    def test_bit_value_bin(self):
+        self._test_value_and_type_bin("SELECT 23::BIT(5)",
+                                      23, self.poque.BITOID)
+        self._test_value_and_type_bin("SELECT 260::BIT(15)",
+                                      260, self.poque.BITOID)
+        self._test_value_and_type_bin("SELECT 260::BIT(16)",
+                                      260, self.poque.BITOID)
+        self._test_value_and_type_bin("SELECT 260::BIT(16)",
+                                      260, self.poque.BITOID)
+        val = '1' * 65
+        self._test_value_and_type_bin("SELECT B'{0}'::BIT(65)".format(val),
+                                      0x1FFFFFFFFFFFFFFFF, self.poque.BITOID)
+
     def assertNumericEqual(self, val1, val2):
         self.assertEqual(val1, val2)
         # comparing tuples makes sure that values are equal including trailing
         # zeroes behind the comma
-        self.assertEqual(val1.as_tuple(), val2.as_tuple())
+        t1 = val1.as_tuple()
+        t2 = val2.as_tuple()
+        self.assertTrue(t1 == t2 or t1[1][:len(t2[1])] == t2[1])
 
     def _test_numeric_value(self, fmt):
         res = self.cn.execute(
@@ -209,7 +231,9 @@ class ResultTestValues():
                     " '123456789012345678901234567890'::numeric, "
                     " '0.000000000000001230'::numeric, "
                     " '-123456789012345678901234567890'::numeric, "
-                    " '-0.000000000000001230'::numeric",
+                    " '-0.000000000000001230'::numeric, "
+                    " '9999E+100'::numeric, "
+                    " '9999E-100'::numeric;",
             fmt=fmt)
         self.assertNumericEqual(res.getvalue(0, 0), Decimal('123.45600'))
         self.assertTrue(res.getvalue(0, 1).is_nan())
@@ -219,6 +243,12 @@ class ResultTestValues():
             res.getvalue(0, 3), Decimal('0.000000000000001230'))
         self.assertNumericEqual(
             res.getvalue(0, 4), Decimal('-123456789012345678901234567890'))
+        self.assertNumericEqual(
+            res.getvalue(0, 5), Decimal('-0.000000000000001230'))
+        self.assertNumericEqual(
+            res.getvalue(0, 6), Decimal('9999E+100'))
+        self.assertNumericEqual(
+            res.getvalue(0, 7), Decimal('9999E-100'))
 
     def test_numeric_value_str(self):
         self._test_numeric_value(0)
@@ -305,6 +335,14 @@ class ResultTestValues():
         res = self.cn.execute(command="SELECT '{hello, hi}'::name[]")
         self.assertEqual(res.getvalue(0, 0), ['hello', 'hi'])
         self.assertEqual(res.ftype(0), self.poque.NAMEARRAYOID)
+
+    def test_unknown_value_str(self):
+        self._test_value_and_type_str("SELECT 'hello'::unknown", 'hello',
+                                      self.poque.UNKNOWNOID)
+
+    def test_unknown_value_bin(self):
+        self._test_value_and_type_bin("SELECT 'hello'::unknown", 'hello',
+                                      self.poque.UNKNOWNOID)
 
     def test_null_value_str(self):
         res = self.cn.execute(command="SELECT NULL", fmt=0)
@@ -587,13 +625,13 @@ class ResultTestValues():
         self.assertEqual(res.ftype(0), self.poque.POINTARRAYOID)
 
     def test_line_value_bin(self):
-        res = self.cn.execute("SELECT '{1.2, 3.0, 4}'::line;")
-        self.assertEqual(res.getvalue(0, 0), (1.2, 3.0, 4))
+        self._test_value_and_type_bin(
+            "SELECT '{1.2, 3.0, 4}'::line;", (1.2, 3.0, 4), LINEOID)
 
     def test_linearray_value_bin(self):
-        res = self.cn.execute(
-            "SELECT ARRAY['{1.2, 3.0, 4}', '{1.2, 3.0, 5}']::line[];")
-        self.assertEqual(res.getvalue(0, 0), [(1.2, 3.0, 4), (1.2, 3.0, 5)])
+        self._test_value_and_type_bin(
+            "SELECT ARRAY['{1.2, 3.0, 4}', '{1.2, 3.0, 5}']::line[];",
+            [(1.2, 3.0, 4), (1.2, 3.0, 5)], LINEARRAYOID)
 
     def assert_lseg(self, val, lseg):
         self.assert_tuple(val)
@@ -729,10 +767,6 @@ class ResultTestValues():
             "SELECT ARRAY['[\"2014-01-01\" \"2015-01-01\"]'::tinterval, NULL]",
             [(datetime.datetime(2014, 1, 1), datetime.datetime(2015, 1, 1)),
              None], self.poque.TINTERVALARRAYOID)
-
-    def test_unknown_value_bin(self):
-        self._test_value_and_type_bin("SELECT 'hello'::unknown", 'hello',
-                                      self.poque.UNKNOWNOID)
 
     def test_circle_value_bin(self):
         res = self.cn.execute("SELECT '<(2.3, -4.5), 3.75>'::circle;")

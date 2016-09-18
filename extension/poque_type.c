@@ -109,6 +109,18 @@ advance_cursor_len_reset(data_crs *curs, int len)
 
 
 static int
+read_uint8_binval(data_crs *curs, unsigned char *value) {
+
+    unsigned char *data;
+
+    data = (unsigned char *)advance_cursor_len(curs, 1);
+    if (data == NULL)
+        return -1;
+    *value = data[0];
+    return 0;
+}
+
+static int
 read_uint16_binval(data_crs *curs, uint16_t *value)
 {
     unsigned char *data;
@@ -1384,6 +1396,91 @@ end:
     return ret;
 }
 
+static PyObject *
+bit_binval(data_crs *curs) {
+    /* Reads a bitstring as a Python integer
+
+    Format:
+       * signed int: number of bits (bit_len)
+       * bytes: All the bits left aligned
+
+    */
+    int bit_len, quot, rest, byte_len, i;
+    PyObject *val, *eight, *new_val;
+
+    /* first get the number of bits in the bit string */
+    if (read_int32_binval(curs, &bit_len) < 0)
+        return NULL;
+
+    quot = bit_len / 8;  /* number of bytes completely filled */
+    rest = bit_len % 8;  /* number of bits in remaining byte */
+    byte_len = quot + (rest ? 1: 0); /* total number of data bytes */
+
+    /* initialize return value */
+    val = PyLong_FromLong(0);
+    if (val == NULL)
+        return NULL;
+
+    /* initialize Python integer with value 8 */
+    eight = PyLong_FromLong(8);
+    if (eight == NULL) {
+        Py_DECREF(val);
+        return NULL;
+    }
+
+    /* add the value byte by byte, python ints have no upper limit, so this
+     * works even for bitstrings longer than 64 bits */
+    for (i = 0; i < byte_len; i++) {
+        unsigned char byte;
+        PyObject *byte_val;
+
+        /* new byte, first shift the value one byte to the left */
+        new_val = PyNumber_InPlaceLshift(val, eight);
+        if (new_val == NULL)
+            goto error;
+        Py_DECREF(val);
+        val = new_val;
+
+        /* read the new byte */
+        if (read_uint8_binval(curs, &byte) < 0)
+            goto error;
+        byte_val = PyLong_FromLong(byte);
+        if (byte_val == NULL)
+            goto error;
+
+        /* add the new byte to the return value */
+        new_val = PyNumber_InPlaceOr(val, byte_val);
+        Py_DECREF(byte_val);
+        if (new_val == NULL)
+            goto error;
+        Py_DECREF(val);
+        val = new_val;
+    }
+    if (rest) {
+        /* correct for the fact that the bitstring is left aligned */
+        PyObject *shift_val;
+
+        /* get the number of bits to shift the entire value */
+        shift_val = PyLong_FromLong(8 - rest);
+        if (shift_val == NULL)
+            goto error;
+
+        /* shift the value */
+        new_val = PyNumber_InPlaceRshift(val, shift_val);
+        Py_DECREF(shift_val);
+        if (new_val == NULL)
+            goto error;
+        Py_DECREF(val);
+        val = new_val;
+    }
+    return val;
+
+error:
+    Py_DECREF(eight);
+    Py_DECREF(val);
+    return NULL;
+}
+
 
 typedef struct _poqueTypeEntry {
     Oid oid;
@@ -1510,6 +1607,7 @@ static PoqueTypeEntry type_table[] = {
     },
     {NUMERICOID, numeric_binval, numeric_strval, NULL},
     {NUMERICARRAYOID, array_binval, NULL, NULL},
+    {BITOID, bit_binval, NULL, NULL},
     {InvalidOid}
 };
 

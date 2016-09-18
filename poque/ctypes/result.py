@@ -414,6 +414,36 @@ def _read_numeric_bin(crs, length=None):
     return Decimal((sign, digits, -dscale))
 
 
+def _read_bit_bin(crs, length=None):
+    """ Reads a bitstring as a Python integer
+
+    Format:
+        * signed int: number of bits (bit_len)
+        * bytes: All the bits left aligned
+
+    """
+    # first get the number of bits in the bit string
+    bit_len = _read_int4_bin(crs)
+
+    # calculate number of data bytes
+    quot, rest = divmod(bit_len, 8)
+    byte_len = quot + (1 if rest else 0)
+
+    # add the value byte by byte, python ints have no upper limit, so this
+    # works even for bitstrings longer than 64 bits
+    val = 0
+    loop = iter(range(byte_len))
+    while next(loop, None) is not None:
+        val <<= 8
+        val |= crs.advance_struct_format("!B")[0]
+
+    if rest:
+        # correct for the fact that the bitstring is left aligned
+        val >>= (8 - rest)
+
+    return val
+
+
 def _get_array_value(crs, array_dims, reader):
     if array_dims:
         # get an array of (nested) values
@@ -613,6 +643,7 @@ class Result(c_void_p):
         NUMERICARRAYOID: (None, _read_array_bin),
         LINEOID: (None, _read_line_bin),
         LINEARRAYOID: (None, _read_array_bin),
+        BITOID: (None, _read_bit_bin),
     }
 
     _getvalue = pq.PQgetvalue
