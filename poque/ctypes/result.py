@@ -659,6 +659,7 @@ class Result(c_void_p):
         BITOID: (_read_bit_text, _read_bit_bin),
         BITARRAYOID: (None, _read_array_bin),
         VARBITOID: (_read_bit_text, _read_bit_bin),
+        VARBITARRAYOID: (None, _read_array_bin),
     }
 
     _getvalue = pq.PQgetvalue

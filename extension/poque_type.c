@@ -1644,6 +1644,7 @@ static PoqueTypeEntry type_table[] = {
     {BITOID, bit_binval, bit_strval, NULL},
     {BITARRAYOID, array_binval, NULL, NULL},
     {VARBITOID, bit_binval, bit_strval, NULL},
+    {VARBITARRAYOID, array_binval, NULL, NULL},
     {InvalidOid}
 };
 
