@@ -1411,10 +1411,11 @@ bit_binval(data_crs *curs) {
     /* first get the number of bits in the bit string */
     if (read_int32_binval(curs, &bit_len) < 0)
         return NULL;
-
-    quot = bit_len / 8;  /* number of bytes completely filled */
-    rest = bit_len % 8;  /* number of bits in remaining byte */
-    byte_len = quot + (rest ? 1: 0); /* total number of data bytes */
+    if (bit_len < 0) {
+        PyErr_SetString(PoqueError,
+                        "Invalid length value in binary bit string");
+        return NULL;
+    }
 
     /* initialize return value */
     val = PyLong_FromLong(0);
@@ -1428,13 +1429,18 @@ bit_binval(data_crs *curs) {
         return NULL;
     }
 
+    quot = bit_len / 8;  /* number of bytes completely filled */
+    rest = bit_len % 8;  /* number of bits in remaining byte */
+    byte_len = quot + (rest ? 1: 0); /* total number of data bytes */
+
     /* add the value byte by byte, python ints have no upper limit, so this
      * works even for bitstrings longer than 64 bits */
     for (i = 0; i < byte_len; i++) {
         unsigned char byte;
         PyObject *byte_val;
 
-        /* new byte, first shift the value one byte to the left */
+        /* new byte, first shift the return value one byte to the left, to make
+         * space */
         new_val = PyNumber_InPlaceLshift(val, eight);
         if (new_val == NULL)
             goto error;
