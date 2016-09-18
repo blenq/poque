@@ -657,6 +657,7 @@ class Result(c_void_p):
         LINEOID: (None, _read_line_bin),
         LINEARRAYOID: (None, _read_array_bin),
         BITOID: (_read_bit_text, _read_bit_bin),
+        BITARRAYOID: (None, _read_array_bin),
         VARBITOID: (_read_bit_text, _read_bit_bin),
     }
 

@@ -230,6 +230,10 @@ class ResultTestValues():
         self._test_value_and_type_str("SELECT B'{0}'::BIT(65)".format(val),
                                       0x1FFFFFFFFFFFFFFFF, self.poque.BITOID)
 
+    def test_bit_array_value_bin(self):
+        self._test_value_and_type_bin("SELECT ARRAY[23::BIT(8), 200::BIT(8)]",
+                                      [23, 200], self.poque.BITARRAYOID)
+
     def test_varbit_value_bin(self):
         self._test_value_and_type_bin("SELECT 23::BIT(5)::VARBIT",
                                       23, self.poque.VARBITOID)
