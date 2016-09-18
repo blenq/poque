@@ -414,6 +414,19 @@ def _read_numeric_bin(crs, length=None):
     return Decimal((sign, digits, -dscale))
 
 
+def _read_bit_text(crs, length=None):
+    val = 0
+    char_struct = struct.Struct("!c")
+    while crs.idx < crs.length:
+        val <<= 1
+        char = crs.advance_struct(char_struct)[0]
+        if char == b'1':
+            val |= 1
+        elif char != b'0':
+            raise Error('Invalid character in bit string')
+    return val
+
+
 def _read_bit_bin(crs, length=None):
     """ Reads a bitstring as a Python integer
 
@@ -643,7 +656,8 @@ class Result(c_void_p):
         NUMERICARRAYOID: (None, _read_array_bin),
         LINEOID: (None, _read_line_bin),
         LINEARRAYOID: (None, _read_array_bin),
-        BITOID: (None, _read_bit_bin),
+        BITOID: (_read_bit_text, _read_bit_bin),
+        VARBITOID: (_read_bit_text, _read_bit_bin),
     }
 
     _getvalue = pq.PQgetvalue

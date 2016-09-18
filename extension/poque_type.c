@@ -1397,6 +1397,62 @@ end:
 }
 
 static PyObject *
+bit_strval(data_crs *curs) {
+    PyObject *val, *one;
+
+    /* initialize return value */
+    val = PyLong_FromLong(0);
+    if (val == NULL)
+        return NULL;
+
+    /* initialize Python integer with value 1 */
+    one = PyLong_FromLong(1);
+    if (one == NULL) {
+        goto error_2;
+    }
+
+    /* interpret characters as bits */
+    while (curs->len) {
+        char byte;
+        PyObject *new_val;
+
+        /* new bit, shift the return value one bit to make space */
+        new_val = PyNumber_InPlaceLshift(val, one);
+        if (new_val == NULL)
+            goto error;
+        Py_DECREF(val);
+        val = new_val;
+
+        /* Get the new bit as character */
+        if (read_uint8_binval(curs, (unsigned char*)&byte) < 0)
+            goto error;
+
+        /* interpret bit */
+        if (byte == '1') {
+            /* add the bit to the return value */
+            new_val = PyNumber_InPlaceOr(val, one);
+            if (new_val == NULL)
+                goto error;
+            Py_DECREF(val);
+            val = new_val;
+        }
+        else if (byte != '0') {
+            PyErr_SetString(PoqueError, "Invalid character in bit string");
+            goto error;
+        }
+    }
+    Py_DECREF(one);
+    return val;
+
+error:
+    Py_DECREF(one);
+error_2:
+    Py_DECREF(val);
+    return NULL;
+}
+
+
+static PyObject *
 bit_binval(data_crs *curs) {
     /* Reads a bitstring as a Python integer
 
@@ -1462,6 +1518,7 @@ bit_binval(data_crs *curs) {
         Py_DECREF(val);
         val = new_val;
     }
+    Py_DECREF(eight);
     if (rest) {
         /* correct for the fact that the bitstring is left aligned */
         PyObject *shift_val;
@@ -1584,7 +1641,8 @@ static PoqueTypeEntry type_table[] = {
     {INTERVALARRAYOID, array_binval, NULL, NULL},
     {NUMERICOID, numeric_binval, numeric_strval, NULL},
     {NUMERICARRAYOID, array_binval, NULL, NULL},
-    {BITOID, bit_binval, NULL, NULL},
+    {BITOID, bit_binval, bit_strval, NULL},
+    {VARBITOID, bit_binval, bit_strval, NULL},
     {InvalidOid}
 };
 

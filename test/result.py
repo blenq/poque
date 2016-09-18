@@ -217,6 +217,43 @@ class ResultTestValues():
         self._test_value_and_type_bin("SELECT B'{0}'::BIT(65)".format(val),
                                       0x1FFFFFFFFFFFFFFFF, self.poque.BITOID)
 
+    def test_bit_value_str(self):
+        self._test_value_and_type_str("SELECT 23::BIT(5)",
+                                      23, self.poque.BITOID)
+        self._test_value_and_type_str("SELECT 260::BIT(15)",
+                                      260, self.poque.BITOID)
+        self._test_value_and_type_str("SELECT 260::BIT(16)",
+                                      260, self.poque.BITOID)
+        self._test_value_and_type_str("SELECT 260::BIT(16)",
+                                      260, self.poque.BITOID)
+        val = '1' * 65
+        self._test_value_and_type_str("SELECT B'{0}'::BIT(65)".format(val),
+                                      0x1FFFFFFFFFFFFFFFF, self.poque.BITOID)
+
+    def test_varbit_value_bin(self):
+        self._test_value_and_type_bin("SELECT 23::BIT(5)::VARBIT",
+                                      23, self.poque.VARBITOID)
+        self._test_value_and_type_bin("SELECT 260::BIT(15)::VARBIT",
+                                      260, self.poque.VARBITOID)
+        self._test_value_and_type_bin("SELECT 260::BIT(16)::VARBIT",
+                                      260, self.poque.VARBITOID)
+        val = '1' * 65
+        self._test_value_and_type_bin(
+            "SELECT B'{0}'::BIT(65)::VARBIT".format(val),
+            0x1FFFFFFFFFFFFFFFF, self.poque.VARBITOID)
+
+    def test_varbit_value_str(self):
+        self._test_value_and_type_str("SELECT 23::BIT(5)::VARBIT",
+                                      23, self.poque.VARBITOID)
+        self._test_value_and_type_str("SELECT 260::BIT(15)::VARBIT",
+                                      260, self.poque.VARBITOID)
+        self._test_value_and_type_str("SELECT 260::BIT(16)::VARBIT",
+                                      260, self.poque.VARBITOID)
+        val = '1' * 65
+        self._test_value_and_type_str(
+            "SELECT B'{0}'::BIT(65)::VARBIT".format(val),
+            0x1FFFFFFFFFFFFFFFF, self.poque.VARBITOID)
+
     def assertNumericEqual(self, val1, val2):
         self.assertEqual(val1, val2)
         # comparing tuples makes sure that values are equal including trailing
