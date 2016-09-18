@@ -41,6 +41,7 @@ PyObject *Poque_value(Oid oid, int format, char *data, int len);
 #define BITOID              1560
 #define BITARRAYOID         1561
 #define VARBITOID           1562
+#define VARBITARRAYOID      1563
 
 /* string types */
 #define CHAROID             18
