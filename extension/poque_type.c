@@ -1569,42 +1569,13 @@ static PoqueTypeEntry type_table[] = {
     {DATEOID, date_binval, NULL, NULL},
     {TIMEOID, time_binval, NULL, NULL},
     {TIMESTAMPOID, timestamp_binval, NULL, NULL},
-    {
-        TIMESTAMPTZOID,
-        timestamp_binval,
-        NULL,
-        NULL
-    }, {
-        DATEARRAYOID,
-        array_binval,
-        NULL,
-        NULL
-    }, {
-        TIMESTAMPARRAYOID,
-        array_binval,
-        NULL,
-        NULL
-    }, {
-        TIMESTAMPTZARRAYOID,
-        array_binval,
-        NULL,
-        NULL
-    }, {
-        TIMEARRAYOID,
-        array_binval,
-        NULL,
-        NULL
-    }, {
-        INTERVALOID,
-        interval_binval,
-        NULL,
-        NULL
-    }, {
-        INTERVALARRAYOID,
-        array_binval,
-        NULL,
-        NULL
-    },
+    {TIMESTAMPTZOID, timestamp_binval, NULL, NULL},
+    {DATEARRAYOID, array_binval, NULL, NULL},
+    {TIMESTAMPARRAYOID, array_binval, NULL, NULL},
+    {TIMESTAMPTZARRAYOID, array_binval, NULL, NULL},
+    {TIMEARRAYOID, array_binval, NULL, NULL},
+    {INTERVALOID, interval_binval, NULL, NULL},
+    {INTERVALARRAYOID, array_binval, NULL, NULL},
     {NUMERICOID, numeric_binval, numeric_strval, NULL},
     {NUMERICARRAYOID, array_binval, NULL, NULL},
     {BITOID, bit_binval, NULL, NULL},
