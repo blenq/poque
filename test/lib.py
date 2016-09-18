@@ -45,6 +45,7 @@ class TestLib():
         self.assertEqual(self.poque.LINEOID, 628)
         self.assertEqual(self.poque.LINEARRAYOID, 629)
         self.assertEqual(self.poque.BITOID, 1560)
+        self.assertEqual(self.poque.VARBITOID, 1562)
 
     def test_conn_defaults(self):
         d = self.poque.conn_defaults()

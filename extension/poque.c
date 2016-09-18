@@ -165,6 +165,7 @@ PyInit__poque(void)
     if (PyModule_AddIntMacro(m, CIDOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, OIDVECTOROID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, BITOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, VARBITOID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, JSONOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, JSONBOID) == -1) return NULL;
