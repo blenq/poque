@@ -1147,7 +1147,7 @@ time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
 
 
 static PyObject *
-time_binval(data_crs *curs)
+_time_binval(data_crs *curs, PyObject *tz)
 {
     PY_INT64_T value;
     int hour, minute, second, usec;
@@ -1156,12 +1156,52 @@ time_binval(data_crs *curs)
         return NULL;
     if (time_vals_from_int(value, &hour, &minute, &second, &usec) < 0)
         return NULL;
-    return PyTime_FromTime(hour, minute, second, usec);
+    return PyDateTimeAPI->Time_FromTime(hour, minute, second, usec, tz,
+                                        PyDateTimeAPI->TimeType);
 }
 
 
 static PyObject *
-timestamp_binval(data_crs *curs)
+time_binval(data_crs *curs)
+{
+    return _time_binval(curs, Py_None);
+}
+
+
+static PyObject *
+get_utc(void) {
+
+    static PyObject *utc;
+    PyObject *tz;
+
+    if (utc == NULL) {
+        tz = load_python_object("datetime", "timezone");
+        if (tz == NULL)
+            return NULL;
+        utc = PyObject_GetAttrString(tz, "utc");
+        Py_DECREF(tz);
+        if (utc == NULL)
+            return NULL;
+    }
+    return utc;
+}
+
+
+static PyObject *
+timetz_binval(data_crs *curs)
+{
+    PyObject *utc;
+
+    utc = get_utc();
+    if (utc == NULL)
+        return NULL;
+
+    return _time_binval(curs, utc);
+}
+
+
+static PyObject *
+_timestamp_binval(data_crs *curs, PyObject *tz)
 {
     PY_INT64_T value, time;
     PY_INT32_T date;
@@ -1188,10 +1228,29 @@ timestamp_binval(data_crs *curs)
         fmt = "%04i-%02i-%02i %02i:%02i:%02i.%06i BC";
     }
     else
-        return PyDateTime_FromDateAndTime(year, month, day, hour, minute,
-                                          second, usec);
+        return PyDateTimeAPI->DateTime_FromDateAndTime(
+            year, month, day, hour, minute, second, usec, tz,
+            PyDateTimeAPI->DateTimeType);
     return PyUnicode_FromFormat(fmt, year, month, day, hour, minute, second,
                                 usec);
+}
+
+
+static PyObject *
+timestamp_binval(data_crs *curs) {
+    return _timestamp_binval(curs, Py_None);
+}
+
+
+static PyObject *
+timestamptz_binval(data_crs *curs)
+{
+    PyObject *utc;
+
+    utc = get_utc();
+    if (utc == NULL)
+        return NULL;
+    return _timestamp_binval(curs, utc);
 }
 
 
@@ -1632,7 +1691,7 @@ static PoqueTypeEntry type_table[] = {
     {DATEOID, date_binval, NULL, NULL},
     {TIMEOID, time_binval, NULL, NULL},
     {TIMESTAMPOID, timestamp_binval, NULL, NULL},
-    {TIMESTAMPTZOID, timestamp_binval, NULL, NULL},
+    {TIMESTAMPTZOID, timestamptz_binval, NULL, NULL},
     {DATEARRAYOID, array_binval, NULL, NULL},
     {TIMESTAMPARRAYOID, array_binval, NULL, NULL},
     {TIMESTAMPTZARRAYOID, array_binval, NULL, NULL},

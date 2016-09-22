@@ -1,7 +1,8 @@
 from collections import deque
 from ctypes import (
     c_void_p, c_int, c_char_p, c_uint, c_char, string_at)
-from datetime import date, datetime, time, MAXYEAR, MINYEAR, timedelta
+from datetime import (
+    date, datetime, time, MAXYEAR, MINYEAR, timedelta, timezone)
 from decimal import Decimal
 import ipaddress
 import json
@@ -263,6 +264,11 @@ def _read_timestamp_bin(crs, length=8):
     else:
         return datetime(year, month, day, *time_vals)
     return fmt.format(year, month, day, *time_vals)
+
+
+def _read_timestamptz_bin(crs, length=8):
+    return datetime.replace(
+        _read_timestamp_bin(crs, length), tzinfo=timezone.utc)
 
 
 def _read_interval_bin(crs, length=16):
@@ -622,7 +628,7 @@ class Result(c_void_p):
         TIMEARRAYOID: (None, _read_array_bin),
         TIMESTAMPOID: (None, _read_timestamp_bin),
         TIMESTAMPARRAYOID: (None, _read_array_bin),
-        TIMESTAMPTZOID: (None, _read_timestamp_bin),
+        TIMESTAMPTZOID: (None, _read_timestamptz_bin),
         TIMESTAMPTZARRAYOID: (None, _read_array_bin),
         INTERVALOID: (None, _read_interval_bin),
         INTERVALARRAYOID: (None, _read_array_bin),
