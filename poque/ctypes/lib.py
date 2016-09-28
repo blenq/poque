@@ -34,3 +34,9 @@ pq.PQlibVersion.argtypes = []
 pq.PQlibVersion.restype = c_int
 
 lib_version = pq.PQlibVersion
+
+
+def _get_property(res_func):
+    def result_method(self):
+        return res_func(self)
+    return property(result_method)

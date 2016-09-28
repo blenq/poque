@@ -85,7 +85,7 @@ class ResultTestBasic():
 
     def test_ftype(self):
         self.assertEqual(self.res.ftype(0), self.poque.INT4OID)
-        self.assertEqual(self.res.ftype(3), 0)
+        self.assertEqual(self.res.ftype(column_number=3), 0)
 
     def test_fmod(self):
         self.assertEqual(self.res.fmod(0), -1)
@@ -136,21 +136,23 @@ class ResultTestValues():
         self._test_value_and_type(command, value, type_oid, 0)
 
     def test_format(self):
-        res = self.cn.execute(command="SELECT 1", fmt=0)
+        res = self.cn.execute(command="SELECT 1", result_format=0)
         self.assertEqual(res.fformat(0), 0)
 
     def test_formats(self):
-        res = self.cn.execute(command="SELECT 6::int4", fmt=0)
+        res = self.cn.execute(command="SELECT 6::int4", result_format=0)
         self.assertEqual(res.pq_getvalue(0, 0), "6")
         self.assertEqual(res.pq_getvalue(2, 3), "")
-        res = self.cn.execute(command="SELECT 'hoi'", fmt=1)
+        res = self.cn.execute(command="SELECT 'hoi'", result_format=1)
         self.assertEqual(res.pq_getvalue(0, 0), b"hoi")
         self.assertEqual(res.pq_getvalue(2, 3), "")
 
     def _test_int_getvalue(self, fmt, typ, oid):
-        res = self.cn.execute(command="SELECT 6::{0}".format(typ), fmt=fmt)
+        res = self.cn.execute(command="SELECT 6::{0}".format(typ),
+                              result_format=fmt)
         self.assertEqual(res.getvalue(0, 0), 6)
-        res = self.cn.execute(command="SELECT -1::{0}".format(typ), fmt=fmt)
+        res = self.cn.execute(command="SELECT -1::{0}".format(typ),
+                              result_format=fmt)
         self.assertEqual(res.getvalue(0, 0), -1)
         self.assertEqual(res.ftype(0), oid)
 
@@ -163,26 +165,26 @@ class ResultTestValues():
     def test_int4array_value_bin(self):
         # nested aray
         res = self.cn.execute(
-            command="SELECT '{{1,NULL,3},{4,5,6}}'::int4[][]", fmt=1)
+            command="SELECT '{{1,NULL,3},{4,5,6}}'::int4[][]", result_format=1)
         self.assertEqual(res.getvalue(0, 0), [[1, None, 3], [4, 5, 6]])
         self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
 
         # zero dimensions
         res = self.cn.execute(
-            command="SELECT '{}'::int4[][][]", fmt=1)
+            command="SELECT '{}'::int4[][][]", result_format=1)
         self.assertEqual(res.getvalue(0, 0), [])
         self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
 
         # maximum number of dimensions
         res = self.cn.execute(
-            command="SELECT '{{{{{{-1}}}}}}'::int4[][][][][]", fmt=1)
+            command="SELECT '{{{{{{-1}}}}}}'::int4[][][][][]", result_format=1)
         self.assertEqual(res.getvalue(0, 0), [[[[[[-1]]]]]])
         self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
 
         # maximum number of dimensions exceeded
         with self.assertRaises(self.poque.Error):
             self.cn.execute("SELECT '{{{{{{{-1}}}}}}}'::int4[][][][][][]",
-                            fmt=1)
+                            result_format=1)
 
     def test_int2_value_text(self):
         self._test_int_getvalue(0, 'int2', self.poque.INT2OID)
@@ -280,7 +282,7 @@ class ResultTestValues():
                     " '-0.000000000000001230'::numeric, "
                     " '9999E+100'::numeric, "
                     " '9999E-100'::numeric;",
-            fmt=fmt)
+            result_format=fmt)
         self.assertNumericEqual(res.getvalue(0, 0), Decimal('123.45600'))
         self.assertTrue(res.getvalue(0, 1).is_nan())
         self.assertNumericEqual(
@@ -306,15 +308,15 @@ class ResultTestValues():
         res = self.cn.execute(
             command="SELECT '{123.456, NULL, "
                     "123456789012345678901234567890}'::numeric[]",
-            fmt=1)
+            result_format=1)
         self.assertEqual(res.getvalue(0, 0), [
             Decimal('123.456'), None,
             Decimal('123456789012345678901234567890')])
 
     def test_bool_value_str(self):
-        res = self.cn.execute(command="SELECT true", fmt=0)
+        res = self.cn.execute(command="SELECT true", result_format=0)
         self.assertIs(res.getvalue(0, 0), True)
-        res = self.cn.execute(command="SELECT false", fmt=0)
+        res = self.cn.execute(command="SELECT false", result_format=0)
         self.assertIs(res.getvalue(0, 0), False)
 
     def test_bool_value_bin(self):
@@ -324,21 +326,21 @@ class ResultTestValues():
 
     def test_bytea_value_str(self):
         self.cn.execute("SET bytea_output TO hex")
-        res = self.cn.execute(command="SELECT 'hi'::bytea", fmt=0)
+        res = self.cn.execute(command="SELECT 'hi'::bytea", result_format=0)
         self.assertEqual(res.getvalue(0, 0), b'hi')
         self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
-        res = self.cn.execute(command="SELECT ''::bytea", fmt=0)
+        res = self.cn.execute(command="SELECT ''::bytea", result_format=0)
         self.assertEqual(res.getvalue(0, 0), b'')
         self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
-        res = self.cn.execute(command="SELECT '\t'::bytea", fmt=0)
+        res = self.cn.execute(command="SELECT '\t'::bytea", result_format=0)
         self.assertEqual(res.getvalue(0, 0), b'\t')
         self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
         self.cn.execute("SET bytea_output TO escape")
         res = self.cn.execute(command="SELECT convert_to('\t \\', 'utf8')",
-                              fmt=0)
+                              result_format=0)
         self.assertEqual(res.getvalue(0, 0), b'\t \\')
         self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
-        res = self.cn.execute(command="SELECT ''::bytea", fmt=0)
+        res = self.cn.execute(command="SELECT ''::bytea", result_format=0)
         self.assertEqual(res.getvalue(0, 0), b'')
 
     def test_bytea_value_bin(self):
@@ -350,10 +352,10 @@ class ResultTestValues():
                                       b'\t \\', self.poque.BYTEAOID)
 
     def test_char_value_str(self):
-        res = self.cn.execute(command="SELECT 'a'::\"char\"", fmt=0)
+        res = self.cn.execute(command="SELECT 'a'::\"char\"", result_format=0)
         self.assertEqual(res.getvalue(0, 0), b'a')
         self.assertEqual(res.ftype(0), self.poque.CHAROID)
-        res = self.cn.execute(command="SELECT '€'::\"char\"", fmt=0)
+        res = self.cn.execute(command="SELECT '€'::\"char\"", result_format=0)
         self.assertEqual(res.getvalue(0, 0), "€".encode()[:1])
 
     def test_char_value_bin(self):
@@ -368,12 +370,14 @@ class ResultTestValues():
         self.assertEqual(res.ftype(0), self.poque.CHARARRAYOID)
 
     def test_name_value_bin(self):
-        res = self.cn.execute(command="SELECT 'hel''lo €'::name", fmt=1)
+        res = self.cn.execute(command="SELECT 'hel''lo €'::name",
+                              result_format=1)
         self.assertEqual(res.getvalue(0, 0), "hel'lo €")
         self.assertEqual(res.ftype(0), self.poque.NAMEOID)
 
     def test_name_value_str(self):
-        res = self.cn.execute(command="SELECT 'hel''lo €'::name", fmt=0)
+        res = self.cn.execute(command="SELECT 'hel''lo €'::name",
+                              result_format=0)
         self.assertEqual(res.getvalue(0, 0), "hel'lo €")
         self.assertEqual(res.ftype(0), self.poque.NAMEOID)
 
@@ -391,12 +395,13 @@ class ResultTestValues():
                                       self.poque.UNKNOWNOID)
 
     def test_null_value_str(self):
-        res = self.cn.execute(command="SELECT NULL", fmt=0)
+        res = self.cn.execute(command="SELECT NULL", result_format=0)
         self.assertIsNone(res.getvalue(0, 0))
         self.assertEqual(res.getlength(0, 0), 0)
 
     def test_int2vector_value_bin(self):
-        res = self.cn.execute(command="SELECT '6 8'::int2vector", fmt=1)
+        res = self.cn.execute(command="SELECT '6 8'::int2vector",
+                              result_format=1)
         self.assertEqual(res.getvalue(0, 0), [6, 8])
         self.assertEqual(res.ftype(0), self.poque.INT2VECTOROID)
 
@@ -408,11 +413,11 @@ class ResultTestValues():
     def test_regproc_value_bin(self):
         res = self.cn.execute(
             "SELECT oid::int4, oid::regproc FROM pg_catalog.pg_proc "
-            "WHERE proname='int4recv'", fmt=1)
+            "WHERE proname='int4recv'", result_format=1)
         self.assertEqual(res.getvalue(0, 0), res.getvalue(0, 1))
         self.assertEqual(res.ftype(1), self.poque.REGPROCOID)
         res = self.cn.execute(
-            "SELECT 1::regproc", fmt=1)
+            "SELECT 1::regproc", result_format=1)
         self.assertEqual(res.getvalue(0, 0), 1)
         self.assertEqual(res.ftype(0), self.poque.REGPROCOID)
 
@@ -428,30 +433,30 @@ class ResultTestValues():
     def test_regproc_value_str(self):
         res = self.cn.execute(
             "SELECT oid::regproc FROM pg_catalog.pg_proc "
-            "WHERE proname='int4recv'", fmt=0)
+            "WHERE proname='int4recv'", result_format=0)
         self.assertEqual(res.getvalue(0, 0), 'int4recv')
         self.assertEqual(res.ftype(0), self.poque.REGPROCOID)
         res = self.cn.execute(
-            "SELECT 1::regproc", fmt=0)
+            "SELECT 1::regproc", result_format=0)
         self.assertEqual(res.getvalue(0, 0), '1')
         self.assertEqual(res.ftype(0), self.poque.REGPROCOID)
 
     def test_text_value_bin(self):
-        res = self.cn.execute("SELECT 'hello'::text", fmt=1)
+        res = self.cn.execute("SELECT 'hello'::text", result_format=1)
         self.assertEqual(res.getvalue(0, 0), 'hello')
         self.assertEqual(res.ftype(0), self.poque.TEXTOID)
-        res = self.cn.execute("SELECT ''::text", fmt=1)
+        res = self.cn.execute("SELECT ''::text", result_format=1)
         self.assertEqual(res.getvalue(0, 0), '')
         self.assertEqual(res.ftype(0), self.poque.TEXTOID)
 
     def test_text_value_str(self):
-        res = self.cn.execute("SELECT 'hello'::text", fmt=0)
+        res = self.cn.execute("SELECT 'hello'::text", result_format=0)
         self.assertEqual(res.getvalue(0, 0), 'hello')
         self.assertEqual(res.ftype(0), self.poque.TEXTOID)
-        res = self.cn.execute("SELECT E'he\nllo'::text", fmt=0)
+        res = self.cn.execute("SELECT E'he\nllo'::text", result_format=0)
         self.assertEqual(res.getvalue(0, 0), 'he\nllo')
         self.assertEqual(res.ftype(0), self.poque.TEXTOID)
-        res = self.cn.execute("SELECT ''::text", fmt=0)
+        res = self.cn.execute("SELECT ''::text", result_format=0)
         self.assertEqual(res.getvalue(0, 0), '')
         self.assertEqual(res.ftype(0), self.poque.TEXTOID)
 
@@ -466,7 +471,7 @@ class ResultTestValues():
         self.assertEqual(res.ftype(0), self.poque.BPCHAROID)
 
     def test_bpchar_value_str(self):
-        res = self.cn.execute("SELECT 'hello'::char(6)", fmt=0)
+        res = self.cn.execute("SELECT 'hello'::char(6)", result_format=0)
         self.assertEqual(res.getvalue(0, 0), 'hello ')
         self.assertEqual(res.ftype(0), self.poque.BPCHAROID)
 
@@ -476,7 +481,7 @@ class ResultTestValues():
         self.assertEqual(res.ftype(0), self.poque.BPCHARARRAYOID)
 
     def _test_varchar_getvalue(self, fmt):
-        res = self.cn.execute("SELECT 'hello'::varchar(6)", fmt=fmt)
+        res = self.cn.execute("SELECT 'hello'::varchar(6)", result_format=fmt)
         self.assertEqual(res.getvalue(0, 0), 'hello')
         self.assertEqual(res.ftype(0), self.poque.VARCHAROID)
 
@@ -503,7 +508,7 @@ class ResultTestValues():
         self._test_value_and_type_bin("SELECT 3::oid", 3, self.poque.OIDOID)
 
     def test_oid_value_str(self):
-        res = self.cn.execute("SELECT 3::oid", fmt=0)
+        res = self.cn.execute("SELECT 3::oid", result_format=0)
         self.assertEqual(res.getvalue(0, 0), 3)
         self.assertEqual(res.ftype(0), self.poque.OIDOID)
 
@@ -516,7 +521,7 @@ class ResultTestValues():
                                       self.poque.TIDOID)
 
     def test_tid_value_str(self):
-        res = self.cn.execute("SELECT '(3, 4)'::tid", fmt=0)
+        res = self.cn.execute("SELECT '(3, 4)'::tid", result_format=0)
         self.assertEqual(res.getvalue(0, 0), (3, 4))
         self.assertEqual(res.ftype(0), self.poque.TIDOID)
 
@@ -530,7 +535,7 @@ class ResultTestValues():
                                       self.poque.XIDOID)
 
     def test_xid_value_str(self):
-        res = self.cn.execute("SELECT '2147483648'::xid;", fmt=0)
+        res = self.cn.execute("SELECT '2147483648'::xid;", result_format=0)
         self.assertEqual(res.getvalue(0, 0), 2147483648)
         self.assertEqual(res.ftype(0), self.poque.XIDOID)
 
@@ -543,7 +548,7 @@ class ResultTestValues():
                                       self.poque.CIDOID)
 
     def test_cid_value_str(self):
-        res = self.cn.execute("SELECT '2147483648'::cid;", fmt=0)
+        res = self.cn.execute("SELECT '2147483648'::cid;", result_format=0)
         self.assertEqual(res.getvalue(0, 0), 2147483648)
         self.assertEqual(res.ftype(0), self.poque.CIDOID)
 
@@ -561,12 +566,12 @@ class ResultTestValues():
             [[3, 8, 2147483648], None, [7, 3]], self.poque.OIDVECTORARRAYOID)
 
     def test_float8_value_bin(self):
-        res = self.cn.execute("SELECT 1.4::float8", fmt=1)
+        res = self.cn.execute("SELECT 1.4::float8", result_format=1)
         self.assertAlmostEqual(res.getvalue(0, 0), 1.4)
         self.assertEqual(res.ftype(0), self.poque.FLOAT8OID)
 
     def test_float8_value_str(self):
-        res = self.cn.execute("SELECT 1.4::float8", fmt=0)
+        res = self.cn.execute("SELECT 1.4::float8", result_format=0)
         self.assertAlmostEqual(res.getvalue(0, 0), 1.4)
         self.assertEqual(res.ftype(0), self.poque.FLOAT8OID)
 
@@ -582,12 +587,12 @@ class ResultTestValues():
         self.assertEqual(res.ftype(0), self.poque.FLOAT8ARRAYOID)
 
     def test_float4_value_bin(self):
-        res = self.cn.execute("SELECT 1.4::float4", fmt=1)
+        res = self.cn.execute("SELECT 1.4::float4", result_format=1)
         self.assertAlmostEqual(res.getvalue(0, 0), 1.4)
         self.assertEqual(res.ftype(0), self.poque.FLOAT4OID)
 
     def test_float4_value_str(self):
-        res = self.cn.execute("SELECT 1.4::float4", fmt=0)
+        res = self.cn.execute("SELECT 1.4::float4", result_format=0)
         self.assertAlmostEqual(res.getvalue(0, 0), 1.4)
         self.assertEqual(res.ftype(0), self.poque.FLOAT4OID)
 
@@ -607,7 +612,7 @@ class ResultTestValues():
                                       {"hi": 23}, self.poque.JSONOID)
 
     def test_json_value_str(self):
-        res = self.cn.execute("SELECT '{\"hi\": 23}'::json", fmt=0)
+        res = self.cn.execute("SELECT '{\"hi\": 23}'::json", result_format=0)
         self.assertEqual(res.getvalue(0, 0), {"hi": 23})
         self.assertEqual(res.ftype(0), self.poque.JSONOID)
 
@@ -621,7 +626,7 @@ class ResultTestValues():
                                       {"hi": 23}, self.poque.JSONBOID)
 
     def test_jsonb_value_str(self):
-        res = self.cn.execute("SELECT '{\"hi\": 23}'::jsonb", fmt=0)
+        res = self.cn.execute("SELECT '{\"hi\": 23}'::jsonb", result_format=0)
         self.assertEqual(res.getvalue(0, 0), {"hi": 23})
         self.assertEqual(res.ftype(0), self.poque.JSONBOID)
 
@@ -635,7 +640,7 @@ class ResultTestValues():
                                       '<el>hi</el>', self.poque.XMLOID)
 
     def test_xml_value_str(self):
-        res = self.cn.execute("SELECT '<el>hi</el>'::xml", fmt=0)
+        res = self.cn.execute("SELECT '<el>hi</el>'::xml", result_format=0)
         self.assertEqual(res.getvalue(0, 0), '<el>hi</el>')
         self.assertEqual(res.ftype(0), self.poque.XMLOID)
 
@@ -654,7 +659,7 @@ class ResultTestValues():
         self.assertAlmostEqual(point[1], vals[1])
 
     def test_point_value_bin(self):
-        res = self.cn.execute("SELECT '(1.24, 3.4)'::point;", fmt=1)
+        res = self.cn.execute("SELECT '(1.24, 3.4)'::point;", result_format=1)
         val = res.getvalue(0, 0)
         self.assert_point(val, (1.24, 3.4))
         self.assertEqual(res.ftype(0), self.poque.POINTOID)
@@ -686,7 +691,7 @@ class ResultTestValues():
 
     def test_lseg_value_bin(self):
         res = self.cn.execute("SELECT '((1.3, 3.45), (2, 5.6))'::lseg;",
-                              fmt=1)
+                              result_format=1)
         val = res.getvalue(0, 0)
         self.assert_lseg(val, ((1.3, 3.45), (2, 5.6)))
         self.assertEqual(res.ftype(0), self.poque.LSEGOID)
@@ -914,7 +919,8 @@ class ResultTestValues():
 
     def test_uuid_value_bin(self):
         val = uuid4()
-        res = self.cn.execute("SELECT '{0}'::uuid".format(val), fmt=1)
+        res = self.cn.execute("SELECT '{0}'::uuid".format(val),
+                              result_format=1)
         v = res.getvalue(0, 0)
         self.assertEqual(sys.getrefcount(v), 2)
         self.assertEqual(v, val)
@@ -924,7 +930,8 @@ class ResultTestValues():
 
     def test_uuid_value_str(self):
         val = uuid4()
-        res = self.cn.execute("SELECT '{0}'::uuid".format(val), fmt=0)
+        res = self.cn.execute("SELECT '{0}'::uuid".format(val),
+                              result_format=0)
         v = res.getvalue(0, 0)
         self.assertEqual(sys.getrefcount(v), 2)
         self.assertEqual(v, val)

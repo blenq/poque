@@ -11,7 +11,7 @@ from uuid import UUID
 
 from .pq import pq, check_string
 from .constants import *
-from .lib import Error
+from .lib import Error, _get_property
 from codecs import getdecoder
 
 NUMERIC_NAN = 0xC000
@@ -52,10 +52,8 @@ class _crs():
         return sct.unpack_from(self.data, offset=self.advance(sct.size))
 
     def advance_bytes(self, length=None):
-        if length is None:
-            length = self.length - self.idx
         idx = self.advance(length)
-        return self.data[idx:idx + length]
+        return self.data[idx:self.idx]
 
     def advance_text(self, length=None):
         return self.advance_bytes(length).decode()
@@ -496,82 +494,49 @@ def _read_array_bin(crs, length=None):
     return _get_array_value(crs, array_dims, reader)
 
 
+def _get_result_column_method(res_func):
+    def result_method(self, column_number):
+        return res_func(self, column_number)
+    return result_method
+
+
 class Result(c_void_p):
 
-    @property
-    def status(self):
-        return pq.PQresultStatus(self)
+    status = _get_property(pq.PQresultStatus)
+    ntuples = _get_property(pq.PQntuples)
+    nfields = _get_property(pq.PQnfields)
+    nparams = _get_property(pq.PQnparams)
+    error_message = _get_property(pq.PQresultErrorMessage)
 
-    @property
-    def ntuples(self):
-        return pq.PQntuples(self)
-
-    @property
-    def nfields(self):
-        return pq.PQnfields(self)
-
-    @property
-    def nparams(self):
-        return pq.PQnparams(self)
-
-    @property
-    def error_message(self):
-        return pq.PQresultErrorMessage(self)
-
-    _fformat = pq.PQfformat
-
-    def fformat(self, column_number):
-        return self._fformat(self, column_number)
-
-    def fmod(self, column_number):
-        return pq.PQfmod(self, column_number)
-
-    def fname(self, column_number):
-        return pq.PQfname(self, column_number)
-
-    def fsize(self, column_number):
-        return pq.PQfsize(self, column_number)
-
-    def ftable(self, column_number):
-        return pq.PQftable(self, column_number)
-
-    def ftablecol(self, column_number):
-        return pq.PQftablecol(self, column_number)
-
-    _ftype = pq.PQftype
-
-    def ftype(self, column_number):
-        return self._ftype(self, column_number)
+    fformat = _get_result_column_method(pq.PQfformat)
+    fmod = _get_result_column_method(pq.PQfmod)
+    fname = _get_result_column_method(pq.PQfname)
+    fsize = _get_result_column_method(pq.PQfsize)
+    ftable = _get_result_column_method(pq.PQftable)
+    ftablecol = _get_result_column_method(pq.PQftablecol)
+    ftype = _get_result_column_method(pq.PQftype)
 
     def fnumber(self, column_name):
         return pq.PQfnumber(self, column_name.encode())
 
-    _getlength = pq.PQgetlength
-
     def getlength(self, row_number, column_number):
-        return self._getlength(self, row_number, column_number)
-
-    _getisnull = pq.PQgetisnull
+        return pq.PQgetlength(self, row_number, column_number)
 
     def getisnull(self, row_number, column_number):
-        return bool(self._getisnull(self, row_number, column_number))
+        return bool(pq.PQgetisnull(self, row_number, column_number))
 
     def clear(self):
-        self._clear(self)
+        pq.PQclear(self)
         self.value = 0
 
     def __del__(self):
         self.clear()
 
-    _clear = pq.PQclear
-
     def pq_getvalue(self, row_number, column_number):
         data = pq.PQgetvalue(self, row_number, column_number)
-        length = self._getlength(self, row_number, column_number)
+        length = self.getlength(row_number, column_number)
         data = string_at(data, length)
-        if self._fformat(self, column_number) == 1:
-            return data
-        return data.decode()
+        return data if self.fformat(column_number) == 1 else data.decode()
 
     _converters = {
         FLOAT4OID: (_read_float_text, _read_float4_bin),
@@ -668,15 +633,13 @@ class Result(c_void_p):
         VARBITARRAYOID: (None, _read_array_bin),
     }
 
-    _getvalue = pq.PQgetvalue
-
     def getvalue(self, row_number, column_number):
         # first check for NULL values
-        if self._getisnull(self, row_number, column_number):
+        if self.getisnull(row_number, column_number):
             return None
 
         # get the type oid
-        toid = self._ftype(self, column_number)
+        toid = self.ftype(column_number)
 
         try:
             # try to find the proper converters
@@ -686,11 +649,11 @@ class Result(c_void_p):
             pass
         else:
             # get the proper reader for text or binary
-            reader = readers[self._fformat(self, column_number)]
+            reader = readers[self.fformat(column_number)]
             if reader:
                 # create a cursor from the address and length
-                data = self._getvalue(self, row_number, column_number)
-                length = self._getlength(self, row_number, column_number)
+                data = pq.PQgetvalue(self, row_number, column_number)
+                length = self.getlength(row_number, column_number)
                 crs = _crs(data, length)
 
                 # convert the data in the cursor

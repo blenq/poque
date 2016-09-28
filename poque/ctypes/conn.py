@@ -1,9 +1,8 @@
-from ctypes import c_void_p, c_char_p, POINTER, c_int, Structure, c_uint
-import functools
+from ctypes import c_void_p, c_char_p, POINTER, c_int, c_uint
 
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
 from .constants import CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR
-from .lib import Error
+from .lib import Error, _get_property
 from .result import Result
 
 
@@ -11,24 +10,10 @@ def new_connstring(connstring, async=False):
     return [connstring], async
 
 
-class Property():
-
-    def __init__(self, callable):
-        self.callable = callable
-
-    def __get__(self, instance, owner):
-        return self.callable(instance)
-
-
-class Method():
-
-    def __init__(self, callable):
-        self.callable = callable
-
-    def __get__(self, instance, owner):
-        def func(*args, **kwargs):
-            return self.callable(instance, *args, **kwargs)
-        return func
+def get_method(func):
+    def method(self):
+        return func(self)
+    return method
 
 
 class Conn(c_void_p):
@@ -60,28 +45,23 @@ class Conn(c_void_p):
     def __init__(self, *args, **kwargs):
         pass
 
-    connect_poll = Method(pq.PQconnectPoll)
+    connect_poll = get_method(pq.PQconnectPoll)
 
-    backend_pid = Property(pq.PQbackendPID)
-    transaction_status = Property(pq.PQtransactionStatus)
-    protocol_version = Property(pq.PQprotocolVersion)
-    server_version = Property(pq.PQserverVersion)
-    status = Property(pq.PQstatus)
-    db = Property(pq.PQdb)
-    error_message = Property(pq.PQerrorMessage)
-    user = Property(pq.PQuser)
-    password = Property(pq.PQpass)
-    port = Property(pq.PQport)
-    host = Property(pq.PQhost)
-    options = Property(pq.PQoptions)
-    info = Method(pq.PQconninfo)
-    _fileno = Property(pq.PQsocket)
+    backend_pid = _get_property(pq.PQbackendPID)
+    transaction_status = _get_property(pq.PQtransactionStatus)
+    protocol_version = _get_property(pq.PQprotocolVersion)
+    server_version = _get_property(pq.PQserverVersion)
+    status = _get_property(pq.PQstatus)
+    db = _get_property(pq.PQdb)
+    error_message = _get_property(pq.PQerrorMessage)
+    user = _get_property(pq.PQuser)
+    password = _get_property(pq.PQpass)
+    port = _get_property(pq.PQport)
+    host = _get_property(pq.PQhost)
+    options = _get_property(pq.PQoptions)
 
-    def fileno(self):
-        fileno = self._fileno
-        if fileno == -1:
-            raise ValueError("Connection is closed")
-        return fileno
+    info = get_method(pq.PQconninfo)
+    fileno = get_method(pq.PQsocket)
 
     def parameter_status(self, param_name):
         if param_name is not None:
@@ -90,17 +70,13 @@ class Conn(c_void_p):
             param_name = param_name.encode()
         return pq.PQparameterStatus(self, param_name)
 
-    def reset(self):
-        pq.PQreset(self)
-
-    def reset_start(self):
-        return pq.PQresetStart(self)
-
-    def reset_poll(self):
-        return pq.PQresetPoll(self)
+    reset = get_method(pq.PQreset)
+    reset_start = get_method(pq.PQresetStart)
+    reset_poll = get_method(pq.PQresetPoll)
+    _finish = get_method(pq.PQfinish)
 
     def finish(self):
-        pq.PQfinish(self)
+        self._finish()
         self.value = 0
 
     def _raise_error(self):
@@ -111,9 +87,10 @@ class Conn(c_void_p):
     def __del__(self):
         self.finish()
 
-    def execute(self, command, fmt=1):
+    def execute(self, command, parameters=None, result_format=1):
+
         return pq.PQexecParams(
-            self, command.encode(), 0, None, None, None, None, fmt)
+            self, command.encode(), 0, None, None, None, None, result_format)
 
 
 def check_connect(conn, func, args):
@@ -181,8 +158,15 @@ pq.PQprotocolVersion.argtypes = [Conn]
 pq.PQserverVersion.restype = int
 pq.PQserverVersion.argtypes = [Conn]
 
+
+def check_fileno(res, func, args):
+    if res == -1:
+        raise ValueError("Connection is closed")
+    return res
+
 pq.PQsocket.restype = int
 pq.PQsocket.argtypes = [Conn]
+pq.PQsocket.errcheck = check_fileno
 
 pq.PQdb.restype = c_char_p
 pq.PQdb.argtypes = [Conn]

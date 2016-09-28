@@ -197,7 +197,7 @@ Conn_execute(poque_Conn *self, PyObject *args, PyObject *kwds) {
     PGresult *res;
     ExecStatusType res_status;
 
-    static char *kwlist[] = {"command", "fmt", NULL};
+    static char *kwlist[] = {"command", "result_format", NULL};
     if (!PyArg_ParseTupleAndKeywords(
             args, kwds, "s|i", kwlist, &sql, &format))
         return NULL;
