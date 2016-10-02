@@ -1180,8 +1180,6 @@ get_utc(void) {
             return NULL;
         utc = PyObject_GetAttrString(tz, "utc");
         Py_DECREF(tz);
-        if (utc == NULL)
-            return NULL;
     }
     return utc;
 }

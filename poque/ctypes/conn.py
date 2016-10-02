@@ -1,8 +1,16 @@
-from ctypes import c_void_p, c_char_p, POINTER, c_int, c_uint
+from ctypes import (
+    c_void_p, c_char_p, POINTER, c_int, c_uint, create_string_buffer, cast)
+import datetime
+import struct
+from uuid import UUID
 
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
-from .constants import CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR
-from .lib import Error, _get_property
+from .constants import (
+    CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID, INT4OID, INT8OID,
+    FLOAT8OID, BOOLOID, BYTEAOID, UUIDOID, FORMAT_BINARY,
+    FORMAT_TEXT)
+from .dt import get_date_time_param_converters
+from .lib import Error, _get_property, get_method
 from .result import Result
 
 
@@ -10,10 +18,47 @@ def new_connstring(connstring, async=False):
     return [connstring], async
 
 
-def get_method(func):
-    def method(self):
-        return func(self)
-    return method
+def _get_str_param(val):
+    val = val.encode()
+    return TEXTOID, c_char_p(val), len(val), FORMAT_BINARY
+
+
+def _get_int_param(val):
+    if val >= -0x80000000 and val <= 0x7FFFFFFF:
+        length = 4
+        fmt = "!i"
+        oid = INT4OID
+    elif val >= -0x8000000000000000 and val <= 0x7FFFFFFFFFFFFFFF:
+        length = 8
+        fmt = "!q"
+        oid = INT8OID
+    else:
+        return _get_str_param(str(val))
+    ret = create_string_buffer(length)
+    struct.pack_into(fmt, ret, 0, val)
+    return oid, cast(ret, c_char_p), length, FORMAT_BINARY
+
+
+def _get_float_param(val):
+    ret = create_string_buffer(8)
+    struct.pack_into("!d", ret, 0, val)
+    return FLOAT8OID, cast(ret, c_char_p), 8, FORMAT_BINARY
+
+
+def _get_bool_param(val):
+    return BOOLOID, c_char_p(b'\x01' if val else b'\0'), 1, FORMAT_BINARY
+
+
+def _get_bytes_param(val):
+    return BYTEAOID, c_char_p(val), len(val), FORMAT_BINARY
+
+
+def _get_none_param(val):
+    return TEXTOID, 0, 0, FORMAT_BINARY
+
+
+def _get_uuid_param(val):
+    return UUIDOID, c_char_p(val.bytes), 16, FORMAT_BINARY
 
 
 class Conn(c_void_p):
@@ -87,10 +132,35 @@ class Conn(c_void_p):
     def __del__(self):
         self.finish()
 
-    def execute(self, command, parameters=None, result_format=1):
+    _param_converters = {
+        str: _get_str_param,
+        int: _get_int_param,
+        float: _get_float_param,
+        bool: _get_bool_param,
+        bytes: _get_bytes_param,
+        type(None): _get_none_param,
+        UUID: _get_uuid_param,
+    }
+    _param_converters.update(get_date_time_param_converters())
 
+    def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
+        if not parameters:
+            return pq.PQexecParams(self, command.encode(), 0, None, None, None,
+                                   None, result_format)
+        num_params = len(parameters)
+        oids = (c_uint * num_params)()
+        values = (c_char_p * num_params)()
+        lengths = (c_int * num_params)()
+        formats = (c_int * num_params)()
+        for i, param in enumerate(parameters):
+            conv = self._param_converters.get(type(param))
+            if conv is None:
+                param = str(param)
+                conv = _get_str_param
+            oids[i], values[i], lengths[i], formats[i] = conv(param)
         return pq.PQexecParams(
-            self, command.encode(), 0, None, None, None, None, result_format)
+            self, command.encode(), num_params, oids, values, lengths,
+            formats, result_format)
 
 
 def check_connect(conn, func, args):
@@ -216,6 +286,6 @@ def check_exec_params(res, func, args):
 
 pq.PQexecParams.restype = Result
 pq.PQexecParams.argtypes = [
-    Conn, c_char_p, c_int, POINTER(c_uint), POINTER(c_void_p), POINTER(c_int),
+    Conn, c_char_p, c_int, POINTER(c_uint), POINTER(c_char_p), POINTER(c_int),
     POINTER(c_int), c_int]
 pq.PQexecParams.errcheck = check_exec_params

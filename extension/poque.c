@@ -189,6 +189,7 @@ PyInit__poque(void)
     if (PyModule_AddIntMacro(m, TINTERVALOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, DATEOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, TIMEOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, TIMETZOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, TIMESTAMPOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, TIMESTAMPARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, DATEARRAYOID) == -1) return NULL;

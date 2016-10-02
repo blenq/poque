@@ -1,6 +1,6 @@
 import unittest
 
-from .config import BaseExtensionTest, BaseCTypesTest
+from test.config import BaseExtensionTest, BaseCTypesTest
 
 
 def assert_is_conninfo(self, info):
@@ -48,6 +48,7 @@ class TestLib():
         self.assertEqual(self.poque.VARBITOID, 1562)
         self.assertEqual(self.poque.BITARRAYOID, 1561)
         self.assertEqual(self.poque.VARBITARRAYOID, 1563)
+        self.assertEqual(self.poque.TIMETZOID, 1266)
 
     def test_conn_defaults(self):
         d = self.poque.conn_defaults()

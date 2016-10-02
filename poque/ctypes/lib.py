@@ -40,3 +40,9 @@ def _get_property(res_func):
     def result_method(self):
         return res_func(self)
     return property(result_method)
+
+
+def get_method(func):
+    def method(self):
+        return func(self)
+    return method

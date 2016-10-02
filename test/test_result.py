@@ -7,11 +7,12 @@ import weakref
 
 import poque
 
-from . import config
-from .config import BaseExtensionTest, BaseCTypesTest
+from test import config
+from test.config import BaseExtensionTest, BaseCTypesTest
 
 from uuid import uuid4, UUID
-from poque.ctypes.constants import LINEOID, LINEARRAYOID
+from poque.ctypes.constants import (
+    LINEOID, LINEARRAYOID, FORMAT_BINARY, FORMAT_TEXT)
 
 
 class ResultTestBasic():
@@ -24,7 +25,7 @@ class ResultTestBasic():
         self.assertIsNotNone(self.res)
 
     def test_weakref(self):
-        self.assertEquals(weakref.ref(self.res)(), self.res)
+        self.assertEqual(weakref.ref(self.res)(), self.res)
 
     def test_ntuples(self):
         self.assertEqual(self.res.ntuples, 1)
@@ -112,6 +113,14 @@ class ResultTestBasicCtypes(
 
 class ResultTestValues():
 
+    @classmethod
+    def setUpClass(cls):
+        cls.started = datetime.datetime.now()
+
+    @classmethod
+    def tearDownClass(cls):
+        print("{0}: {1}".format(cls, datetime.datetime.now() - cls.started))
+
     def setUp(self):
         self.cn = self.poque.Conn(config.conninfo())
 
@@ -124,16 +133,16 @@ class ResultTestValues():
         res = self.cn.execute("SELECT 1")
         self.assertIs(res.getisnull(0, 0), False)
 
-    def _test_value_and_type(self, command, value, type_oid, format):
-        res = self.cn.execute(command, format)
+    def _test_value_and_type(self, command, value, type_oid, result_format):
+        res = self.cn.execute(command, result_format=result_format)
         self.assertEqual(res.getvalue(0, 0), value)
         self.assertEqual(res.ftype(0), type_oid)
 
     def _test_value_and_type_bin(self, command, value, type_oid):
-        self._test_value_and_type(command, value, type_oid, 1)
+        self._test_value_and_type(command, value, type_oid, FORMAT_BINARY)
 
     def _test_value_and_type_str(self, command, value, type_oid):
-        self._test_value_and_type(command, value, type_oid, 0)
+        self._test_value_and_type(command, value, type_oid, FORMAT_TEXT)
 
     def test_format(self):
         res = self.cn.execute(command="SELECT 1", result_format=0)
@@ -982,6 +991,19 @@ class ResultTestValues():
             "SELECT ARRAY['2013-04-02 13:09:25.123'::timestamp, NULL]",
             [datetime.datetime(2013, 4, 2, 13, 9, 25, 123000), None],
             self.poque.TIMESTAMPARRAYOID)
+
+    def test_timetz_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT '14:12+00:30'::timetz",
+            datetime.time(
+                14, 12, tzinfo=datetime.timezone(datetime.timedelta(seconds=1800))),
+            self.poque.TIMETZOID)
+
+        self._test_value_and_type_bin(
+            "SELECT '14:12-04:00'::timetz",
+            datetime.time(
+                14, 12, tzinfo=datetime.timezone(datetime.timedelta(hours=-4))),
+            self.poque.TIMETZOID)
 
     def test_timestamptz_value_bin(self):
         self._test_value_and_type_bin(

@@ -3,9 +3,9 @@ import unittest
 import weakref
 
 
-from . import config
-from .config import BaseExtensionTest, BaseCTypesTest
-from .lib import assert_is_conninfo
+from test import config
+from test.config import BaseExtensionTest, BaseCTypesTest
+from test.test_lib import assert_is_conninfo
 
 
 class TestConnectionOpen():
@@ -13,28 +13,28 @@ class TestConnectionOpen():
     def test_connect_params(self):
         kwargs = config.connparams()
         cn = self.poque.connect(**kwargs)
-        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
+        self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_params_expand(self):
         connstring = config.conninfo()
         cn = self.poque.Conn(dbname=connstring, expand_dbname=True)
-        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
+        self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_conninfo(self):
         connstring = config.conninfo()
         cn = self.poque.Conn(connstring)
-        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
+        self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_url(self):
         connstring = config.connurl()
         cn = self.poque.Conn(connstring)
-        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
+        self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_params_invalid_arg(self):
         kwargs = config.connstringparams()
         kwargs['yoyo'] = None
         cn = self.poque.Conn(**kwargs)
-        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
+        self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_wrong_params(self):
         with self.assertRaises(self.poque.Error):
@@ -81,7 +81,7 @@ class TestConnectionBasic():
         self.assertIn(self.cn.protocol_version, [2, 3])
 
     def test_transaction_status(self):
-        self.assertEquals(self.cn.transaction_status, self.poque.TRANS_IDLE)
+        self.assertEqual(self.cn.transaction_status, self.poque.TRANS_IDLE)
 
     def test_server_version(self):
         self.assertIsInstance(self.cn.server_version, int)
@@ -93,7 +93,7 @@ class TestConnectionBasic():
         self.assertIsInstance(self.cn.backend_pid, int)
 
     def test_parameter_status(self):
-        self.assertEquals(self.cn.parameter_status('client_encoding'), 'UTF8')
+        self.assertEqual(self.cn.parameter_status('client_encoding'), 'UTF8')
 
     def test_parameter_status_wrong(self):
         self.assertIsNone(self.cn.parameter_status('nonsense'))
@@ -107,7 +107,7 @@ class TestConnectionBasic():
 
     def test_reset(self):
         self.cn.reset()
-        self.assertEquals(self.cn.status, self.poque.CONNECTION_OK)
+        self.assertEqual(self.cn.status, self.poque.CONNECTION_OK)
 
     def test_reset_async(self):
         cn = self.cn
@@ -119,14 +119,14 @@ class TestConnectionBasic():
             elif state == self.poque.POLLING_READING:
                 select.select([cn], [], [])
             state = cn.reset_poll()
-        self.assertEquals(cn.status, self.poque.CONNECTION_OK)
+        self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
     def test_finish(self):
         self.cn.finish()
-        self.assertEquals(self.cn.status, self.poque.CONNECTION_BAD)
+        self.assertEqual(self.cn.status, self.poque.CONNECTION_BAD)
 
     def test_weakref(self):
-        self.assertEquals(weakref.ref(self.cn)(), self.cn)
+        self.assertEqual(weakref.ref(self.cn)(), self.cn)
 
 
 class TestConnectionBasicExtension(
@@ -167,13 +167,13 @@ class TestConnectionClosed():
         self.assertIsNone(self.cn.options)
 
     def test_protocol_version(self):
-        self.assertEquals(self.cn.protocol_version, 0)
+        self.assertEqual(self.cn.protocol_version, 0)
 
     def test_transaction_status(self):
-        self.assertEquals(self.cn.transaction_status, self.poque.TRANS_UNKNOWN)
+        self.assertEqual(self.cn.transaction_status, self.poque.TRANS_UNKNOWN)
 
     def test_server_version(self):
-        self.assertEquals(self.cn.server_version, 0)
+        self.assertEqual(self.cn.server_version, 0)
 
     def test_fileno(self):
         with self.assertRaises(ValueError):
@@ -183,7 +183,7 @@ class TestConnectionClosed():
         self.assertIsNone(self.cn.parameter_status('client_encoding'))
 
     def test_backend_pid(self):
-        self.assertEquals(self.cn.backend_pid, 0)
+        self.assertEqual(self.cn.backend_pid, 0)
 
     def test_reset(self):
         with self.assertRaises(ValueError):
@@ -199,7 +199,7 @@ class TestConnectionClosed():
 
     def test_finish(self):
         self.cn.finish()
-        self.assertEquals(self.cn.status, self.poque.CONNECTION_BAD)
+        self.assertEqual(self.cn.status, self.poque.CONNECTION_BAD)
 
 
 class TestConnectionClosedExtension(

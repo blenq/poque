@@ -1,17 +1,14 @@
-from collections import deque
-from ctypes import (
-    c_void_p, c_int, c_char_p, c_uint, c_char, string_at)
-from datetime import (
-    date, datetime, time, MAXYEAR, MINYEAR, timedelta, timezone)
+from ctypes import (c_void_p, c_int, c_char_p, c_uint, c_char, string_at)
 from decimal import Decimal
 import ipaddress
 import json
-import struct
 from uuid import UUID
 
 from .pq import pq, check_string
 from .constants import *
-from .lib import Error, _get_property
+from .cursor import ValueCursor
+from .dt import get_date_time_converters
+from .lib import Error, _get_property, get_method
 from codecs import getdecoder
 
 NUMERIC_NAN = 0xC000
@@ -19,368 +16,200 @@ NUMERIC_POS = 0x0000
 NUMERIC_NEG = 0x4000
 
 
-class _crs():
-    """ Cursor object to traverse through postgresql data value """
-
-    def __init__(self, data, length):
-        # a ctypes fixed length array implements the buffer interface, and
-        # is therefore accessible by the struct module
-        self.data = (c_char * length).from_address(data)
-
-        self.length = length
-        self.idx = 0
-
-    def advance(self, length=None):
-        if length is None:
-            # just advance until the end
-            length = self.length - self.idx
-        elif self.idx + length > self.length:
-            # check
-            raise Error("Item length exceeds data length")
-
-        # actually advance the cursor and return the previous index
-        ret = self.idx
-        self.idx += length
-        return ret
-
-    def advance_struct_format(self, fmt):
-        # read values from the cursor according to the provided struct format
-        length = struct.calcsize(fmt)
-        return struct.unpack_from(fmt, self.data, offset=self.advance(length))
-
-    def advance_struct(self, sct):
-        return sct.unpack_from(self.data, offset=self.advance(sct.size))
-
-    def advance_bytes(self, length=None):
-        idx = self.advance(length)
-        return self.data[idx:self.idx]
-
-    def advance_text(self, length=None):
-        return self.advance_bytes(length).decode()
+def _read_float_text(crs, length):
+    return float(crs.advance_text(length))
 
 
-def _get_unpacker(fmt):
-    unp = struct.Struct(fmt)
-    struct_length = unp.size
-
-    def unpacker(crs, length=struct_length):
-        if length != struct_length:
-            raise Error("Invalid value")
-        return crs.advance_struct(unp)[0]
-    return unpacker
+def _read_int_text(crs, length):
+    return int(crs.advance_text(length))
 
 
-def _read_float_text(crs):
-    return float(crs.advance_text())
+def _read_bool_text(crs, length):
+    return crs.advance_view(length) == b't'
 
 
-def _read_int_text(crs):
-    return int(crs.advance_text())
-
-
-def _read_bool_text(crs):
-    return crs.advance_bytes() == b't'
-
-
-def _read_tid_text(crs):
-    tid = crs.advance_text()
+def _read_tid_text(crs, length):
+    tid = crs.advance_text(length)
     if tid[0] != '(' or tid[-1] != ')':
         raise Error("Invalid value")
     tid1, tid2 = tid[1:-1].split(',')
     return int(tid1), int(tid2)
 
 
-def _read_text(crs, length=None):
+def read_text(crs, length):
     return crs.advance_text(length)
 
 
-def _read_text_bin(crs, length=None):
+def read_bytes(crs, length):
     return crs.advance_bytes(length)
 
 
-def _read_bytea_text(crs):
+hexdecoder = getdecoder('hex')
+
+
+def _read_bytea_text(crs, length):
     if crs.length - crs.idx >= 2:
         prefix = crs.advance_bytes(2)
         if prefix == b"\\x":
-            dec = getdecoder('hex')
-            output, length = dec(memoryview(crs.data)[crs.idx:])
+            output, length = hexdecoder(crs.data[crs.idx:])
             crs.idx += length
             return output
 
+    backslash = ord(b'\\')
+
     def get_bytes(crs):
-        biter = iter(crs.data)
+        biter = iter(crs.data.obj)
         for b in biter:
-            if b != b'\\':
+            if b != backslash:
                 # regular byte
-                yield ord(b)
-            else:
-                b = next(biter)
-                if b == b'\\':
-                    # backslash
-                    yield ord(b)
-                else:
-                    # octal value
-                    b2 = next(biter)
-                    b3 = next(biter)
-                    val = int(b + b2 + b3, 8)
-                    yield val
+                yield b
+
+            b = next(biter)
+            if b == backslash:
+                # backslash
+                yield b
+
+            # octal value
+            b2 = next(biter)
+            b3 = next(biter)
+            yield (b - 48) * 64 + (b2 - 48) * 8 + (b3 - 48)
 
     ret = bytes(get_bytes(crs))
     crs.idx = crs.length
     return ret
 
-_read_float4_bin = _get_unpacker("!f")
-_read_float8_bin = _get_unpacker("!d")
-_read_int2_bin = _get_unpacker("!h")
-_read_uint2_bin = _get_unpacker("!H")
-_read_int4_bin = _get_unpacker("!i")
-_read_uint4_bin = _get_unpacker("!I")
-_read_int8_bin = _get_unpacker("!q")
-_read_bool_bin = _get_unpacker("!?")
+
+def read_float4_bin(crs, length):
+    return crs.advance_float4(length)
 
 
-INVALID_ABSTIME = 0x7FFFFFFE
+def read_float8_bin(crs, length):
+    return crs.advance_float8(length)
 
 
-def _read_abstime_bin(crs, length=4):
-    if length != 4:
-        raise Error("Invalid value")
-    seconds = _read_int4_bin(crs)
-    return datetime.fromtimestamp(seconds)
+def read_bool_bin(crs, length):
+    return crs.advance_bool(length)
 
 
-def _read_tinterval_bin(crs, length=12):
-    if length != 12:
-        raise Error("Invalid value")
-
-    status, dt1, dt2 = crs.advance_struct_format("!3i")
-    if dt1 == INVALID_ABSTIME or dt2 == INVALID_ABSTIME:
-        st = 0
-    else:
-        st = 1
-    if st != status:
-        raise Error("Invalid value")
-    return (datetime.fromtimestamp(dt1),
-            datetime.fromtimestamp(dt2))
+def read_int2_bin(crs, length):
+    return crs.advance_int2(length)
 
 
-def _read_reltime_bin(crs, length=4):
-    return timedelta(seconds=_read_int4_bin(crs, length=length))
+def read_int4_bin(crs, length):
+    return crs.advance_int4(length)
 
 
-def _read_uuid_text(crs):
-    return UUID(crs.advance_text())
+def read_uint4_bin(crs, length):
+    return crs.advance_uint4(length)
 
 
-def _read_uuid_bin(crs, length=16):
-    if length != 16:
-        raise Error("Invalid value")
-    return UUID(bytes=crs.advance_bytes(16))
+def read_int8_bin(crs, length):
+    return crs.advance_int8(length)
 
 
-def _read_tid_bin(crs, length=6):
-    if length != 6:
-        raise Error("Invalid value")
-    return crs.advance_struct_format("!IH")
-
-USECS_PER_SEC = 1000000
-USECS_PER_MINUTE = 60 * USECS_PER_SEC
-USECS_PER_HOUR = 60 * USECS_PER_MINUTE
-USECS_PER_DAY = 24 * USECS_PER_HOUR
-
-POSTGRES_EPOCH_JDATE = 2451545
+def _read_uuid_text(crs, length):
+    return UUID(crs.advance_text(length))
 
 
-def _date_vals_from_int(jd):
-
-    # julian day magic to retrieve day, month and year, shamelessly copied
-    # from postgres server code
-    julian = jd + POSTGRES_EPOCH_JDATE + 32044
-    quad, extra = divmod(julian, 146097)
-    extra = extra * 4 + 3
-    julian += 60 + quad * 3 + extra // 146097
-    quad, julian = divmod(julian, 1461)
-    y = julian * 4 // 1461
-    julian = ((julian + 305) % 365 if y else (julian + 306) % 366) + 123
-    y += quad * 4
-    year = y - 4800
-    quad = julian * 2141 // 65536
-    day = julian - 7834 * quad // 256
-    month = (quad + 10) % 12 + 1
-    return year, month, day
+def _read_uuid_bin(crs, length):
+    return UUID(bytes=crs.advance_bytes(length))
 
 
-def _time_vals_from_int(tm):
-    hour, tm = divmod(tm, USECS_PER_HOUR)
-    if tm < 0 or hour > 23:
-        raise Error("Invalid time value")
-    minute, tm = divmod(tm, USECS_PER_MINUTE)
-    second, usec = divmod(tm, USECS_PER_SEC)
-    return hour, minute, second, usec
+def _read_tid_bin(crs, length):
+    return crs.advance_struct_format_IH()
 
 
-def _read_date_bin(crs, length=4):
-    if length != 4:
-        raise Error("Invalid value")
-    jd = _read_int4_bin(crs)
-
-    year, month, day = _date_vals_from_int(jd)
-
-    # if outside python date range convert to a string
-    if year > MAXYEAR:
-        fmt = "{0}-{1:02}-{2:02}"
-    elif year < MINYEAR:
-        fmt = "{0:04}-{1:02}-{2:02} BC"
-        year = -1 * (year - 1)
-    else:
-        return date(year, month, day)
-    return fmt.format(year, month, day)
+def _read_point_bin(crs, length):
+    return crs.advance_struct_format_2d()
 
 
-def _read_time_bin(crs, length=8):
-    if length != 8:
-        raise Error("Invalid value")
-    return time(*_time_vals_from_int(_read_int8_bin(crs)))
+def _read_line_bin(crs, length):
+    return crs.advance_struct_format_3d()
 
 
-def _read_timestamp_bin(crs, length=8):
-    if length != 8:
-        raise Error("Invalid value")
-    value = _read_int8_bin(crs)
-    dt, tm = divmod(value, USECS_PER_DAY)
-    if tm < 0:
-        tm += USECS_PER_DAY
-        dt -= 1
-
-    year, month, day = _date_vals_from_int(dt)
-    time_vals = _time_vals_from_int(tm)
-    if year > MAXYEAR:
-        fmt = "{0}-{1:02}-{2:02} {3:02}:{4:02}:{5:02}.{6:06}"
-    elif year < MINYEAR:
-        year = -1 * (year - 1)  # There is no year zero
-        fmt = "{0:04}-{1:02}-{2:02} {3:02}:{4:02}:{5:02}.{6:06} BC"
-    else:
-        return datetime(year, month, day, *time_vals)
-    return fmt.format(year, month, day, *time_vals)
-
-
-def _read_timestamptz_bin(crs, length=8):
-    return datetime.replace(
-        _read_timestamp_bin(crs, length), tzinfo=timezone.utc)
-
-
-def _read_interval_bin(crs, length=16):
-    if length != 16:
-        raise ValueError("Invalid value")
-    usecs, days, months = crs.advance_struct_format("!qii")
-    value = timedelta(days, *divmod(usecs, USECS_PER_SEC))
-    return months, value
-
-
-def _read_point_bin(crs, length=16):
-    if length != 16:
-        raise ValueError("Invalid value")
-    return crs.advance_struct_format("!dd")
-
-
-def _read_line_bin(crs, length=24):
-    if length != 24:
-        raise ValueError("Invalid value")
-    return crs.advance_struct_format("!ddd")
-
-
-def _read_lseg_bin(crs, length=32):
-    if length != 32:
-        raise ValueError("Invalid value")
-    x1, y1, x2, y2 = crs.advance_struct_format("!4d")
+def _read_lseg_bin(crs, length):
+    x1, y1, x2, y2 = crs.advance_struct_format_4d(length)
     return ((x1, y1), (x2, y2))
 
 
 def _read_polygon_bin(crs, length=None):
-    npoints = _read_int4_bin(crs)
+    npoints = crs.advance_int4()
     fmt = "!{0}d".format(npoints * 2)
     coords = crs.advance_struct_format(fmt)
     args = [iter(coords)] * 2
     return list(zip(*args))
 
 
-def _read_path_bin(crs, length=None):
-    closed = _read_bool_bin(crs)
+def _read_path_bin(crs, length):
+    closed = crs.advance_bool()
     path = _read_polygon_bin(crs)
     return {"closed": closed, "path": path}
 
 
-def _read_circle_bin(crs, length=24):
-    if length != 24:
-        raise ValueError("Invalid value")
-    x, y, r = crs.advance_struct_format("!3d")
+def _read_circle_bin(crs, length):
+    x, y, r = crs.advance_struct_format_3d()
     return ((x, y), r)
 
 PGSQL_AF_INET = 2
 PGSQL_AF_INET6 = PGSQL_AF_INET + 1
 
 
-def _read_inet_bin(crs, length=None):
-    uchar_4 = struct.Struct("!4B")
-    family, mask, is_cidr, size = crs.advance_struct(uchar_4)
-
-    if is_cidr > 1:
-        raise Error("Invalid value for is_cidr")
+def _read_inet_bin(crs, length):
+    family, mask, is_cidr, size = crs.advance_struct_format_4B()
 
     if family == PGSQL_AF_INET:
-        if size != 4:
-            raise Error("Invalid address size")
-        parts = crs.advance_struct(uchar_4)
-        addr_string = "{0}.{1}.{2}.{3}/{4}".format(*(parts + (mask,)))
+        correct_size = 4
+        sfmt = crs.advance_struct_format_4B
+        addr_format = "{0}.{1}.{2}.{3}/{4}"
         if is_cidr:
             cls = ipaddress.IPv4Network
         else:
             cls = ipaddress.IPv4Interface
     elif family == PGSQL_AF_INET6:
-        if size != 16:
-            raise Error("Invalid address size")
-        parts = crs.advance_struct_format("!8H")
-        addr_string = (
-            "{0:x}:{1:x}:{2:x}:{3:x}:{4:x}:{5:x}:{6:x}:{7:x}/{8}".format(
-                *(parts + (mask,))))
+        correct_size = 16
+        sfmt = crs.advance_struct_format_8H
+        addr_format = "{0:x}:{1:x}:{2:x}:{3:x}:{4:x}:{5:x}:{6:x}:{7:x}/{8}"
         if is_cidr:
             cls = ipaddress.IPv6Network
         else:
             cls = ipaddress.IPv6Interface
     else:
-        raise Error("Unknown network family")
+        raise Error("Invalid address family")
+    if size != correct_size:
+        raise Error("Invalid address size")
+    parts = sfmt()
+    addr_string = addr_format.format(*(parts + (mask,)))
     return cls(addr_string)
 
 
-def _read_mac_bin(crs, length=6):
-    if length != 6:
-        raise Error("Invalid value")
-    mac1, mac2 = crs.advance_struct_format("!HI")
+def _read_mac_bin(crs, length):
+    mac1, mac2 = crs.advance_struct_format_HI()
     return (mac1 << 32) + mac2
 
 
-def _read_json_bin(crs, length=None):
-    value = _read_text(crs, length)
-    return json.loads(value)
+def _read_json_bin(crs, length):
+    return json.loads(crs.advance_text(length))
 
 
-def _read_jsonb_bin(crs, length=None):
-    version = crs.advance_struct_format("!B")[0]
+def _read_jsonb_bin(crs, length):
+    version = crs.advance_ubyte()
     if version != 1:
         raise Error("Invalid version")
-    return _read_json_bin(crs, length - 1 if length else None)
+    return _read_json_bin(crs, length - 1)
 
 
-def _read_numeric_str(crs, length=None):
-    value = _read_text(crs, length)
+def _read_numeric_str(crs, length):
+    value = crs.advance_text(length)
     return Decimal(value)
 
 
-def _read_numeric_bin(crs, length=None):
+def _read_numeric_bin(crs, length):
     """ Reads a binary numeric/decimal value """
 
     # Read field values: number of digits, weight, sign, display scale.
-    npg_digits, weight, sign, dscale = crs.advance_struct_format("!HhHH")
+    npg_digits, weight, sign, dscale = crs.advance_struct_format_HhHH()
+    if length != 8 + npg_digits * 2:
+        raise Error("Invalid value")
     if npg_digits:
         pg_digits = crs.advance_struct_format("!" + 'H' * npg_digits)
     else:
@@ -418,12 +247,11 @@ def _read_numeric_bin(crs, length=None):
     return Decimal((sign, digits, -dscale))
 
 
-def _read_bit_text(crs, length=None):
+def _read_bit_text(crs, length):
     val = 0
-    char_struct = struct.Struct("!c")
     while crs.idx < crs.length:
         val <<= 1
-        char = crs.advance_struct(char_struct)[0]
+        char = crs.advance_char()
         if char == b'1':
             val |= 1
         elif char != b'0':
@@ -431,7 +259,7 @@ def _read_bit_text(crs, length=None):
     return val
 
 
-def _read_bit_bin(crs, length=None):
+def _read_bit_bin(crs, length):
     """ Reads a bitstring as a Python integer
 
     Format:
@@ -440,19 +268,18 @@ def _read_bit_bin(crs, length=None):
 
     """
     # first get the number of bits in the bit string
-    bit_len = _read_int4_bin(crs)
+    bit_len = crs.advance_int4()
 
     # calculate number of data bytes
     quot, rest = divmod(bit_len, 8)
-    byte_len = quot + (1 if rest else 0)
+    byte_len = quot + bool(rest)
 
     # add the value byte by byte, python ints have no upper limit, so this
     # works even for bitstrings longer than 64 bits
     val = 0
-    loop = iter(range(byte_len))
-    while next(loop, None) is not None:
+    for i in range(byte_len):
         val <<= 8
-        val |= crs.advance_struct_format("!B")[0]
+        val |= crs.advance_ubyte()
 
     if rest:
         # correct for the fact that the bitstring is left aligned
@@ -470,33 +297,43 @@ def _get_array_value(crs, array_dims, reader):
     else:
         # get a single value, either NULL or an actual value prefixed by a
         # length
-        item_len = _read_int4_bin(crs)
+        item_len = crs.advance_int4()
         if item_len == -1:
             return None
         return reader(crs, item_len)
 
 
-def _read_array_bin(crs, length=None):
+def get_array_bin_reader(elem_oid):
+    def read_array_bin(crs, length):
 
-    dims, flags, elem_type = crs.advance_struct_format("!IiI")
+        dims, flags, elem_type = crs.advance_struct_format_IiI()
 
-    if dims > 6:
-        raise Error("Number of dimensions exceeded")
-    if flags & 1 != flags:
-        raise Error("Invalid value for array flags")
-    if dims == 0:
-        return []
-    reader = Result._converters[elem_type][1]
-    array_dims = []
-    for i in range(dims):
-        array_dims.append(_read_int4_bin(crs))
-        crs.advance(4)
-    return _get_array_value(crs, array_dims, reader)
+        if elem_type != elem_oid:
+            raise Error("Unexpected element type")
+        if dims > 6:
+            raise Error("Number of dimensions exceeded")
+        if flags & 1 != flags:
+            raise Error("Invalid value for array flags")
+        if dims == 0:
+            return []
+        reader = Result._converters[elem_type][1]
+        array_dims = []
+        for i in range(dims):
+            array_dims.append(crs.advance_int4())
+            crs.advance(4)
+        return _get_array_value(crs, array_dims, reader)
+    return read_array_bin
 
 
 def _get_result_column_method(res_func):
     def result_method(self, column_number):
         return res_func(self, column_number)
+    return result_method
+
+
+def _get_result_row_column_method(res_func):
+    def result_method(self, row_number, column_number):
+        return res_func(self, row_number, column_number)
     return result_method
 
 
@@ -519,119 +356,108 @@ class Result(c_void_p):
     def fnumber(self, column_name):
         return pq.PQfnumber(self, column_name.encode())
 
-    def getlength(self, row_number, column_number):
-        return pq.PQgetlength(self, row_number, column_number)
+    getlength = _get_result_row_column_method(pq.PQgetlength)
+    getisnull = _get_result_row_column_method(pq.PQgetisnull)
+    _pq_getvalue = _get_result_row_column_method(pq.PQgetvalue)
 
-    def getisnull(self, row_number, column_number):
-        return bool(pq.PQgetisnull(self, row_number, column_number))
-
-    def clear(self):
-        pq.PQclear(self)
-        self.value = 0
+    clear = get_method(pq.PQclear)
 
     def __del__(self):
         self.clear()
 
     def pq_getvalue(self, row_number, column_number):
-        data = pq.PQgetvalue(self, row_number, column_number)
+        data = self._pq_getvalue(row_number, column_number)
         length = self.getlength(row_number, column_number)
         data = string_at(data, length)
         return data if self.fformat(column_number) == 1 else data.decode()
 
     _converters = {
-        FLOAT4OID: (_read_float_text, _read_float4_bin),
-        FLOAT4ARRAYOID: (None, _read_array_bin),
-        FLOAT8OID: (_read_float_text, _read_float8_bin),
-        FLOAT8ARRAYOID: (None, _read_array_bin),
-        INT2OID: (_read_int_text, _read_int2_bin),
-        INT2ARRAYOID: (None, _read_array_bin),
-        INT2VECTOROID: (None, _read_array_bin),
-        INT2VECTORARRAYOID: (None, _read_array_bin),
-        INT4OID: (_read_int_text, _read_int4_bin),
-        INT4ARRAYOID: (None, _read_array_bin),
-        INT8OID: (_read_int_text, _read_int8_bin),
-        INT8ARRAYOID: (None, _read_array_bin),
-        BOOLOID: (_read_bool_text, _read_bool_bin),
-        BOOLARRAYOID: (None, _read_array_bin),
-        BPCHAROID: (None, _read_text),
-        BPCHARARRAYOID: (None, _read_array_bin),
-        XMLOID: (None, _read_text),
-        XMLARRAYOID: (None, _read_array_bin),
-        XIDOID: (_read_int_text, _read_uint4_bin),
-        XIDARRAYOID: (None, _read_array_bin),
-        VARCHAROID: (None, _read_text),
-        VARCHARARRAYOID: (None, _read_array_bin),
-        TEXTOID: (None, _read_text),
-        TEXTARRAYOID: (None, _read_array_bin),
-        NAMEOID: (None, _read_text),
-        NAMEARRAYOID: (None, _read_array_bin),
-        CSTRINGOID: (None, _read_text),
-        CSTRINGARRAYOID: (None, _read_array_bin),
-        UNKNOWNOID: (None, _read_text),
-        CIDOID: (_read_int_text, _read_uint4_bin),
-        CIDARRAYOID: (None, _read_array_bin),
-        OIDOID: (_read_int_text, _read_uint4_bin),
-        OIDARRAYOID: (None, _read_array_bin),
-        OIDVECTOROID: (None, _read_array_bin),
-        OIDVECTORARRAYOID: (None, _read_array_bin),
-        ABSTIMEOID: (None, _read_abstime_bin),
-        ABSTIMEARRAYOID: (None, _read_array_bin),
-        TINTERVALOID: (None, _read_tinterval_bin),
-        TINTERVALARRAYOID: (None, _read_array_bin),
-        RELTIMEOID: (None, _read_reltime_bin),
-        RELTIMEARRAYOID: (None, _read_array_bin),
-        CHAROID: (_read_text_bin, _read_text_bin),
-        CHARARRAYOID: (None, _read_array_bin),
+        FLOAT4OID: (_read_float_text, read_float4_bin),
+        FLOAT4ARRAYOID: (None, get_array_bin_reader(FLOAT4OID)),
+        FLOAT8OID: (_read_float_text, read_float8_bin),
+        FLOAT8ARRAYOID: (None, get_array_bin_reader(FLOAT8OID)),
+        INT2OID: (_read_int_text, read_int2_bin),
+        INT2ARRAYOID: (None, get_array_bin_reader(INT2OID)),
+        INT2VECTOROID: (None, get_array_bin_reader(INT2OID)),
+        INT2VECTORARRAYOID: (None, get_array_bin_reader(INT2VECTOROID)),
+        INT4OID: (_read_int_text, read_int4_bin),
+        INT4ARRAYOID: (None, get_array_bin_reader(INT4OID)),
+        INT8OID: (_read_int_text, read_int8_bin),
+        INT8ARRAYOID: (None, get_array_bin_reader(INT8OID)),
+        BOOLOID: (_read_bool_text, read_bool_bin),
+        BOOLARRAYOID: (None, get_array_bin_reader(BOOLOID)),
+        BPCHAROID: (None, read_text),
+        BPCHARARRAYOID: (None, get_array_bin_reader(BPCHAROID)),
+        XMLOID: (None, read_text),
+        XMLARRAYOID: (None, get_array_bin_reader(XMLOID)),
+        XIDOID: (_read_int_text, read_uint4_bin),
+        XIDARRAYOID: (None, get_array_bin_reader(XIDOID)),
+        VARCHAROID: (None, read_text),
+        VARCHARARRAYOID: (None, get_array_bin_reader(VARCHAROID)),
+        TEXTOID: (None, read_text),
+        TEXTARRAYOID: (None, get_array_bin_reader(TEXTOID)),
+        NAMEOID: (None, read_text),
+        NAMEARRAYOID: (None, get_array_bin_reader(NAMEOID)),
+        CSTRINGOID: (None, read_text),
+        CSTRINGARRAYOID: (None, get_array_bin_reader(CSTRINGOID)),
+        UNKNOWNOID: (None, read_text),
+        CIDOID: (_read_int_text, read_uint4_bin),
+        CIDARRAYOID: (None, get_array_bin_reader(CIDOID)),
+        OIDOID: (_read_int_text, read_uint4_bin),
+        OIDARRAYOID: (None, get_array_bin_reader(OIDOID)),
+        OIDVECTOROID: (None, get_array_bin_reader(OIDOID)),
+        OIDVECTORARRAYOID: (None, get_array_bin_reader(OIDVECTOROID)),
+        ABSTIMEARRAYOID: (None, get_array_bin_reader(ABSTIMEOID)),
+        TINTERVALARRAYOID: (None, get_array_bin_reader(TINTERVALOID)),
+        RELTIMEARRAYOID: (None, get_array_bin_reader(RELTIMEOID)),
+        CHAROID: (read_bytes, read_bytes),
+        CHARARRAYOID: (None, get_array_bin_reader(CHAROID)),
         UUIDOID: (_read_uuid_text, _read_uuid_bin),
-        BYTEAOID: (_read_bytea_text, _read_text_bin),
-        BYTEAARRAYOID: (None, _read_array_bin),
+        BYTEAOID: (_read_bytea_text, read_bytes),
+        BYTEAARRAYOID: (None, get_array_bin_reader(BYTEAOID)),
         TIDOID: (_read_tid_text, _read_tid_bin),
-        TIDARRAYOID: (None, _read_array_bin),
-        DATEOID: (None, _read_date_bin),
-        DATEARRAYOID: (None, _read_array_bin),
-        TIMEOID: (None, _read_time_bin),
-        TIMEARRAYOID: (None, _read_array_bin),
-        TIMESTAMPOID: (None, _read_timestamp_bin),
-        TIMESTAMPARRAYOID: (None, _read_array_bin),
-        TIMESTAMPTZOID: (None, _read_timestamptz_bin),
-        TIMESTAMPTZARRAYOID: (None, _read_array_bin),
-        INTERVALOID: (None, _read_interval_bin),
-        INTERVALARRAYOID: (None, _read_array_bin),
+        TIDARRAYOID: (None, get_array_bin_reader(TIDOID)),
+        DATEARRAYOID: (None, get_array_bin_reader(DATEOID)),
+        TIMEARRAYOID: (None, get_array_bin_reader(TIMEOID)),
+        TIMESTAMPARRAYOID: (None, get_array_bin_reader(TIMESTAMPOID)),
+        TIMESTAMPTZARRAYOID: (None, get_array_bin_reader(TIMESTAMPTZOID)),
+        INTERVALARRAYOID: (None, get_array_bin_reader(INTERVALOID)),
         POINTOID: (None, _read_point_bin),
-        POINTARRAYOID: (None, _read_array_bin),
+        POINTARRAYOID: (None, get_array_bin_reader(POINTOID)),
         BOXOID: (None, _read_lseg_bin),
-        BOXARRAYOID: (None, _read_array_bin),
+        BOXARRAYOID: (None, get_array_bin_reader(BOXOID)),
         LSEGOID: (None, _read_lseg_bin),
-        LSEGARRAYOID: (None, _read_array_bin),
+        LSEGARRAYOID: (None, get_array_bin_reader(LSEGOID)),
         POLYGONOID: (None, _read_polygon_bin),
-        POLYGONARRAYOID: (None, _read_array_bin),
+        POLYGONARRAYOID: (None, get_array_bin_reader(POLYGONOID)),
         PATHOID: (None, _read_path_bin),
-        PATHARRAYOID: (None, _read_array_bin),
+        PATHARRAYOID: (None, get_array_bin_reader(PATHOID)),
         CIRCLEOID: (None, _read_circle_bin),
-        CIRCLEARRAYOID: (None, _read_array_bin),
+        CIRCLEARRAYOID: (None, get_array_bin_reader(CIRCLEOID)),
         CIDROID: (None, _read_inet_bin),
-        CIDRARRAYOID: (None, _read_array_bin),
+        CIDRARRAYOID: (None, get_array_bin_reader(CIDROID)),
         INETOID: (None, _read_inet_bin),
-        INETARRAYOID: (None, _read_array_bin),
+        INETARRAYOID: (None, get_array_bin_reader(INETOID)),
         MACADDROID: (None, _read_mac_bin),
-        MACADDRARRAYOID: (None, _read_array_bin),
-        REGPROCOID: (None, _read_uint4_bin),
-        REGPROCARRAYOID: (None, _read_array_bin),
-        CASHOID: (None, _read_int8_bin),
-        CASHARRAYOID: (None, _read_array_bin),
+        MACADDRARRAYOID: (None, get_array_bin_reader(MACADDROID)),
+        REGPROCOID: (None, read_uint4_bin),
+        REGPROCARRAYOID: (None, get_array_bin_reader(REGPROCOID)),
+        CASHOID: (None, read_int8_bin),
+        CASHARRAYOID: (None, get_array_bin_reader(CASHOID)),
         JSONOID: (_read_json_bin, _read_json_bin),
-        JSONARRAYOID: (None, _read_array_bin),
+        JSONARRAYOID: (None, get_array_bin_reader(JSONOID)),
         JSONBOID: (_read_json_bin, _read_jsonb_bin),
-        JSONBARRAYOID: (None, _read_array_bin),
+        JSONBARRAYOID: (None, get_array_bin_reader(JSONBOID)),
         NUMERICOID: (_read_numeric_str, _read_numeric_bin),
-        NUMERICARRAYOID: (None, _read_array_bin),
+        NUMERICARRAYOID: (None, get_array_bin_reader(NUMERICOID)),
         LINEOID: (None, _read_line_bin),
-        LINEARRAYOID: (None, _read_array_bin),
+        LINEARRAYOID: (None, get_array_bin_reader(LINEOID)),
         BITOID: (_read_bit_text, _read_bit_bin),
-        BITARRAYOID: (None, _read_array_bin),
+        BITARRAYOID: (None, get_array_bin_reader(BITOID)),
         VARBITOID: (_read_bit_text, _read_bit_bin),
-        VARBITARRAYOID: (None, _read_array_bin),
+        VARBITARRAYOID: (None, get_array_bin_reader(VARBITOID)),
     }
+    _converters.update(get_date_time_converters())
 
     def getvalue(self, row_number, column_number):
         # first check for NULL values
@@ -654,10 +480,10 @@ class Result(c_void_p):
                 # create a cursor from the address and length
                 data = pq.PQgetvalue(self, row_number, column_number)
                 length = self.getlength(row_number, column_number)
-                crs = _crs(data, length)
+                crs = ValueCursor(data, length)
 
                 # convert the data in the cursor
-                value = reader(crs)
+                value = reader(crs, length)
                 if crs.idx != crs.length:
                     # we're not at the end, something must have gone wrong
                     raise Error("Invalid data format")
@@ -692,7 +518,12 @@ pq.PQftable.restype = c_uint
 
 pq.PQgetlength.argtypes = [Result, c_int, c_int]
 
+
+def check_bool(res, func, args):
+    return bool(res)
+
 pq.PQgetisnull.argtypes = [Result, c_int, c_int]
+pq.PQgetisnull.errcheck = check_bool
 
 pq.PQgetvalue.argtypes = [Result, c_int, c_int]
 pq.PQgetvalue.restype = c_void_p
@@ -701,5 +532,12 @@ pq.PQresultErrorMessage.argtypes = [Result]
 pq.PQresultErrorMessage.restype = c_char_p
 pq.PQresultErrorMessage.errcheck = check_string
 
+
+def check_clear(res, func, args):
+    result = args[0]
+    if result:
+        result.value = 0
+
 pq.PQclear.argtypes = [Result]
 pq.PQclear.restype = None
+pq.PQclear.errcheck = check_clear
