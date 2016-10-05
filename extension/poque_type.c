@@ -803,17 +803,6 @@ float_tuple_binval(data_crs *curs, int len) {
 static PyObject *
 point_binval(data_crs *curs) {
     return float_tuple_binval(curs, 2);
-/*
-    PyObject *point;
-
-    point = PyTuple_New(2);
-    if (point == NULL)
-        return NULL;
-    if (add_float_to_tuple(point, curs, 0) < 0)
-        return NULL;
-    if (add_float_to_tuple(point, curs, 1) < 0)
-        return NULL;
-    return point; */
 }
 
 
@@ -1147,13 +1136,10 @@ time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
 
 
 static PyObject *
-_time_binval(data_crs *curs, PyObject *tz)
+_time_binval(data_crs *curs, PY_INT64_T value, PyObject *tz)
 {
-    PY_INT64_T value;
     int hour, minute, second, usec;
 
-    if (read_int64_binval(curs, &value) < 0)
-        return NULL;
     if (time_vals_from_int(value, &hour, &minute, &second, &usec) < 0)
         return NULL;
     return PyDateTimeAPI->Time_FromTime(hour, minute, second, usec, tz,
@@ -1164,7 +1150,11 @@ _time_binval(data_crs *curs, PyObject *tz)
 static PyObject *
 time_binval(data_crs *curs)
 {
-    return _time_binval(curs, Py_None);
+    PY_INT64_T value;
+
+    if (read_int64_binval(curs, &value) < 0)
+        return NULL;
+    return _time_binval(curs, value, Py_None);
 }
 
 
@@ -1188,13 +1178,37 @@ get_utc(void) {
 static PyObject *
 timetz_binval(data_crs *curs)
 {
-    PyObject *utc;
+    PyObject *tz, *timedelta, *ret, *offset, *timezone;
+    PY_INT64_T value;
+    int seconds;
 
-    utc = get_utc();
-    if (utc == NULL)
+    if (read_int64_binval(curs, &value) < 0)
+        return NULL;
+    if (read_int32_binval(curs, &seconds) < 0)
         return NULL;
 
-    return _time_binval(curs, utc);
+    timedelta = load_python_object("datetime", "timedelta");
+    if (timedelta == NULL)
+        return NULL;
+    offset = PyObject_CallFunction(timedelta, "ii", 0, -seconds);
+    Py_DECREF(timedelta);
+    if (offset == NULL)
+        return NULL;
+
+    tz = load_python_object("datetime", "timezone");
+    if (tz == NULL) {
+        Py_DECREF(offset);
+        return NULL;
+    }
+    timezone = PyObject_CallFunctionObjArgs(tz, offset, NULL);
+    Py_DECREF(offset);
+    Py_DECREF(tz);
+    if (timezone == NULL)
+        return NULL;
+
+    ret = _time_binval(curs, value, timezone);
+    Py_DECREF(timezone);
+    return ret;
 }
 
 
@@ -1575,7 +1589,6 @@ bit_binval(data_crs *curs) {
         Py_DECREF(val);
         val = new_val;
     }
-    Py_DECREF(eight);
     if (rest) {
         /* correct for the fact that the bitstring is left aligned */
         PyObject *shift_val;
@@ -1593,6 +1606,7 @@ bit_binval(data_crs *curs) {
         Py_DECREF(val);
         val = new_val;
     }
+    Py_DECREF(eight);
     return val;
 
 error:
@@ -1688,6 +1702,7 @@ static PoqueTypeEntry type_table[] = {
     {UUIDOID, uuid_binval, uuid_strval, NULL},
     {DATEOID, date_binval, NULL, NULL},
     {TIMEOID, time_binval, NULL, NULL},
+    {TIMETZOID, timetz_binval, NULL, NULL},
     {TIMESTAMPOID, timestamp_binval, NULL, NULL},
     {TIMESTAMPTZOID, timestamptz_binval, NULL, NULL},
     {DATEARRAYOID, array_binval, NULL, NULL},
