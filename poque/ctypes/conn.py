@@ -10,6 +10,7 @@ from .constants import (
     FLOAT8OID, BOOLOID, BYTEAOID, UUIDOID, FORMAT_BINARY,
     FORMAT_TEXT)
 from .dt import get_date_time_param_converters
+from .numeric import get_numeric_param_converters
 from .lib import Error, _get_property, get_method
 from .result import Result
 
@@ -142,6 +143,7 @@ class Conn(c_void_p):
         UUID: _get_uuid_param,
     }
     _param_converters.update(get_date_time_param_converters())
+    _param_converters.update(get_numeric_param_converters())
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
         if not parameters:

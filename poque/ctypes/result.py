@@ -1,5 +1,4 @@
-from ctypes import (c_void_p, c_int, c_char_p, c_uint, c_char, string_at)
-from decimal import Decimal
+from ctypes import (c_void_p, c_int, c_char_p, c_uint, string_at)
 import ipaddress
 import json
 from uuid import UUID
@@ -8,12 +7,9 @@ from .pq import pq, check_string
 from .constants import *
 from .cursor import ValueCursor
 from .dt import get_date_time_converters
+from .numeric import get_numeric_converters
 from .lib import Error, _get_property, get_method
 from codecs import getdecoder
-
-NUMERIC_NAN = 0xC000
-NUMERIC_POS = 0x0000
-NUMERIC_NEG = 0x4000
 
 
 def _read_float_text(crs, length):
@@ -128,7 +124,7 @@ def _read_line_bin(crs, length):
 
 
 def _read_lseg_bin(crs, length):
-    x1, y1, x2, y2 = crs.advance_struct_format_4d(length)
+    x1, y1, x2, y2 = crs.advance_struct_format_4d()
     return ((x1, y1), (x2, y2))
 
 
@@ -193,58 +189,7 @@ def _read_json_bin(crs, length):
 
 def _read_jsonb_bin(crs, length):
     version = crs.advance_ubyte()
-    if version != 1:
-        raise Error("Invalid version")
     return _read_json_bin(crs, length - 1)
-
-
-def _read_numeric_str(crs, length):
-    value = crs.advance_text(length)
-    return Decimal(value)
-
-
-def _read_numeric_bin(crs, length):
-    """ Reads a binary numeric/decimal value """
-
-    # Read field values: number of digits, weight, sign, display scale.
-    npg_digits, weight, sign, dscale = crs.advance_struct_format_HhHH()
-    if length != 8 + npg_digits * 2:
-        raise Error("Invalid value")
-    if npg_digits:
-        pg_digits = crs.advance_struct_format("!" + 'H' * npg_digits)
-    else:
-        pg_digits = []
-    if sign == NUMERIC_NAN:
-        return Decimal('NaN')
-    if sign == NUMERIC_NEG:
-        sign = 1
-    elif sign != NUMERIC_POS:
-        raise Exception('Bad value')
-
-    # number of digits
-    ndigits = dscale + (weight + 1) * 4
-
-    # fill digits
-    j = 0
-    digits = []
-    for dg in pg_digits:
-        if dg > 9999:
-            raise Error("Invalid value")
-        # a postgres digit contains 4 decimal digits
-        for val in [dg // 1000, (dg // 100) % 10, (dg // 10) % 10, dg % 10]:
-            if j == ndigits:
-                # the pg value can have more zeroes than the display scale
-                # indicates
-                break
-            digits.append(val)
-            j += 1
-
-    # add extra zeroes indicated by display scale that are not in the actual
-    # value
-    digits.extend([0] * (ndigits - j))
-
-    # now create the decimal
-    return Decimal((sign, digits, -dscale))
 
 
 def _read_bit_text(crs, length):
@@ -448,16 +393,16 @@ class Result(c_void_p):
         JSONARRAYOID: (None, get_array_bin_reader(JSONOID)),
         JSONBOID: (_read_json_bin, _read_jsonb_bin),
         JSONBARRAYOID: (None, get_array_bin_reader(JSONBOID)),
-        NUMERICOID: (_read_numeric_str, _read_numeric_bin),
-        NUMERICARRAYOID: (None, get_array_bin_reader(NUMERICOID)),
         LINEOID: (None, _read_line_bin),
         LINEARRAYOID: (None, get_array_bin_reader(LINEOID)),
         BITOID: (_read_bit_text, _read_bit_bin),
         BITARRAYOID: (None, get_array_bin_reader(BITOID)),
         VARBITOID: (_read_bit_text, _read_bit_bin),
         VARBITARRAYOID: (None, get_array_bin_reader(VARBITOID)),
+        NUMERICARRAYOID: (None, get_array_bin_reader(NUMERICOID)),
     }
     _converters.update(get_date_time_converters())
+    _converters.update(get_numeric_converters())
 
     def getvalue(self, row_number, column_number):
         # first check for NULL values
