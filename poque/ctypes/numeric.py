@@ -42,17 +42,16 @@ def _read_numeric_bin(crs, length):
         if dg > 9999:
             raise Error("Invalid value")
         # a postgres digit contains 4 decimal digits
-        for val in [dg // 1000, (dg // 100) % 10, (dg // 10) % 10, dg % 10]:
-            if j == ndigits:
-                # the pg value can have more zeroes than the display scale
-                # indicates
-                break
-            digits.append(val)
-            j += 1
+        digits.extend([dg // 1000, (dg // 100) % 10, (dg // 10) % 10, dg % 10])
 
-    # add extra zeroes indicated by display scale that are not in the actual
-    # value
-    digits.extend([0] * (ndigits - j))
+    len_diff = ndigits - len(digits)
+    if len_diff < 0:
+        # the pg value can have more zeroes than the display scale indicates
+        del digits[len_diff:]
+    else:
+        # add extra zeroes indicated by display scale that are not in the
+        # actual value
+        digits.extend([0] * (len_diff))
 
     # now create the decimal
     return Decimal((sign, digits, -dscale))
@@ -69,43 +68,34 @@ def write_decimal_bin(val):
     if (val.is_nan()):
         weight = 0
         pg_sign = NUMERIC_NAN
-        dscale = 0
+        exponent = 0
     else:
         sign, digits, exponent = val.as_tuple()
-        if sign == 0:
-            pg_sign = NUMERIC_POS
-        else:
-            pg_sign = NUMERIC_NEG
-        dscale = -exponent
-        if dscale < 0:
+        pg_sign = NUMERIC_POS if sign == 0 else NUMERIC_NEG
+        if exponent > 0:
             digits += (0,) * exponent
-            dscale = 0
+            exponent = 0
 
-        weight = len(digits) - dscale
-        quot, rest = divmod(weight, 4)
-        weight = quot + bool(rest) - 1
-        if rest > 0:
+        quot, i = divmod(len(digits) + exponent, 4)
+        weight = quot + bool(i) - 1  # calculate weight in pg_digits
+
+        # fill pg_digits
+        if i > 0:
+            # add a pg_digit when we don't start on an exact 4 byte boundary
             pg_digits.append(0)
-            i = 4 - rest
-        else:
-            i = 0
         for dg in digits:
             if i == 0:
-                pg_digits.append(1000 * dg)
-            elif i == 1:
-                pg_digits[-1] += 100 * dg
-            elif i == 2:
-                pg_digits[-1] += 10 * dg
-            elif i == 3:
-                pg_digits[-1] += dg
-                i = 0
-                continue
-            i += 1
+                # add a new pg_digit
+                pg_digits.append(0)
+                i = 4
+            i -= 1
+            pg_digits[-1] += dg * 10 ** i
+
     npg_digits = len(pg_digits)
     msg_len = 8 + npg_digits * 2
     ret = create_string_buffer(msg_len)
     pack_into("!HhHH" + 'H' * npg_digits, ret, 0, npg_digits, weight, pg_sign,
-              dscale, *pg_digits)
+              -exponent, *pg_digits)
     return NUMERICOID, cast(ret, c_char_p), msg_len, FORMAT_BINARY
 
 
