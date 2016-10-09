@@ -3,8 +3,33 @@ from decimal import Decimal
 from struct import pack_into
 
 
-from .constants import NUMERICOID, FORMAT_BINARY
+from .constants import (
+    INT4OID, INT8OID, TEXTOID, FLOAT8OID, NUMERICOID, FORMAT_BINARY)
 from .lib import Error
+
+
+def _get_int_param(val):
+    if val >= -0x80000000 and val <= 0x7FFFFFFF:
+        length = 4
+        fmt = "!i"
+        oid = INT4OID
+    elif val >= -0x8000000000000000 and val <= 0x7FFFFFFFFFFFFFFF:
+        length = 8
+        fmt = "!q"
+        oid = INT8OID
+    else:
+        val = str(val).encode()
+        return TEXTOID, c_char_p(val), len(val), FORMAT_BINARY
+    ret = create_string_buffer(length)
+    pack_into(fmt, ret, 0, val)
+    return oid, cast(ret, c_char_p), length, FORMAT_BINARY
+
+
+def _get_float_param(val):
+    ret = create_string_buffer(8)
+    pack_into("!d", ret, 0, val)
+    return FLOAT8OID, cast(ret, c_char_p), 8, FORMAT_BINARY
+
 
 NUMERIC_NAN = 0xC000
 NUMERIC_POS = 0x0000
@@ -101,5 +126,7 @@ def write_decimal_bin(val):
 
 def get_numeric_param_converters():
     return {
+        int: _get_int_param,
+        float: _get_float_param,
         Decimal: write_decimal_bin,
     }

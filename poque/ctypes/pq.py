@@ -1,3 +1,4 @@
+from collections import namedtuple
 from ctypes import CDLL, Structure, c_char_p, c_int, POINTER, c_void_p
 from ctypes.util import find_library
 
@@ -27,6 +28,10 @@ def check_string(char, *args):
     return char.decode()
 
 
+InfoOption = namedtuple(
+    "InfoOption", [f[0] for f in PQconninfoOption._fields_[1:]])
+
+
 def check_info_options(options, func, args):
     if not options:
         return None
@@ -36,13 +41,13 @@ def check_info_options(options, func, args):
         option = options[i]
         if not option.keyword:
             break
-        ret[option.keyword.decode()] = (
-            check_string(option.envvar),
-            check_string(option.compiled),
-            check_string(option.val),
-            check_string(option.label),
-            check_string(option.dispchar),
-            option.dispsize,
+        ret[option.keyword.decode()] = InfoOption(
+            envvar=check_string(option.envvar),
+            compiled=check_string(option.compiled),
+            val=check_string(option.val),
+            label=check_string(option.label),
+            dispchar=check_string(option.dispchar),
+            dispsize=option.dispsize,
         )
         i += 1
     pq.PQconninfoFree(options)
