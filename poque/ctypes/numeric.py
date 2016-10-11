@@ -61,7 +61,6 @@ def _read_numeric_bin(crs, length):
     ndigits = dscale + (weight + 1) * 4
 
     # fill digits
-    j = 0
     digits = []
     for dg in pg_digits:
         if dg > 9999:

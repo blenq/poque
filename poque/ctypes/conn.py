@@ -119,7 +119,7 @@ class Conn(c_void_p):
     _param_converters.update(get_numeric_param_converters())
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
-        if not parameters:
+        if parameters is None:
             if result_format == FORMAT_TEXT:
                 return pq.PQexec(self, command.encode())
             return pq.PQexecParams(self, command.encode(), 0, None, None, None,
