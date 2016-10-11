@@ -303,6 +303,42 @@ Conn_reset_poll(poque_Conn *self, PyObject *unused)
 }
 
 
+static PyObject *
+Conn_escape_function(
+        poque_Conn *self, PyObject *args, PyObject *kwds, char *kwlist[],
+        char *(*func)(PGconn *, const char *, size_t)) {
+    char *literal;
+    Py_ssize_t lit_size;
+    PyObject *ret;
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwds, "s#", kwlist, &literal, &lit_size))
+        return NULL;
+    literal = func(self->conn, literal, lit_size);
+    if (literal == NULL) {
+        Conn_set_error(self->conn);
+        return NULL;
+    }
+    ret = PyUnicode_FromString(literal);
+    PQfreemem(literal);
+    return ret;
+}
+
+
+static PyObject *
+Conn_escape_literal(poque_Conn *self, PyObject *args, PyObject *kwds) {
+    static char *kwlist[] = {"literal", NULL};
+    return Conn_escape_function(self, args, kwds, kwlist, PQescapeLiteral);
+}
+
+
+static PyObject *
+Conn_escape_identifier(poque_Conn *self, PyObject *args, PyObject *kwds) {
+    static char *kwlist[] = {"identifier", NULL};
+    return Conn_escape_function(self, args, kwds, kwlist, PQescapeIdentifier);
+}
+
+
 static void
 Conn_dealloc(poque_Conn *self)
 {
@@ -435,6 +471,14 @@ static PyMethodDef Conn_methods[] = {{
     }, {
         "execute", (PyCFunction)Conn_execute, METH_VARARGS| METH_KEYWORDS,
         PyDoc_STR("execute a statement")
+    }, {
+        "escape_literal", (PyCFunction)Conn_escape_literal,
+        METH_VARARGS| METH_KEYWORDS,
+        PyDoc_STR("escape a literal")
+    }, {
+        "escape_identifier", (PyCFunction)Conn_escape_identifier,
+        METH_VARARGS| METH_KEYWORDS,
+        PyDoc_STR("escape an indentifier")
     }, {
         NULL
 }};

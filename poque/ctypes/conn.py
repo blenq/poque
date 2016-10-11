@@ -96,6 +96,14 @@ class Conn(c_void_p):
     reset_poll = get_method(pq.PQresetPoll)
     _finish = get_method(pq.PQfinish)
 
+    def escape_literal(self, literal):
+        literal = literal.encode()
+        return pq.PQescapeLiteral(self, literal, len(literal))
+
+    def escape_identifier(self, identifier):
+        identifier = identifier.encode()
+        return pq.PQescapeIdentifier(self, identifier, len(identifier))
+
     def finish(self):
         self._finish()
         self.value = 0
@@ -271,3 +279,20 @@ pq.PQexecParams.errcheck = check_exec
 pq.PQexec.restype = Result
 pq.PQexec.argtypes = [Conn, c_char_p]
 pq.PQexec.errcheck = check_exec
+
+
+def check_string_and_free(res, func, args):
+    if res is None:
+        conn = args[0]
+        conn._raise_error()
+    ret = c_char_p(res).value
+    pq.PQfreemem(res)
+    return ret.decode()
+
+pq.PQescapeLiteral.restype = c_void_p
+pq.PQescapeLiteral.argtypes = [Conn, c_char_p, c_size_t]
+pq.PQescapeLiteral.errcheck = check_string_and_free
+
+pq.PQescapeIdentifier.restype = c_void_p
+pq.PQescapeIdentifier.argtypes = [Conn, c_char_p, c_size_t]
+pq.PQescapeIdentifier.errcheck = check_string_and_free

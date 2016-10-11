@@ -121,6 +121,19 @@ class TestConnectionBasic():
             state = cn.reset_poll()
         self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
+    def test_escape_literal(self):
+        self.assertEqual(self.cn.escape_literal("h'oi"), "'h''oi'")
+        self.assertEqual(self.cn.escape_literal(literal="h'oi"), "'h''oi'")
+        with self.assertRaises(TypeError):
+            self.cn.escape_literal(lit="h'oi")
+
+    def test_escape_identifier(self):
+        self.assertEqual(self.cn.escape_identifier('Hello'), '"Hello"')
+        self.assertEqual(self.cn.escape_identifier(identifier='Hello'),
+                         '"Hello"')
+        with self.assertRaises(TypeError):
+            self.cn.escape_identifier(lit="h'oi")
+
     def test_finish(self):
         self.cn.finish()
         self.assertEqual(self.cn.status, self.poque.CONNECTION_BAD)
@@ -196,6 +209,14 @@ class TestConnectionClosed():
     def test_reset_poll(self):
         with self.assertRaises(ValueError):
             self.cn.reset_poll()
+
+    def test_escape_literal(self):
+        with self.assertRaises(ValueError):
+            self.cn.escape_literal("h'oi")
+
+    def test_escape_identifier(self):
+        with self.assertRaises(ValueError):
+            self.cn.escape_identifier('Hello')
 
     def test_finish(self):
         self.cn.finish()
