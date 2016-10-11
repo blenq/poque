@@ -156,6 +156,10 @@ class ResultTestValues():
         self.assertEqual(res.pq_getvalue(0, 0), b"hoi")
         self.assertEqual(res.pq_getvalue(2, 3), "")
 
+    def test_two_queries(self):
+        res = self.cn.execute(command="SELECT 1;SELECT 2", result_format=0)
+        self.assertEqual(res.getvalue(0, 0), 2)
+
     def _test_int_getvalue(self, fmt, typ, oid):
         res = self.cn.execute(command="SELECT 6::{0}".format(typ),
                               result_format=fmt)

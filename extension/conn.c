@@ -193,7 +193,7 @@ static PyObject *
 Conn_execute(poque_Conn *self, PyObject *args, PyObject *kwds) {
 
     char *sql;
-    int format = 1;
+    int format = FORMAT_BINARY;
     PGresult *res;
     ExecStatusType res_status;
 
@@ -203,8 +203,11 @@ Conn_execute(poque_Conn *self, PyObject *args, PyObject *kwds) {
         return NULL;
 
     if (format)
-        format = 1;
-    res = PQexecParams(self->conn, sql, 0, NULL, NULL, NULL, NULL, format);
+        format = FORMAT_BINARY;
+    if (format == FORMAT_BINARY)
+        res = PQexecParams(self->conn, sql, 0, NULL, NULL, NULL, NULL, format);
+    else
+        res = PQexec(self->conn, sql);
     if (res == NULL) {
         Conn_set_error(self->conn);
         return NULL;

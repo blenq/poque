@@ -21,6 +21,10 @@ poque_Result *PoqueResult_New(PGresult *res);
 PyObject *Poque_info_options(PQconninfoOption *options);
 PyObject *Poque_value(Oid oid, int format, char *data, int len);
 
+
+#define FORMAT_TEXT         0
+#define FORMAT_BINARY       1
+
 /* boolean */
 #define BOOLOID             16
 #define BOOLARRAYOID        1000

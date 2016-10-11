@@ -120,6 +120,8 @@ class Conn(c_void_p):
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
         if not parameters:
+            if result_format == FORMAT_TEXT:
+                return pq.PQexec(self, command.encode())
             return pq.PQexecParams(self, command.encode(), 0, None, None, None,
                                    None, result_format)
         num_params = len(parameters)
@@ -250,7 +252,7 @@ pq.PQparameterStatus.argtypes = [Conn, c_char_p]
 pq.PQparameterStatus.errcheck = check_string
 
 
-def check_exec_params(res, func, args):
+def check_exec(res, func, args):
     if res is None:
         conn = args[0]
         conn._raise_error()
@@ -263,4 +265,9 @@ pq.PQexecParams.restype = Result
 pq.PQexecParams.argtypes = [
     Conn, c_char_p, c_int, POINTER(c_uint), POINTER(c_char_p), POINTER(c_int),
     POINTER(c_int), c_int]
-pq.PQexecParams.errcheck = check_exec_params
+pq.PQexecParams.errcheck = check_exec
+
+
+pq.PQexec.restype = Result
+pq.PQexec.argtypes = [Conn, c_char_p]
+pq.PQexec.errcheck = check_exec
