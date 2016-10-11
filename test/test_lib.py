@@ -66,6 +66,14 @@ class TestLib():
     def test_libversion(self):
         self.assertGreaterEqual(self.poque.lib_version(), 90100)
 
+    def test_encrypt_password(self):
+        self.assertEqual(
+            self.poque.encrypt_password('password', 'user'),
+            'md54d45974e13472b5a0be3533de4666414')
+        self.assertEqual(
+            self.poque.encrypt_password(user='user', password='password'),
+            'md54d45974e13472b5a0be3533de4666414')
+
 
 class TestLibExtension(
         BaseExtensionTest, TestLib, unittest.TestCase):

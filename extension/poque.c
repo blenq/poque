@@ -78,12 +78,35 @@ poque_libversion(PyObject *self, PyObject *unused) {
     return PyLong_FromLong(PQlibVersion());
 }
 
+
+static PyObject *
+poque_encrypt_password(PyObject *self, PyObject *args, PyObject *kwargs) {
+    char *password, *user, *encrypted;
+    PyObject *ret;
+    static char *kwlist[] = {"password", "user", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwargs, "ss", kwlist, &password, &user))
+        return NULL;
+    encrypted = PQencryptPassword(password, user);
+    if (encrypted == NULL){
+        return PyErr_NoMemory();
+    }
+    ret = PyUnicode_FromString(encrypted);
+    PQfreemem(encrypted);
+    return ret;
+}
+
+
 static PyMethodDef PoqueMethods[] = {
     {"conn_defaults", Poque_conn_defaults, METH_NOARGS,
      PyDoc_STR("default connection options")},
     {"conninfo_parse", Poque_conninfo_parse,  METH_VARARGS,
      PyDoc_STR("parse a connection string")},
     {"lib_version", poque_libversion, METH_NOARGS, PyDoc_STR("libpq version")},
+    {"encrypt_password", (PyCFunction)poque_encrypt_password,
+     METH_VARARGS | METH_KEYWORDS, PyDoc_STR("encrypts a password")
+    },
     {NULL}
 };
 

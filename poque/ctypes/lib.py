@@ -1,4 +1,4 @@
-from ctypes import c_char_p, POINTER, c_int
+from ctypes import c_char_p, POINTER, c_void_p
 from .pq import pq, PQconninfoOptions, check_info_options
 
 
@@ -31,8 +31,6 @@ def conninfo_parse(conninfo):
 
 
 pq.PQlibVersion.argtypes = []
-pq.PQlibVersion.restype = c_int
-
 lib_version = pq.PQlibVersion
 
 
@@ -46,3 +44,19 @@ def get_method(func):
     def method(self):
         return func(self)
     return method
+
+
+def check_encrypt_password(res, func, args):
+    if res is None:
+        raise MemoryError()
+    ret = c_char_p(res).value
+    pq.PQfreemem(res)
+    return ret.decode()
+
+pq.PQencryptPassword.restype = c_void_p
+pq.PQencryptPassword.argtypes = [c_char_p, c_char_p]
+pq.PQencryptPassword.errcheck = check_encrypt_password
+
+
+def encrypt_password(password, user):
+    return pq.PQencryptPassword(password.encode(), user.encode())
