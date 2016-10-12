@@ -1,4 +1,4 @@
-from ctypes import c_void_p, c_char_p, POINTER, c_int, c_uint
+from ctypes import c_void_p, c_char_p, POINTER, c_int, c_uint, c_size_t
 from uuid import UUID
 
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
@@ -12,8 +12,8 @@ from .lib import Error, _get_property, get_method
 from .result import Result
 
 
-def new_connstring(connstring, async=False):
-    return [connstring], async
+def new_connstring(connstring, blocking=True):
+    return [connstring], blocking
 
 
 def _get_str_param(val):
@@ -42,12 +42,12 @@ class Conn(c_void_p):
     def __new__(cls, *args, **kwargs):
         if args:
             names = ['dbname']
-            values, async = new_connstring(*args, **kwargs)
+            values, blocking = new_connstring(*args, **kwargs)
             expand_dbname = True
         else:
             kws = kwargs.copy()
             expand_dbname = bool(kws.pop('expand_dbname', False))
-            async = kws.pop('async', False)
+            blocking = kws.pop('blocking', True)
             names, values = list(zip(*kws.items()))
         plen = len(names) + 1
         pq_names = (c_char_p * plen)()
@@ -59,9 +59,9 @@ class Conn(c_void_p):
             if value is not None:
                 value = value.encode()
             pq_values[i] = value
-        if async:
-            return pq.PQconnectStartParams(pq_names, pq_values, expand_dbname)
-        return pq.PQconnectdbParams(pq_names, pq_values, expand_dbname)
+        if blocking:
+            return pq.PQconnectdbParams(pq_names, pq_values, expand_dbname)
+        return pq.PQconnectStartParams(pq_names, pq_values, expand_dbname)
 
     def __init__(self, *args, **kwargs):
         pass

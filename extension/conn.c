@@ -31,11 +31,11 @@ Conn_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 
 static int
 Conn_init_kwds(PyObject *kwds, char **names, char **values,
-               int *expand_dbname, int *async)
+               int *expand_dbname, int *blocking)
 {
     /* Only keyword arguments, use the libpq parameter connect functions
      *
-     * Parameters names and values are passed as is (except for async and
+     * Parameters names and values are passed as is (except for blocking and
      * expand_dbname), so this stays compatible when libpq adds more
      * parameter options in future versions. Therefore it uses its own
      * argument parsing instead the provided Python API argument parser
@@ -61,12 +61,12 @@ Conn_init_kwds(PyObject *kwds, char **names, char **values,
         if (name == NULL) {
             return -1;
         }
-        if (strcmp(name, "async") == 0){
+        if (strcmp(name, "blocking") == 0){
             /* special poque parameter, not passed to libpq, used to determine
              * the connect function
              */
-            *async = PyObject_IsTrue(val);
-            if (*async == -1) {
+            *blocking = PyObject_IsTrue(val);
+            if (*blocking == -1) {
                 return -1;
             }
         }
@@ -108,22 +108,22 @@ Conn_init(poque_Conn *self, PyObject *args, PyObject *kwds)
     */
     Py_ssize_t args_len;
     char *names[CONN_MAX_KWDS], *values[CONN_MAX_KWDS];
-    int async = 0, expand_dbname;
+    int blocking = 1, expand_dbname;
     int params_size;
     PGconn *conn;
 
     args_len = PyTuple_Size(args);
     if (args_len == 0) {
         params_size = Conn_init_kwds(kwds, names, values, &expand_dbname,
-                                     &async);
+                                     &blocking);
         if (params_size < 0) {
             return -1;
         }
     } else {
         /* connection string version */
-        static char *kwlist[] = {"conninfo", "async", NULL};
+        static char *kwlist[] = {"conninfo", "blocking", NULL};
         if (!PyArg_ParseTupleAndKeywords(
-                args, kwds, "s|i", kwlist, values, &async)) {
+                args, kwds, "s|i", kwlist, values, &blocking)) {
             return -1;
         }
         names[0] = "dbname";
@@ -137,16 +137,16 @@ Conn_init(poque_Conn *self, PyObject *args, PyObject *kwds)
     names[params_size + 1] = NULL;  /* terminate array */
 
     /* and finally connect */
-    if (async) {
+    if (blocking) {
+        Py_BEGIN_ALLOW_THREADS
+       conn = PQconnectdbParams(
+           (const char * const *)names, (const char * const *)values,
+           expand_dbname);
+       Py_END_ALLOW_THREADS
+    } else {
         conn = PQconnectStartParams(
             (const char * const *)names, (const char * const *)values,
             expand_dbname);
-    } else {
-        Py_BEGIN_ALLOW_THREADS
-        conn = PQconnectdbParams(
-            (const char * const *)names, (const char * const *)values,
-            expand_dbname);
-        Py_END_ALLOW_THREADS
     }
 
     /* error checking */

@@ -252,7 +252,7 @@ class TestConnectionAsync():
     def test_async_wrong(self):
         dbparams = config.connstringparams()
         dbparams['dbname'] = 'nonsense'
-        cn = self.poque.Conn(async=True, **dbparams)
+        cn = self.poque.Conn(blocking=False, **dbparams)
         with self.assertRaises(self.poque.Error):
             self.async_connect(cn)
         self.assertEqual(cn.status, self.poque.CONNECTION_BAD)
