@@ -25,11 +25,11 @@ class ResultTestParameters():
         self.assertEqual(res.getvalue(0, 1), 2147483648)
         self.assertEqual(res.getvalue(0, 2), "17000000000000000000")
 
-    def test_int_array_param(self):
-        res = self.cn.execute(
-            "SELECT $1", ([3, 2147483648, 17000000000000000000],))
-        self.assertEqual(
-            res.getvalue(0, 0), ['3', '2147483648', '17000000000000000000'])
+#     def test_int_array_param(self):
+#         res = self.cn.execute(
+#             "SELECT $1", ([3, 2147483648, 17000000000000000000],))
+#         self.assertEqual(
+#             res.getvalue(0, 0), ['3', '2147483648', '17000000000000000000'])
 
     def test_float_param(self):
         self._test_param_val(3.24)

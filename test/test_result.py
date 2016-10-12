@@ -936,8 +936,6 @@ class ResultTestValues():
                               result_format=1)
         v = res.getvalue(0, 0)
         self.assertEqual(v, val)
-        del val
-        self.assertEqual(sys.getrefcount(v), 2)
         self._test_value_and_type_bin(
             "SELECT '12345678123456781234567800345678'::uuid",
             UUID(hex='12345678123456781234567800345678'), self.poque.UUIDOID)
@@ -947,7 +945,6 @@ class ResultTestValues():
         res = self.cn.execute("SELECT '{0}'::uuid".format(val),
                               result_format=0)
         v = res.getvalue(0, 0)
-        self.assertEqual(sys.getrefcount(v), 2)
         self.assertEqual(v, val)
         self.assertEqual(res.ftype(0), self.poque.UUIDOID)
 
