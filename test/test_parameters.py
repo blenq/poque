@@ -51,6 +51,29 @@ class ResultTestParameters():
             res.getvalue(0, 0), [[None, None], [None, None]])
         self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
 
+    def test_empty_array_param(self):
+        res = self.cn.execute(
+            "SELECT $1", ([[], []],))
+        self.assertEqual(
+            res.getvalue(0, 0), [])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
+
+    def test_wrong_array_param(self):
+        with self.assertRaises(ValueError):
+            self.cn.execute("SELECT $1", ([[2], [3, 4]],))
+
+        with self.assertRaises(ValueError):
+            self.cn.execute("SELECT $1", ([2, []],))
+
+        with self.assertRaises(ValueError):
+            self.cn.execute("SELECT $1", ([[2, 3], 5],))
+
+        with self.assertRaises(ValueError):
+            self.cn.execute("SELECT $1", ([[[]], []],))
+
+        with self.assertRaises(ValueError):
+            self.cn.execute("SELECT $1", ([[[[[[[101]]]]]]],))
+
     def test_float_param(self):
         self._test_param_val(3.24)
 

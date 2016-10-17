@@ -98,7 +98,6 @@ class ArrayParameter(object):
         self.dims = []
         self.max_depth = 0
         self.has_none = False
-        self.num_vals = 0
         self.has_null = False
         self.converter = None
         self.walk_list(val, 0)
@@ -112,22 +111,22 @@ class ArrayParameter(object):
             dim_length = self.dims[depth]
         except IndexError:
             if len(self.dims) == 6:
-                raise Error("Too deep nested")
+                raise ValueError("Too deep nested")
             dim_length = len(val)
             self.dims.append(dim_length)
         if len(val) != dim_length:
-            raise Error("Invalid list length")
+            raise ValueError("Invalid list length")
         depth += 1
         for item in val:
             if isinstance(item, list):
                 if self.max_depth and depth == self.max_depth:
-                    raise Error("Invalid nesting")
+                    raise ValueError("Invalid nesting")
                 self.walk_list(item, depth)
             else:
                 if self.max_depth == 0:
                     self.max_depth = depth
                 if depth != self.max_depth:
-                    raise Error("Invalid nesting")
+                    raise ValueError("Invalid nesting")
                 if item is None:
                     self.has_null = True
                     continue
@@ -138,7 +137,6 @@ class ArrayParameter(object):
                 if item_type != self.type:
                     raise ValueError("Can not mix types")
                 self.converter.check_value(item)
-                self.num_vals += 1
 
     def write(self, fmt, *args):
         stc = Struct(fmt)
@@ -150,7 +148,6 @@ class ArrayParameter(object):
         self.write(fmt, *args)
 
     def write_values(self, val):
-        conv = self.converter
         for item in val:
             if type(item) == list:
                 self.write_values(item)
