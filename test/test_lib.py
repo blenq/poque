@@ -1,4 +1,5 @@
 import unittest
+import sys
 
 from test.config import BaseExtensionTest, BaseCTypesTest
 
@@ -7,6 +8,8 @@ def assert_is_conninfo(self, info):
     self.assertIsInstance(info, dict)
     for k, v in info.items():
         self.assertIsInstance(k, str)
+        self.assertIsInstance(v, tuple)
+#         self.assertNotEqual(type(v), tuple)
         for item in v[:5]:
             self.assertIsInstance(item, (str, type(None)))
         self.assertIsInstance(v[5], int)
@@ -65,6 +68,9 @@ class TestLib():
 
     def test_libversion(self):
         self.assertGreaterEqual(self.poque.lib_version(), 90100)
+
+    def test_ssl_loaded(self):
+        self.assertTrue('ssl' in sys.modules)
 
     def test_encrypt_password(self):
         self.assertEqual(

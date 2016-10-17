@@ -1,11 +1,15 @@
-from ctypes import c_void_p, c_char_p, POINTER, c_int, c_uint, c_size_t
+from ctypes import (c_void_p, c_char_p, POINTER, c_int, c_uint, c_size_t,
+                    create_string_buffer, c_char, cast)
+from functools import reduce
+import operator
+from struct import Struct, pack_into, calcsize
 from uuid import UUID
 
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
 from .constants import (
-    CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID,
-    BOOLOID, BYTEAOID, UUIDOID, FORMAT_BINARY,
-    FORMAT_TEXT)
+    CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID, INT4OID, INT8OID,
+    BOOLOID, BYTEAOID, UUIDOID, FORMAT_BINARY, INT4ARRAYOID, INT8ARRAYOID,
+    TEXTARRAYOID, FORMAT_TEXT)
 from .dt import get_date_time_param_converters
 from .numeric import get_numeric_param_converters
 from .lib import Error, _get_property, get_method
@@ -35,6 +39,148 @@ def _get_none_param(val):
 
 def _get_uuid_param(val):
     return UUIDOID, c_char_p(val.bytes), 16, FORMAT_BINARY
+
+
+class IntArrayParameterHandler(object):
+
+    def __init__(self):
+        self.values = []
+        self.oid = INT4OID
+
+    def check_value(self, val):
+        self.values.append(val)
+
+        if self.oid == INT4OID:
+            if -0x80000000 <= val <= 0x7FFFFFFF:
+                return
+            self.oid = INT8OID
+
+        if self.oid == INT8OID:
+            if -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF:
+                return
+            self.oid = TEXTOID
+
+    def get_length(self):
+        if self.oid == INT4OID:
+            self.encode_value = self.encode_int4_value
+            return len(self.values) * 4
+        if self.oid == INT8OID:
+            self.encode_value = self.encode_int8_value
+            return len(self.values) * 8
+        self.encode_value = self.encode_text_value
+        self.values = [str(v).encode() for v in self.values]
+        return sum(len(v) for v in self.values)
+
+    def encode_int4_value(self, param, val):
+        param.write_value("!i", val)
+
+    def encode_int8_value(self, param, val):
+        param.write_value("!q", val)
+
+    def encode_text_value(self, param, val):
+        val = str(val).encode()
+        val_len = len(val)
+        param.write_value("!{0}s".format(val_len), val)
+
+    def get_array_oid(self):
+        if self.oid == INT4OID:
+            return INT4ARRAYOID
+        if self.oid == INT8OID:
+            return INT8ARRAYOID
+        return TEXTARRAYOID
+
+
+class ArrayParameter(object):
+
+    def __init__(self, val):
+        self.val = val
+        self.type = None
+        self.dims = []
+        self.max_depth = 0
+        self.has_none = False
+        self.num_vals = 0
+        self.has_null = False
+        self.converter = None
+        self.walk_list(val, 0)
+
+    _array_handlers = {
+        int: IntArrayParameterHandler,
+    }
+
+    def walk_list(self, val, depth):
+        try:
+            dim_length = self.dims[depth]
+        except IndexError:
+            if len(self.dims) == 6:
+                raise Error("Too deep nested")
+            dim_length = len(val)
+            self.dims.append(dim_length)
+        if len(val) != dim_length:
+            raise Error("Invalid list length")
+        depth += 1
+        for item in val:
+            if isinstance(item, list):
+                if self.max_depth and depth == self.max_depth:
+                    raise Error("Invalid nesting")
+                self.walk_list(item, depth)
+            else:
+                if self.max_depth == 0:
+                    self.max_depth = depth
+                if depth != self.max_depth:
+                    raise Error("Invalid nesting")
+                if item is None:
+                    self.has_null = True
+                    continue
+                item_type = type(item)
+                if self.type is None:
+                    self.type = item_type
+                    self.converter = self._array_handlers[item_type]()
+                if item_type != self.type:
+                    raise ValueError("Can not mix types")
+                self.converter.check_value(item)
+                self.num_vals += 1
+
+    def write(self, fmt, *args):
+        stc = Struct(fmt)
+        stc.pack_into(self.buf, self.pos, *args)
+        self.pos += stc.size
+
+    def write_value(self, fmt, *args):
+        self.write("!i", calcsize(fmt))
+        self.write(fmt, *args)
+
+    def write_values(self, val):
+        conv = self.converter
+        for item in val:
+            if type(item) == list:
+                self.write_values(item)
+            elif item is None:
+                self.write("!i", -1)
+            else:
+                self.converter.encode_value(self, item)
+
+    def get_value(self):
+        dim_len = len(self.dims)
+        length = 12 + dim_len * 8 + reduce(operator.mul, self.dims, 1) * 4
+        if self.converter:
+            length += self.converter.get_length()
+            elem_type = self.converter.oid
+            array_oid = self.converter.get_array_oid()
+        else:
+            elem_type = TEXTOID
+            array_oid = TEXTARRAYOID
+        self.buf = (c_char * length)()  # create_string_buffer(length)
+        self.pos = 0
+        self.write("!IiI", dim_len, self.has_null, elem_type)
+        for dim in self.dims:
+            self.write("!ii", dim, 1)
+        self.write_values(self.val)
+        return array_oid, cast(self.buf, c_char_p), length, FORMAT_BINARY
+
+
+def _get_array_param(val):
+    param = ArrayParameter(val)
+    return param.get_value()
 
 
 class Conn(c_void_p):
@@ -122,6 +268,7 @@ class Conn(c_void_p):
         bytes: _get_bytes_param,
         type(None): _get_none_param,
         UUID: _get_uuid_param,
+        list: _get_array_param,
     }
     _param_converters.update(get_date_time_param_converters())
     _param_converters.update(get_numeric_param_converters())

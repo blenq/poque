@@ -25,11 +25,31 @@ class ResultTestParameters():
         self.assertEqual(res.getvalue(0, 1), 2147483648)
         self.assertEqual(res.getvalue(0, 2), "17000000000000000000")
 
-#     def test_int_array_param(self):
-#         res = self.cn.execute(
-#             "SELECT $1", ([3, 2147483648, 17000000000000000000],))
-#         self.assertEqual(
-#             res.getvalue(0, 0), ['3', '2147483648', '17000000000000000000'])
+    def test_int_array_param(self):
+        res = self.cn.execute(
+            "SELECT $1", ([3, 2147483648, 17000000000000000000],))
+        self.assertEqual(
+            res.getvalue(0, 0), ['3', '2147483648', '17000000000000000000'])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
+        res = self.cn.execute("SELECT $1", ([3, None, 12],))
+        self.assertEqual(
+            res.getvalue(0, 0), [3, None, 12])
+        self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
+        res = self.cn.execute("SELECT $1", ([3, None, 0x80000000],))
+        self.assertEqual(
+            res.getvalue(0, 0), [3, None, 0x80000000])
+        self.assertEqual(res.ftype(0), self.poque.INT8ARRAYOID)
+
+    def test_mixed_array_param(self):
+        with self.assertRaises(ValueError):
+            self.cn.execute("SELECT $1", ([3, 'hi'],))
+
+    def test_all_none_array_param(self):
+        res = self.cn.execute(
+            "SELECT $1", ([[None, None], [None, None]],))
+        self.assertEqual(
+            res.getvalue(0, 0), [[None, None], [None, None]])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
 
     def test_float_param(self):
         self._test_param_val(3.24)

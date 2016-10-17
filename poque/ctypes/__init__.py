@@ -1,3 +1,5 @@
+import ssl
+
 from .conn import Conn
 from .constants import *
 from .lib import (
