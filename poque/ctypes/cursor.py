@@ -16,7 +16,9 @@ class ValueCursor():
         self.length = length
         self.idx = 0
 
-    def advance(self, length):
+    def advance(self, length=None):
+        if length is None:
+            length = self.length - self.idx
         ret = self.idx
         if ret + length > self.length:
             # check
@@ -34,14 +36,14 @@ class ValueCursor():
             raise Error("Unexpected length")
         return stc.unpack_from(self.data, offset=self.advance(stc.size))
 
-    def advance_view(self, length):
+    def advance_view(self, length=None):
         idx = self.advance(length)
         return self.data[idx:self.idx]
 
     def advance_bytes(self, length):
         return bytes(self.advance_view(length))
 
-    def advance_text(self, length):
+    def advance_text(self, length=None):
         return decode(self.advance_view(length))
 
     def advance_single(self, fmt, length=None):
