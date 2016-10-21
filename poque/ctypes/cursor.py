@@ -1,28 +1,8 @@
 from codecs import decode
 from ctypes import c_byte
-from struct import Struct, calcsize, unpack_from
 
+from .common import get_struct
 from .lib import Error
-
-
-def get_struct_advancer(fmt):
-    sct = Struct(fmt)
-    sct_size = sct.size
-    unpack_from = sct.unpack_from
-
-    def advance_struct(self, length=None):
-        if length is not None and length != sct_size:
-            raise Error("Invalid length for item")
-        return unpack_from(self.data, offset=self.advance(sct_size))
-    return advance_struct
-
-
-def get_struct_single_advancer(fmt):
-    func = get_struct_advancer(fmt)
-
-    def advance_struct(self, length=None):
-        return func(self, length)[0]
-    return advance_struct
 
 
 class ValueCursor():
@@ -47,10 +27,12 @@ class ValueCursor():
         # return the previous index
         return ret
 
-    def advance_struct_format(self, fmt):
+    def advance_struct_format(self, fmt, length=None):
         # read values from the cursor according to the provided struct format
-        calc_length = calcsize(fmt)
-        return unpack_from(fmt, self.data, offset=self.advance(calc_length))
+        stc = get_struct(fmt)
+        if length is not None and length != stc.size:
+            raise Error("Unexpected length")
+        return stc.unpack_from(self.data, offset=self.advance(stc.size))
 
     def advance_view(self, length):
         idx = self.advance(length)
@@ -62,24 +44,5 @@ class ValueCursor():
     def advance_text(self, length):
         return decode(self.advance_view(length))
 
-    advance_bool = get_struct_single_advancer("!?")
-    advance_ubyte = get_struct_single_advancer("!B")
-    advance_char = get_struct_single_advancer("!c")
-    advance_int2 = get_struct_single_advancer("!h")
-    advance_int4 = get_struct_single_advancer("!i")
-    advance_uint4 = get_struct_single_advancer("!I")
-    advance_int8 = get_struct_single_advancer("!q")
-    advance_float4 = get_struct_single_advancer("!f")
-    advance_float8 = get_struct_single_advancer("!d")
-
-    advance_struct_format_IiI = get_struct_advancer("!IiI")
-    advance_struct_format_2d = get_struct_advancer("!2d")
-    advance_struct_format_3d = get_struct_advancer("!3d")
-    advance_struct_format_4d = get_struct_advancer("!4d")
-    advance_struct_format_4B = get_struct_advancer("!4B")
-    advance_struct_format_8H = get_struct_advancer("!8H")
-    advance_struct_format_HI = get_struct_advancer("!HI")
-    advance_struct_format_IH = get_struct_advancer("!IH")
-    advance_struct_format_qi = get_struct_advancer("!qi")
-    advance_struct_format_qii = get_struct_advancer("!qii")
-    advance_struct_format_HhHH = get_struct_advancer("!HhHH")
+    def advance_single(self, fmt, length=None):
+        return self.advance_struct_format(fmt, length)[0]

@@ -192,6 +192,9 @@ class TestConnectionClosed():
         with self.assertRaises(ValueError):
             self.cn.fileno()
 
+    def test_info(self):
+        self.assertIs(self.cn.info(), None)
+
     def test_parameter_status(self):
         self.assertIsNone(self.cn.parameter_status('client_encoding'))
 

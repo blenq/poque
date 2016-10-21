@@ -264,6 +264,15 @@ Conn_info(poque_Conn *self, PyObject *unused)
     PQconninfoOption *info;
 
     info = PQconninfo(self->conn);
+    if (info == NULL) {
+        if (self->conn == NULL) {
+            Py_RETURN_NONE;
+        }
+        else {
+            PyErr_SetString(PyExc_ValueError, "Connection is closed");
+            return NULL;
+        }
+    }
     options = Poque_info_options(info);
     PQconninfoFree(info);
     return options;

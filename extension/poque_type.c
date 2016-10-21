@@ -1,6 +1,5 @@
 #include "poque.h"
 #include <datetime.h>
-#include <endian.h>
 
 
 static PyObject *
@@ -62,6 +61,7 @@ typedef struct {
     char *data;
     int len;
     int item_len;
+    Oid el_oid;
 } data_crs;
 
 typedef PyObject *(*pq_read)(data_crs *curs);
@@ -121,7 +121,7 @@ read_uint8_binval(data_crs *curs, unsigned char *value) {
 }
 
 static int
-read_uint16_binval(data_crs *curs, uint16_t *value)
+read_uint16_binval(data_crs *curs, poque_uint16 *value)
 {
     unsigned char *data;
 
@@ -129,18 +129,25 @@ read_uint16_binval(data_crs *curs, uint16_t *value)
     if (data == NULL)
         return -1;
 
-    *value = ((uint16_t)data[0] << 8) + data[1];
+    *value = ((poque_uint16)data[0] << 8) + data[1];
     return 0;
+}
+
+
+static int
+read_int16_binval(data_crs *curs, poque_int16 *value)
+{
+    return read_uint16_binval(curs, (poque_uint16 *)value);
 }
 
 
 static PyObject *
 int16_binval(data_crs *curs)
 {
-    uint16_t value;
-    if (read_uint16_binval(curs, &value) < 0)
+    poque_int16 value;
+    if (read_int16_binval(curs, &value) < 0)
         return NULL;
-    return PyLong_FromLong((int16_t)value);
+    return PyLong_FromLong(value);
 }
 
 
@@ -189,14 +196,15 @@ int32_binval(data_crs *curs)
 static int
 read_uint64_binval(data_crs *curs, PY_UINT64_T *value)
 {
-    char *data;
+    unsigned char *data;
 
-    data = advance_cursor_len(curs, 8);
+    data = (unsigned char *)advance_cursor_len(curs, 8);
     if (data == NULL)
         return -1;
-
-    memcpy(value, data, 8);
-    *value = be64toh(*value);
+    *value = ((PY_UINT64_T)data[0] << 56) | ((PY_UINT64_T)data[1] << 48) |
+             ((PY_UINT64_T)data[2] << 40) | ((PY_UINT64_T)data[3] << 32) |
+             ((PY_UINT64_T)data[4] << 24) | ((PY_UINT64_T)data[5] << 16) |
+             ((PY_UINT64_T)data[6] << 8) | data[7];
     return 0;
 }
 
@@ -491,6 +499,11 @@ get_arr_value(data_crs *curs, PY_INT32_T *arraydims, pq_read read_func) {
         if (item_len == -1)
             Py_RETURN_NONE;
 
+        if (item_len < 0) {
+            PyErr_SetString(PoqueError, "Invalid length");
+            return NULL;
+        }
+
         /* advance cursor past item */
         data = advance_cursor_len(curs, item_len);
         if (data == NULL)
@@ -587,7 +600,7 @@ static PyObject *
 tid_binval(data_crs *curs)
 {
     PY_UINT32_T block_num;
-    uint16_t offset;
+    poque_uint16 offset;
     PyObject *tid, *tmp;
 
     if (read_uint32_binval(curs, &block_num) < 0)
@@ -972,7 +985,7 @@ circle_binval(data_crs *curs) {
 static PyObject *
 mac_binval(data_crs *curs)
 {
-    uint16_t first;
+    poque_uint16 first;
     PY_UINT32_T second;
 
     if (read_uint16_binval(curs, &first) < 0)
@@ -1022,7 +1035,7 @@ inet_binval(data_crs *curs)
         else
             cls_name = "IPv4Interface";
     } else if (family == PGSQL_AF_INET6) {
-        uint16_t parts[8];
+        poque_uint16 parts[8];
         int i;
 
         if (size != 16) {
@@ -1327,7 +1340,7 @@ numeric_strval(data_crs *curs) {
 
 
 static int
-numeric_set_digit(PyObject *digit_tuple, uint16_t val, int *idx) {
+numeric_set_digit(PyObject *digit_tuple, poque_uint16 val, int *idx) {
     PyObject *digit;
 
     /* create the digit */
@@ -1347,7 +1360,7 @@ numeric_set_digit(PyObject *digit_tuple, uint16_t val, int *idx) {
 
 
 static int
-numeric_set_digitn(PyObject *digit_tuple, uint16_t val, int ndigits, int *idx) {
+numeric_set_digitn(PyObject *digit_tuple, poque_uint16 val, int ndigits, int *idx) {
 
     if (*idx == ndigits) {
         /* Check for ndigits because there might be more available
@@ -1362,15 +1375,15 @@ numeric_set_digitn(PyObject *digit_tuple, uint16_t val, int ndigits, int *idx) {
 static PyObject *
 numeric_binval(data_crs *curs) {
     /* Create a Decimal from a binary value */
-    uint16_t npg_digits, sign, dscale;
-    int16_t weight;
+    poque_uint16 npg_digits, sign, dscale;
+    poque_int16 weight;
     int ndigits, i, j;
     PyObject *digits, *ret=NULL, *arg, *args, *pyval;
 
     /* Get the field values */
     if (read_uint16_binval(curs, &npg_digits) < 0)
         return NULL;
-    if (read_uint16_binval(curs, (uint16_t *)&weight) < 0)
+    if (read_int16_binval(curs, &weight) < 0)
         return NULL;
     if (read_uint16_binval(curs, &sign) < 0)
         return NULL;
@@ -1431,7 +1444,7 @@ numeric_binval(data_crs *curs) {
     for (i = 0; i < npg_digits; i++) {
         /* fill from postgres digits. A postgres digit contains 4 decimal
          * digits */
-        uint16_t pg_digit;
+        poque_uint16 pg_digit;
 
         if (read_uint16_binval(curs, &pg_digit) < 0)
             return NULL;
@@ -1620,103 +1633,104 @@ typedef struct _poqueTypeEntry {
     Oid oid;
     pq_read binval;
     pq_read strval;
+    Oid el_oid;
     struct _poqueTypeEntry *next;
 } PoqueTypeEntry;
 
 static PoqueTypeEntry type_table[] = {
-    {INT4OID, int32_binval, int_strval, NULL},
-    {VARCHAROID, text_val, NULL, NULL},
-    {INT8OID, int64_binval, int_strval, NULL},
-    {INT2OID, int16_binval, int_strval, NULL},
-    {BOOLOID, bool_binval, bool_strval, NULL},
-    {BYTEAOID, bytea_binval, bytea_strval, NULL},
-    {CHAROID, char_binval, char_binval, NULL},
-    {NAMEOID, text_val, NULL, NULL},
-    {INT2VECTOROID, array_binval, NULL, NULL},
-    {REGPROCOID, uint32_binval, NULL, NULL },
-    {TEXTOID, text_val, NULL, NULL},
-    {CSTRINGOID, text_val, NULL, NULL},
-    {CSTRINGARRAYOID, array_binval, NULL, NULL},
-    {BPCHAROID, text_val, NULL, NULL},
-    {OIDOID, uint32_binval, int_strval, NULL},
-    {TIDOID, tid_binval, tid_strval, NULL},
-    {XIDOID, uint32_binval, int_strval, NULL},
-    {CIDOID, uint32_binval, int_strval, NULL},
-    {OIDVECTOROID, array_binval, NULL, NULL},
-    {JSONOID, json_val, json_val, NULL},
-    {JSONBOID, jsonb_bin_val, json_val, NULL},
-    {XMLOID, text_val, text_val, NULL},
-    {XMLARRAYOID, array_binval, NULL, NULL},
-    {JSONARRAYOID, array_binval, NULL, NULL},
-    {JSONBARRAYOID, array_binval, NULL, NULL},
-    {POINTOID, point_binval, NULL, NULL},
-    {LINEOID, line_binval, NULL, NULL},
-    {LINEARRAYOID, array_binval, NULL, NULL},
-    {LSEGOID, lseg_binval, NULL, NULL},
-    {PATHOID, path_binval, NULL, NULL},
-    {BOXOID, lseg_binval, NULL, NULL},
-    {POLYGONOID, polygon_binval, NULL, NULL},
-    {ABSTIMEOID, abstime_binval, NULL, NULL},
-    {RELTIMEOID, reltime_binval, NULL, NULL},
-    {TINTERVALOID, tinterval_binval, NULL, NULL},
-    {UNKNOWNOID, text_val, NULL, NULL},
-    {CIRCLEOID, circle_binval, NULL, NULL},
-    {CIRCLEARRAYOID, array_binval, NULL, NULL},
-    {CASHOID, int64_binval, NULL, NULL},
-    {CASHARRAYOID, array_binval, NULL, NULL},
-    {MACADDROID, mac_binval, NULL, NULL},
-    {INETOID, inet_binval, NULL, NULL},
-    {CIDROID, inet_binval, NULL, NULL},
-    {BOOLARRAYOID, array_binval, NULL, NULL},
-    {BYTEAARRAYOID, array_binval, NULL, NULL},
-    {CHARARRAYOID, array_binval, NULL, NULL},
-    {NAMEARRAYOID, array_binval, NULL, NULL},
-    {INT2ARRAYOID, array_binval, NULL, NULL},
-    {INT2VECTORARRAYOID, array_binval, NULL, NULL },
-    {REGPROCARRAYOID, array_binval, NULL, NULL},
-    {TEXTARRAYOID, array_binval, NULL, NULL},
-    {OIDARRAYOID, array_binval, NULL, NULL},
-    {TIDARRAYOID, array_binval, NULL, NULL},
-    {XIDARRAYOID, array_binval, NULL, NULL},
-    {CIDARRAYOID, array_binval, NULL, NULL},
-    {BPCHARARRAYOID, array_binval, NULL, NULL},
-    {VARCHARARRAYOID, array_binval, NULL, NULL},
-    {OIDVECTORARRAYOID, array_binval, NULL, NULL},
-    {INT8ARRAYOID, array_binval, NULL, NULL},
-    {POINTARRAYOID, array_binval, NULL, NULL},
-    {LSEGARRAYOID, array_binval, NULL, NULL},
-    {PATHARRAYOID, array_binval, NULL, NULL},
-    {BOXARRAYOID, array_binval, NULL, NULL},
-    {FLOAT4ARRAYOID, array_binval, NULL, NULL},
-    {FLOAT8ARRAYOID, array_binval, NULL, NULL},
-    {ABSTIMEARRAYOID, array_binval, NULL, NULL},
-    {RELTIMEARRAYOID, array_binval, NULL, NULL},
-    {TINTERVALARRAYOID, array_binval, NULL, NULL},
-    {POLYGONARRAYOID, array_binval, NULL, NULL},
-    {MACADDRARRAYOID, array_binval, NULL, NULL},
-    {INETARRAYOID, array_binval, NULL, NULL},
-    {CIDRARRAYOID, array_binval, NULL, NULL},
-    {FLOAT8OID, float64_binval, float_strval, NULL},
-    {FLOAT4OID, float32_binval, float_strval, NULL},
-    {INT4ARRAYOID, array_binval, NULL, NULL },
-    {UUIDOID, uuid_binval, uuid_strval, NULL},
-    {DATEOID, date_binval, NULL, NULL},
-    {TIMEOID, time_binval, NULL, NULL},
-    {TIMETZOID, timetz_binval, NULL, NULL},
-    {TIMESTAMPOID, timestamp_binval, NULL, NULL},
-    {TIMESTAMPTZOID, timestamptz_binval, NULL, NULL},
-    {DATEARRAYOID, array_binval, NULL, NULL},
-    {TIMESTAMPARRAYOID, array_binval, NULL, NULL},
-    {TIMESTAMPTZARRAYOID, array_binval, NULL, NULL},
-    {TIMEARRAYOID, array_binval, NULL, NULL},
-    {INTERVALOID, interval_binval, NULL, NULL},
-    {INTERVALARRAYOID, array_binval, NULL, NULL},
-    {NUMERICOID, numeric_binval, numeric_strval, NULL},
-    {NUMERICARRAYOID, array_binval, NULL, NULL},
-    {BITOID, bit_binval, bit_strval, NULL},
-    {BITARRAYOID, array_binval, NULL, NULL},
-    {VARBITOID, bit_binval, bit_strval, NULL},
-    {VARBITARRAYOID, array_binval, NULL, NULL},
+    {INT4OID, int32_binval, int_strval, InvalidOid, NULL},
+    {VARCHAROID, text_val, NULL, InvalidOid, NULL},
+    {INT8OID, int64_binval, int_strval, InvalidOid, NULL},
+    {INT2OID, int16_binval, int_strval, InvalidOid, NULL},
+    {BOOLOID, bool_binval, bool_strval, InvalidOid, NULL},
+    {BYTEAOID, bytea_binval, bytea_strval, InvalidOid, NULL},
+    {CHAROID, char_binval, char_binval, InvalidOid, NULL},
+    {NAMEOID, text_val, NULL, InvalidOid, NULL},
+    {INT2VECTOROID, array_binval, NULL, InvalidOid, NULL},
+    {REGPROCOID, uint32_binval, NULL, InvalidOid, NULL},
+    {TEXTOID, text_val, NULL, InvalidOid, NULL},
+    {CSTRINGOID, text_val, NULL, InvalidOid, NULL},
+    {CSTRINGARRAYOID, array_binval, NULL, CSTRINGOID, NULL},
+    {BPCHAROID, text_val, NULL, InvalidOid, NULL},
+    {OIDOID, uint32_binval, int_strval, InvalidOid, NULL},
+    {TIDOID, tid_binval, tid_strval, InvalidOid, NULL},
+    {XIDOID, uint32_binval, int_strval, InvalidOid, NULL},
+    {CIDOID, uint32_binval, int_strval, InvalidOid, NULL},
+    {OIDVECTOROID, array_binval, NULL, InvalidOid, NULL},
+    {JSONOID, json_val, json_val, InvalidOid, NULL},
+    {JSONBOID, jsonb_bin_val, json_val, InvalidOid, NULL},
+    {XMLOID, text_val, text_val, InvalidOid, NULL},
+    {XMLARRAYOID, array_binval, NULL, XMLOID, NULL},
+    {JSONARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {JSONBARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {POINTOID, point_binval, NULL, InvalidOid, NULL},
+    {LINEOID, line_binval, NULL, InvalidOid, NULL},
+    {LINEARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {LSEGOID, lseg_binval, NULL, InvalidOid, NULL},
+    {PATHOID, path_binval, NULL, InvalidOid, NULL},
+    {BOXOID, lseg_binval, NULL, InvalidOid, NULL},
+    {POLYGONOID, polygon_binval, NULL, InvalidOid, NULL},
+    {ABSTIMEOID, abstime_binval, NULL, InvalidOid, NULL},
+    {RELTIMEOID, reltime_binval, NULL, InvalidOid, NULL},
+    {TINTERVALOID, tinterval_binval, NULL, InvalidOid, NULL},
+    {UNKNOWNOID, text_val, NULL, InvalidOid, NULL},
+    {CIRCLEOID, circle_binval, NULL, InvalidOid, NULL},
+    {CIRCLEARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {CASHOID, int64_binval, NULL, InvalidOid, NULL},
+    {CASHARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {MACADDROID, mac_binval, NULL, InvalidOid, NULL},
+    {INETOID, inet_binval, NULL, InvalidOid, NULL},
+    {CIDROID, inet_binval, NULL, InvalidOid, NULL},
+    {BOOLARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {BYTEAARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {CHARARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {NAMEARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {INT2ARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {INT2VECTORARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {REGPROCARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {TEXTARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {OIDARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {TIDARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {XIDARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {CIDARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {BPCHARARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {VARCHARARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {OIDVECTORARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {INT8ARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {POINTARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {LSEGARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {PATHARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {BOXARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {FLOAT4ARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {FLOAT8ARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {ABSTIMEARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {RELTIMEARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {TINTERVALARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {POLYGONARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {MACADDRARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {INETARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {CIDRARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {FLOAT8OID, float64_binval, float_strval, InvalidOid, NULL},
+    {FLOAT4OID, float32_binval, float_strval, InvalidOid, NULL},
+    {INT4ARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {UUIDOID, uuid_binval, uuid_strval, InvalidOid, NULL},
+    {DATEOID, date_binval, NULL, InvalidOid, NULL},
+    {TIMEOID, time_binval, NULL, InvalidOid, NULL},
+    {TIMETZOID, timetz_binval, NULL, InvalidOid, NULL},
+    {TIMESTAMPOID, timestamp_binval, NULL, InvalidOid, NULL},
+    {TIMESTAMPTZOID, timestamptz_binval, NULL, InvalidOid, NULL},
+    {DATEARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {TIMESTAMPARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {TIMESTAMPTZARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {TIMEARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {INTERVALOID, interval_binval, NULL, InvalidOid, NULL},
+    {INTERVALARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {NUMERICOID, numeric_binval, numeric_strval, InvalidOid, NULL},
+    {NUMERICARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {BITOID, bit_binval, bit_strval, InvalidOid, NULL},
+    {BITARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {VARBITOID, bit_binval, bit_strval, InvalidOid, NULL},
+    {VARBITARRAYOID, array_binval, NULL, InvalidOid, NULL},
     {InvalidOid}
 };
 

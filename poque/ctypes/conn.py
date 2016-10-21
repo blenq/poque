@@ -1,8 +1,8 @@
+from collections import deque
 from ctypes import (c_void_p, c_char_p, POINTER, c_int, c_uint, c_size_t,
-                    create_string_buffer, c_char, cast)
+                    c_char, cast)
 from functools import reduce
 import operator
-from struct import Struct, pack_into, calcsize
 from uuid import UUID
 
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
@@ -10,6 +10,7 @@ from .constants import (
     CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID, INT4OID, INT8OID,
     BOOLOID, BYTEAOID, UUIDOID, FORMAT_BINARY, INT4ARRAYOID, INT8ARRAYOID,
     TEXTARRAYOID, FORMAT_TEXT)
+from .common import get_struct
 from .dt import get_date_time_param_converters
 from .numeric import get_numeric_param_converters
 from .lib import Error, _get_property, get_method
@@ -46,6 +47,8 @@ class IntArrayParameterHandler(object):
     def __init__(self):
         self.values = []
         self.oid = INT4OID
+        self.encode_value = self.encode_int4_value
+        self.get_length = self.get_int4_length
 
     def check_value(self, val):
         self.values.append(val)
@@ -54,33 +57,35 @@ class IntArrayParameterHandler(object):
             if -0x80000000 <= val <= 0x7FFFFFFF:
                 return
             self.oid = INT8OID
+            self.encode_value = self.encode_int8_value
+            self.get_length = self.get_int8_length
 
         if self.oid == INT8OID:
             if -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF:
                 return
             self.oid = TEXTOID
+            self.encode_value = self.encode_text_value
+            self.get_length = self.get_text_length
 
-    def get_length(self):
-        if self.oid == INT4OID:
-            self.encode_value = self.encode_int4_value
-            return len(self.values) * 4
-        if self.oid == INT8OID:
-            self.encode_value = self.encode_int8_value
-            return len(self.values) * 8
-        self.encode_value = self.encode_text_value
-        self.values = [str(v).encode() for v in self.values]
-        return sum(len(v) for v in self.values)
+    def get_int4_length(self):
+        return len(self.values) * 4
 
     def encode_int4_value(self, param, val):
-        param.write_value("!i", val)
+        return "i", val
+
+    def get_int8_length(self):
+        return len(self.values) * 8
 
     def encode_int8_value(self, param, val):
-        param.write_value("!q", val)
+        return "q", val
+
+    def get_text_length(self):
+        self.values = deque(str(v).encode() for v in self.values)
+        return sum(len(v) for v in self.values)
 
     def encode_text_value(self, param, val):
-        val = str(val).encode()
-        val_len = len(val)
-        param.write_value("!{0}s".format(val_len), val)
+        val = self.values.popleft()
+        return "{0}s".format(len(val)), val
 
     def get_array_oid(self):
         if self.oid == INT4OID:
@@ -97,81 +102,131 @@ class ArrayParameter(object):
         self.type = None
         self.dims = []
         self.max_depth = 0
-        self.has_none = False
         self.has_null = False
         self.converter = None
-        self.walk_list(val, 0)
 
     _array_handlers = {
         int: IntArrayParameterHandler,
     }
 
-    def walk_list(self, val, depth):
+    def walk_list(self, val, depth=0):
+        # A nested list is not the same as a multidimensional array. Therefore
+        # some checks to make sure all lists of a certain dimension have the
+        # correct length
+
+        # get length of current dimension
+        val_len = len(val)
         try:
             dim_length = self.dims[depth]
         except IndexError:
-            if len(self.dims) == 6:
-                raise ValueError("Too deep nested")
-            dim_length = len(val)
+            dim_length = val_len
             self.dims.append(dim_length)
-        if len(val) != dim_length:
+
+        # compare dimension length with current list length
+        if val_len != dim_length:
             raise ValueError("Invalid list length")
+
         depth += 1
         for item in val:
             if isinstance(item, list):
+                # a child list
+
                 if self.max_depth and depth == self.max_depth:
+                    # we already found non list values at this depth. a list
+                    # must not appear here
                     raise ValueError("Invalid nesting")
+
+                # postgres supports up to 6 dimensions
+                if len(self.dims) == 6:
+                    raise ValueError("Too deep nested")
+
+                # repeat ourselves for the child list
                 self.walk_list(item, depth)
             else:
+                # non list item
+
                 if self.max_depth == 0:
+                    # set the depth at which non list values are found
                     self.max_depth = depth
+
+                # all non list values must be found at the same depth
                 if depth != self.max_depth:
                     raise ValueError("Invalid nesting")
+
+                # check for None (NULL)
                 if item is None:
                     self.has_null = True
                     continue
+
+                # get the type
                 item_type = type(item)
                 if self.type is None:
+                    # set the type and get the converter
                     self.type = item_type
                     self.converter = self._array_handlers[item_type]()
+
+                # all non-list items must be of the same type
                 if item_type != self.type:
                     raise ValueError("Can not mix types")
+
+                # give the converter the opportunity to examine tha value
                 self.converter.check_value(item)
 
-    def write(self, fmt, *args):
-        stc = Struct(fmt)
+    def _write(self, stc, *args):
         stc.pack_into(self.buf, self.pos, *args)
         self.pos += stc.size
 
-    def write_value(self, fmt, *args):
-        self.write("!i", calcsize(fmt))
-        self.write(fmt, *args)
+    def write(self, fmt, *args):
+        stc = get_struct(fmt)
+        self._write(stc, *args)
 
     def write_values(self, val):
+        # walk the list again to write the values
         for item in val:
             if type(item) == list:
                 self.write_values(item)
             elif item is None:
+                # NULLs are represented by a length of -1
                 self.write("!i", -1)
             else:
-                self.converter.encode_value(self, item)
+                values = self.converter.encode_value(self, item)
+                stc = get_struct("!" + values[0])
+                self.write("!i", stc.size)
+                self._write(stc, *values[1:])
 
     def get_value(self):
+        # walk the list to set up structure and converter
+        self.walk_list(self.val)
+
         dim_len = len(self.dims)
+
+        # calculate length: 12 bytes header, 8 bytes per dimension and
+        # 4 bytes (length) per value
         length = 12 + dim_len * 8 + reduce(operator.mul, self.dims, 1) * 4
         if self.converter:
-            length += self.converter.get_length()
+            length += self.converter.get_length()  # add length of values
             elem_type = self.converter.oid
             array_oid = self.converter.get_array_oid()
         else:
             elem_type = TEXTOID
             array_oid = TEXTARRAYOID
-        self.buf = (c_char * length)()  # create_string_buffer(length)
+        self.buf = (c_char * length)()
+
+        # initialize writer
         self.pos = 0
+
+        # write header
         self.write("!IiI", dim_len, self.has_null, elem_type)
+
+        # Write for each dimension the length and the lower bound (1). Python
+        # does not have a lower bound for lists other than zero, so we choose
+        # the default lower bound for PostgreSQL, which is one.
         for dim in self.dims:
             self.write("!ii", dim, 1)
+
+        # actually write the values
         self.write_values(self.val)
+
         return array_oid, cast(self.buf, c_char_p), length, FORMAT_BINARY
 
 

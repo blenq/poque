@@ -27,9 +27,9 @@ class ResultTestParameters():
 
     def test_int_array_param(self):
         res = self.cn.execute(
-            "SELECT $1", ([3, 2147483648, 17000000000000000000],))
+            "SELECT $1", ([3, 17000000000000000000, 2147483648],))
         self.assertEqual(
-            res.getvalue(0, 0), ['3', '2147483648', '17000000000000000000'])
+            res.getvalue(0, 0), ['3', '17000000000000000000', '2147483648'])
         self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
         res = self.cn.execute("SELECT $1", ([3, None, 12],))
         self.assertEqual(
@@ -39,6 +39,9 @@ class ResultTestParameters():
         self.assertEqual(
             res.getvalue(0, 0), [3, None, 0x80000000])
         self.assertEqual(res.ftype(0), self.poque.INT8ARRAYOID)
+        res = self.cn.execute("SELECT $1", ([[[[[[101]]]]]],))
+        self.assertEqual(
+            res.getvalue(0, 0), [[[[[[101]]]]]])
 
     def test_mixed_array_param(self):
         with self.assertRaises(ValueError):

@@ -1,4 +1,5 @@
 from ctypes import c_char_p, POINTER, c_void_p
+
 from .pq import pq, PQconninfoOptions, check_info_options
 
 

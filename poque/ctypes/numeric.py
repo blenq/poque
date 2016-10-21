@@ -45,7 +45,7 @@ def _read_numeric_bin(crs, length):
     """ Reads a binary numeric/decimal value """
 
     # Read field values: number of digits, weight, sign, display scale.
-    npg_digits, weight, sign, dscale = crs.advance_struct_format_HhHH()
+    npg_digits, weight, sign, dscale = crs.advance_struct_format("!HhHH")
     if npg_digits:
         pg_digits = crs.advance_struct_format("!" + 'H' * npg_digits)
     else:

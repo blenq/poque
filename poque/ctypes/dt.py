@@ -12,7 +12,7 @@ INVALID_ABSTIME = 0x7FFFFFFE
 
 
 def read_abstime_bin(crs, length):
-    seconds = crs.advance_int4()
+    seconds = crs.advance_single("!i")
     return datetime.fromtimestamp(seconds)
 
 
@@ -30,7 +30,7 @@ def read_tinterval_bin(crs, length):
 
 
 def read_reltime_bin(crs, length):
-    return timedelta(seconds=crs.advance_int4())
+    return timedelta(seconds=crs.advance_single("!i"))
 
 
 USECS_PER_SEC = 1000000
@@ -74,7 +74,7 @@ MAX_ORDINAL = date.max.toordinal()
 
 
 def read_date_bin(crs, length):
-    jd = crs.advance_int4()
+    jd = crs.advance_single("!i")
 
     ordinal = jd + DATE_OFFSET
     if ordinal >= MIN_ORDINAL and ordinal <= MAX_ORDINAL:
@@ -92,18 +92,18 @@ def read_date_bin(crs, length):
 
 
 def read_time_bin(crs, length):
-    return time(*_time_vals_from_int(crs.advance_int8()))
+    return time(*_time_vals_from_int(crs.advance_single("!q")))
 
 
 def read_timetz_bin(crs, length):
-    jd, seconds = crs.advance_struct_format_qi()
+    jd, seconds = crs.advance_struct_format("!qi")
     args = _time_vals_from_int(jd)
     tzinfo = timezone(timedelta(seconds=-seconds))
     return time(*(args + (tzinfo,)))
 
 
 def read_timestamp_bin(crs, length):
-    value = crs.advance_int8()
+    value = crs.advance_single("!q")
     dt, tm = divmod(value, USECS_PER_DAY)
     if tm < 0:
         tm += USECS_PER_DAY
@@ -127,7 +127,7 @@ def read_timestamptz_bin(crs, length):
 
 
 def read_interval_bin(crs, length):
-    usecs, days, months = crs.advance_struct_format_qii()
+    usecs, days, months = crs.advance_struct_format("!qii")
     value = timedelta(days, *divmod(usecs, USECS_PER_SEC))
     return months, value
 

@@ -76,31 +76,31 @@ def _read_bytea_text(crs, length):
 
 
 def read_float4_bin(crs, length):
-    return crs.advance_float4(length)
+    return crs.advance_single("!f", length)
 
 
 def read_float8_bin(crs, length):
-    return crs.advance_float8(length)
+    return crs.advance_single("!d", length)
 
 
 def read_bool_bin(crs, length):
-    return crs.advance_bool(length)
+    return crs.advance_single("!?", length)
 
 
 def read_int2_bin(crs, length):
-    return crs.advance_int2(length)
+    return crs.advance_single("!h", length)
 
 
 def read_int4_bin(crs, length):
-    return crs.advance_int4(length)
+    return crs.advance_single("!i", length)
 
 
 def read_uint4_bin(crs, length):
-    return crs.advance_uint4(length)
+    return crs.advance_single("!I", length)
 
 
 def read_int8_bin(crs, length):
-    return crs.advance_int8(length)
+    return crs.advance_single("!q", length)
 
 
 def _read_uuid_text(crs, length):
@@ -112,24 +112,24 @@ def _read_uuid_bin(crs, length):
 
 
 def _read_tid_bin(crs, length):
-    return crs.advance_struct_format_IH()
+    return crs.advance_struct_format("!IH")
 
 
 def _read_point_bin(crs, length):
-    return crs.advance_struct_format_2d()
+    return crs.advance_struct_format("!2d")
 
 
 def _read_line_bin(crs, length):
-    return crs.advance_struct_format_3d()
+    return crs.advance_struct_format("!3d")
 
 
 def _read_lseg_bin(crs, length):
-    x1, y1, x2, y2 = crs.advance_struct_format_4d()
+    x1, y1, x2, y2 = crs.advance_struct_format("!4d")
     return ((x1, y1), (x2, y2))
 
 
 def _read_polygon_bin(crs, length=None):
-    npoints = crs.advance_int4()
+    npoints = crs.advance_single("!i")
     fmt = "!{0}d".format(npoints * 2)
     coords = crs.advance_struct_format(fmt)
     args = [iter(coords)] * 2
@@ -137,13 +137,13 @@ def _read_polygon_bin(crs, length=None):
 
 
 def _read_path_bin(crs, length):
-    closed = crs.advance_bool()
+    closed = crs.advance_single("!?")
     path = _read_polygon_bin(crs)
     return {"closed": closed, "path": path}
 
 
 def _read_circle_bin(crs, length):
-    x, y, r = crs.advance_struct_format_3d()
+    x, y, r = crs.advance_struct_format("!3d")
     return ((x, y), r)
 
 PGSQL_AF_INET = 2
@@ -151,11 +151,11 @@ PGSQL_AF_INET6 = PGSQL_AF_INET + 1
 
 
 def _read_inet_bin(crs, length):
-    family, mask, is_cidr, size = crs.advance_struct_format_4B()
+    family, mask, is_cidr, size = crs.advance_struct_format("!4B")
 
     if family == PGSQL_AF_INET:
         correct_size = 4
-        sfmt = crs.advance_struct_format_4B
+        fmt = "!4B"
         addr_format = "{0}.{1}.{2}.{3}/{4}"
         if is_cidr:
             cls = ipaddress.IPv4Network
@@ -163,7 +163,7 @@ def _read_inet_bin(crs, length):
             cls = ipaddress.IPv4Interface
     elif family == PGSQL_AF_INET6:
         correct_size = 16
-        sfmt = crs.advance_struct_format_8H
+        fmt = "!8H"
         addr_format = "{0:x}:{1:x}:{2:x}:{3:x}:{4:x}:{5:x}:{6:x}:{7:x}/{8}"
         if is_cidr:
             cls = ipaddress.IPv6Network
@@ -173,13 +173,13 @@ def _read_inet_bin(crs, length):
         raise Error("Invalid address family")
     if size != correct_size:
         raise Error("Invalid address size")
-    parts = sfmt()
+    parts = crs.advance_struct_format(fmt)
     addr_string = addr_format.format(*(parts + (mask,)))
     return cls(addr_string)
 
 
 def _read_mac_bin(crs, length):
-    mac1, mac2 = crs.advance_struct_format_HI()
+    mac1, mac2 = crs.advance_struct_format("!HI")
     return (mac1 << 32) + mac2
 
 
@@ -188,7 +188,7 @@ def _read_json_bin(crs, length):
 
 
 def _read_jsonb_bin(crs, length):
-    version = crs.advance_ubyte()
+    version = crs.advance_single("!B")
     return _read_json_bin(crs, length - 1)
 
 
@@ -196,7 +196,7 @@ def _read_bit_text(crs, length):
     val = 0
     while crs.idx < crs.length:
         val <<= 1
-        char = crs.advance_char()
+        char = crs.advance_single("!c")
         if char == b'1':
             val |= 1
         elif char != b'0':
@@ -213,7 +213,7 @@ def _read_bit_bin(crs, length):
 
     """
     # first get the number of bits in the bit string
-    bit_len = crs.advance_int4()
+    bit_len = crs.advance_single("!i")
 
     # calculate number of data bytes
     quot, rest = divmod(bit_len, 8)
@@ -224,7 +224,7 @@ def _read_bit_bin(crs, length):
     val = 0
     for i in range(byte_len):
         val <<= 8
-        val |= crs.advance_ubyte()
+        val |= crs.advance_single("!B")
 
     if rest:
         # correct for the fact that the bitstring is left aligned
@@ -242,7 +242,7 @@ def _get_array_value(crs, array_dims, reader):
     else:
         # get a single value, either NULL or an actual value prefixed by a
         # length
-        item_len = crs.advance_int4()
+        item_len = crs.advance_single("!i")
         if item_len == -1:
             return None
         return reader(crs, item_len)
@@ -251,7 +251,7 @@ def _get_array_value(crs, array_dims, reader):
 def get_array_bin_reader(elem_oid):
     def read_array_bin(crs, length):
 
-        dims, flags, elem_type = crs.advance_struct_format_IiI()
+        dims, flags, elem_type = crs.advance_struct_format("!IiI")
 
         if elem_type != elem_oid:
             raise Error("Unexpected element type")
@@ -264,7 +264,7 @@ def get_array_bin_reader(elem_oid):
         reader = Result._converters[elem_type][1]
         array_dims = []
         for i in range(dims):
-            array_dims.append(crs.advance_int4())
+            array_dims.append(crs.advance_single("!i"))
             crs.advance(4)
         return _get_array_value(crs, array_dims, reader)
     return read_array_bin

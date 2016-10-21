@@ -10,6 +10,11 @@
 #pragma GCC visibility push(hidden)
 #endif
 
+#if SIZEOF_SHORT == 2
+typedef signed short poque_int16;
+typedef unsigned short poque_uint16;
+#endif
+
 typedef struct poque_Result poque_Result;
 
 extern PyObject *PoqueError;
