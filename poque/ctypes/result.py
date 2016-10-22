@@ -12,38 +12,38 @@ from .lib import Error, _get_property, get_method
 from codecs import getdecoder
 
 
-def _read_float_text(crs, length=None):
-    return float(crs.advance_text(length))
+def _read_float_text(crs):
+    return float(crs.advance_text())
 
 
-def _read_int_text(crs, length=None):
-    return int(crs.advance_text(length))
+def _read_int_text(crs):
+    return int(crs.advance_text())
 
 
-def _read_bool_text(crs, length=None):
-    return crs.advance_view(length) == b't'
+def _read_bool_text(crs):
+    return crs.advance_view(1) == b't'
 
 
-def _read_tid_text(crs, length=None):
-    tid = crs.advance_text(length)
+def _read_tid_text(crs):
+    tid = crs.advance_text()
     if tid[0] != '(' or tid[-1] != ')':
         raise Error("Invalid value")
     tid1, tid2 = tid[1:-1].split(',')
     return int(tid1), int(tid2)
 
 
-def read_text(crs, length=None):
-    return crs.advance_text(length)
+def read_text(crs):
+    return crs.advance_text()
 
 
-def read_bytes(crs, length=None):
-    return crs.advance_bytes(length)
+def read_bytes(crs):
+    return crs.advance_bytes()
 
 
 hexdecoder = getdecoder('hex')
 
 
-def _read_bytea_text(crs, length=None):
+def _read_bytea_text(crs):
     if crs.length - crs.idx >= 2:
         prefix = crs.advance_bytes(2)
         if prefix == b"\\x":
@@ -75,60 +75,60 @@ def _read_bytea_text(crs, length=None):
     return ret
 
 
-def read_float4_bin(crs, length=None):
-    return crs.advance_single("!f", length)
+def read_float4_bin(crs):
+    return crs.advance_single("!f")
 
 
-def read_float8_bin(crs, length=None):
-    return crs.advance_single("!d", length)
+def read_float8_bin(crs):
+    return crs.advance_single("!d")
 
 
-def read_bool_bin(crs, length=None):
-    return crs.advance_single("!?", length)
+def read_bool_bin(crs):
+    return crs.advance_single("!?")
 
 
-def read_int2_bin(crs, length=None):
-    return crs.advance_single("!h", length)
+def read_int2_bin(crs):
+    return crs.advance_single("!h")
 
 
-def read_int4_bin(crs, length=None):
-    return crs.advance_single("!i", length)
+def read_int4_bin(crs):
+    return crs.advance_single("!i")
 
 
-def read_uint4_bin(crs, length=None):
-    return crs.advance_single("!I", length)
+def read_uint4_bin(crs):
+    return crs.advance_single("!I")
 
 
-def read_int8_bin(crs, length=None):
-    return crs.advance_single("!q", length)
+def read_int8_bin(crs):
+    return crs.advance_single("!q")
 
 
-def _read_uuid_text(crs, length=None):
-    return UUID(crs.advance_text(length))
+def _read_uuid_text(crs):
+    return UUID(crs.advance_text())
 
 
-def _read_uuid_bin(crs, length=None):
-    return UUID(bytes=crs.advance_bytes(length))
+def _read_uuid_bin(crs):
+    return UUID(bytes=crs.advance_bytes())
 
 
-def _read_tid_bin(crs, length=None):
+def _read_tid_bin(crs):
     return crs.advance_struct_format("!IH")
 
 
-def _read_point_bin(crs, length=None):
+def _read_point_bin(crs):
     return crs.advance_struct_format("!2d")
 
 
-def _read_line_bin(crs, length=None):
+def _read_line_bin(crs):
     return crs.advance_struct_format("!3d")
 
 
-def _read_lseg_bin(crs, length=None):
+def _read_lseg_bin(crs):
     x1, y1, x2, y2 = crs.advance_struct_format("!4d")
     return ((x1, y1), (x2, y2))
 
 
-def _read_polygon_bin(crs, length=None):
+def _read_polygon_bin(crs):
     npoints = crs.advance_single("!i")
     fmt = "!{0}d".format(npoints * 2)
     coords = crs.advance_struct_format(fmt)
@@ -136,21 +136,21 @@ def _read_polygon_bin(crs, length=None):
     return list(zip(*args))
 
 
-def _read_path_bin(crs, length=None):
+def _read_path_bin(crs):
     closed = crs.advance_single("!?")
     path = _read_polygon_bin(crs)
     return {"closed": closed, "path": path}
 
 
-def _read_circle_bin(crs, length=None):
-    x, y, r = crs.advance_struct_format("!3d", length)
+def _read_circle_bin(crs):
+    x, y, r = crs.advance_struct_format("!3d")
     return ((x, y), r)
 
 PGSQL_AF_INET = 2
 PGSQL_AF_INET6 = PGSQL_AF_INET + 1
 
 
-def _read_inet_bin(crs, length=None):
+def _read_inet_bin(crs):
     family, mask, is_cidr, size = crs.advance_struct_format("!4B")
 
     if family == PGSQL_AF_INET:
@@ -178,22 +178,21 @@ def _read_inet_bin(crs, length=None):
     return cls(addr_string)
 
 
-def _read_mac_bin(crs, length=None):
-    mac1, mac2 = crs.advance_struct_format("!HI", length)
+def _read_mac_bin(crs):
+    mac1, mac2 = crs.advance_struct_format("!HI")
     return (mac1 << 32) + mac2
 
 
-def _read_json_bin(crs, length=None):
-    return json.loads(crs.advance_text(length))
+def _read_json_bin(crs):
+    return json.loads(crs.advance_text())
 
 
-def _read_jsonb_bin(crs, length=None):
+def _read_jsonb_bin(crs):
     version = crs.advance_single("!B")
-    length = length or crs.length
-    return _read_json_bin(crs, length - 1)
+    return _read_json_bin(crs)
 
 
-def _read_bit_text(crs, length=None):
+def _read_bit_text(crs):
     val = 0
     while crs.idx < crs.length:
         val <<= 1
@@ -205,7 +204,7 @@ def _read_bit_text(crs, length=None):
     return val
 
 
-def _read_bit_bin(crs, length=None):
+def _read_bit_bin(crs):
     """ Reads a bitstring as a Python integer
 
     Format:
@@ -246,7 +245,12 @@ def _get_array_value(crs, array_dims, reader):
         item_len = crs.advance_single("!i")
         if item_len == -1:
             return None
-        return reader(crs, item_len)
+        cursor = crs.cursor(item_len)
+        val = reader(cursor)
+        if cursor.idx != cursor.length:
+            # we're not at the end, something must have gone wrong
+            raise Error("Invalid data format")
+        return val
 
 
 def get_array_bin_reader(elem_oid):

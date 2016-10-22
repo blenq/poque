@@ -36,12 +36,12 @@ NUMERIC_POS = 0x0000
 NUMERIC_NEG = 0x4000
 
 
-def _read_numeric_str(crs, length=None):
-    value = crs.advance_text(length)
+def _read_numeric_str(crs):
+    value = crs.advance_text()
     return Decimal(value)
 
 
-def _read_numeric_bin(crs, length=None):
+def _read_numeric_bin(crs):
     """ Reads a binary numeric/decimal value """
 
     # Read field values: number of digits, weight, sign, display scale.
