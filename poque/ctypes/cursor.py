@@ -9,15 +9,14 @@ class ValueCursor():
     """ Cursor object to traverse through postgresql data value """
 
     def __init__(self, data, length):
-        if type(data) == memoryview:
-            self.data = data
-        else:
-            # a ctypes fixed length array implements the buffer interface, and
-            # is therefore accessible as a memoryview
-            self.data = memoryview((c_byte * length).from_address(data))
-
+        self.set_data(data, length)
         self.length = length
         self.idx = 0
+
+    def set_data(self, data, length):
+        # a ctypes fixed length array implements the buffer interface, and
+        # is therefore accessible as a memoryview
+        self.data = memoryview((c_byte * length).from_address(data))
 
     def advance(self, length=None):
         ret = self.idx
@@ -54,5 +53,12 @@ class ValueCursor():
         return self.advance_struct_format(fmt)[0]
 
     def cursor(self, length):
-        # create subcursor
-        return ValueCursor(self.advance_view(length), length)
+        # create sub cursor
+        return SubCursor(self.advance_view(length), length)
+
+
+class SubCursor(ValueCursor):
+
+    def set_data(self, data, length):
+        # data is already a memoryview
+        self.data = data

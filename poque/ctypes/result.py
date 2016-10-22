@@ -45,7 +45,7 @@ hexdecoder = getdecoder('hex')
 
 def _read_bytea_text(crs):
     if crs.length - crs.idx >= 2:
-        prefix = crs.advance_bytes(2)
+        prefix = crs.advance_view(2)
         if prefix == b"\\x":
             output, length = hexdecoder(crs.data[crs.idx:])
             crs.idx += length
@@ -129,7 +129,7 @@ def _read_lseg_bin(crs):
 
 
 def _read_polygon_bin(crs):
-    npoints = crs.advance_single("!i")
+    npoints = read_int4_bin(crs)
     fmt = "!{0}d".format(npoints * 2)
     coords = crs.advance_struct_format(fmt)
     args = [iter(coords)] * 2
@@ -137,7 +137,7 @@ def _read_polygon_bin(crs):
 
 
 def _read_path_bin(crs):
-    closed = crs.advance_single("!?")
+    closed = read_bool_bin(crs)
     path = _read_polygon_bin(crs)
     return {"closed": closed, "path": path}
 
@@ -193,14 +193,19 @@ def _read_jsonb_bin(crs):
 
 
 def _read_bit_text(crs):
+    """ Reads a bitstring as a Python integer
+
+    Format:
+        * a string composed of '1' and '0' characters
+
+    """
     val = 0
-    while crs.idx < crs.length:
-        val <<= 1
-        char = crs.advance_single("!c")
-        if char == b'1':
-            val |= 1
-        elif char != b'0':
+    one = ord(b'1')
+    zero = ord(b'0')
+    for char in crs.advance_bytes():
+        if char not in (zero, one):
             raise Error('Invalid character in bit string')
+        val = (val << 1) | (char - zero)
     return val
 
 
@@ -213,7 +218,7 @@ def _read_bit_bin(crs):
 
     """
     # first get the number of bits in the bit string
-    bit_len = crs.advance_single("!i")
+    bit_len = read_int4_bin(crs)
 
     # calculate number of data bytes
     quot, rest = divmod(bit_len, 8)
@@ -222,9 +227,8 @@ def _read_bit_bin(crs):
     # add the value byte by byte, python ints have no upper limit, so this
     # works even for bitstrings longer than 64 bits
     val = 0
-    for i in range(byte_len):
-        val <<= 8
-        val |= crs.advance_single("!B")
+    for char in crs.advance_bytes(byte_len):
+        val = (val << 8) | char
 
     if rest:
         # correct for the fact that the bitstring is left aligned
@@ -242,7 +246,7 @@ def _get_array_value(crs, array_dims, reader):
     else:
         # get a single value, either NULL or an actual value prefixed by a
         # length
-        item_len = crs.advance_single("!i")
+        item_len = read_int4_bin(crs)
         if item_len == -1:
             return None
         cursor = crs.cursor(item_len)
@@ -269,7 +273,7 @@ def get_array_bin_reader(elem_oid):
         reader = Result._converters[elem_type][1]
         array_dims = []
         for i in range(dims):
-            array_dims.append(crs.advance_single("!i"))
+            array_dims.append(read_int4_bin(crs))
             crs.advance(4)
         return _get_array_value(crs, array_dims, reader)
     return read_array_bin
