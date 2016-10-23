@@ -274,6 +274,7 @@ PyInit__poque(void)
 
     if (PyModule_AddIntMacro(m, INT4ARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, UUIDOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, UUIDARRAYOID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, NUMERICOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, NUMERICARRAYOID) == -1) return NULL;

@@ -18,6 +18,10 @@ class ResultTestParameters():
     def test_str_param(self):
         self._test_param_val('hi')
 
+    def test_str_array_param(self):
+        self._test_param_val(['hi', None, 'hello'])
+        self._test_param_val(['hi', 'hello'])
+
     def test_int_param(self):
         res = self.cn.execute(
             "SELECT $1, $2, $3", [3, 2147483648, 17000000000000000000])
@@ -80,14 +84,24 @@ class ResultTestParameters():
     def test_float_param(self):
         self._test_param_val(3.24)
 
+    def test_float_param(self):
+        self._test_param_val([3.24, None, 234.765])
+
     def test_bool_param(self):
         res = self.cn.execute(
             "SELECT $1, $2", [True, False])
         self.assertIs(res.getvalue(0, 0), True)
         self.assertIs(res.getvalue(0, 1), False)
 
+    def test_bool_array_param(self):
+        val = [True, False]
+        self._test_param_val(val)
+
     def test_bytes_param(self):
         self._test_param_val(b'hoi')
+
+    def test_bytes_array_param(self):
+        self._test_param_val([b'hoi', b'ha\0llo'])
 
     def test_none_param(self):
         res = self.cn.execute("SELECT $1", [None])
@@ -96,18 +110,50 @@ class ResultTestParameters():
     def test_uuid_param(self):
         self._test_param_val(uuid.uuid4())
 
+    def test_uuid_array_param(self):
+        val = [uuid.uuid4(), uuid.uuid4()]
+        self._test_param_val(val)
+
     def test_date_param(self):
         self._test_param_val(datetime.date.today())
+
+    def test_date_array_param(self):
+        self._test_param_val([
+            datetime.date.today(),
+            datetime.date.today() - datetime.timedelta(days=1),
+            None
+        ])
 
     def test_time_param(self):
         self._test_param_val(datetime.datetime.now().time())
 
+    def test_time_array_param(self):
+        self._test_param_val([
+            datetime.datetime.now().time(),
+            datetime.datetime.now().time()
+        ])
+
     def test_datetime_param(self):
         self._test_param_val(datetime.datetime.now())
+
+    def test_datetime_array_param(self):
+        self._test_param_val([datetime.datetime.now(),
+                              datetime.datetime.now()])
 
     def test_datetimetz_param(self):
         self._test_param_val(datetime.datetime.now(
             datetime.timezone(datetime.timedelta(hours=2))))
+
+    def test_datetime_mixed_array_param(self):
+        with self.assertRaises(ValueError):
+            self.cn.execute("SELECT $1", ([
+                datetime.datetime.now(),
+                datetime.datetime.now(
+                    datetime.timezone(datetime.timedelta(hours=2)))],))
+
+    def test_datetimetz_array_param(self):
+        self._test_param_val([datetime.datetime.now(
+            datetime.timezone(datetime.timedelta(hours=2)))])
 
     def _test_param_decimal(self, val):
         res = self.cn.execute("SELECT $1", [val])
@@ -128,6 +174,10 @@ class ResultTestParameters():
         self._test_param_decimal(Decimal('9999E+100'))
         self._test_param_decimal(Decimal('NaN'))
         self._test_param_decimal(Decimal('99E-100'))
+
+    def test_decimal_array_param(self):
+        self._test_param_val([
+            Decimal('123.45600'), Decimal('99E-100')])
 
 
 class ResultTestParametersCtypes(

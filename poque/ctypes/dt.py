@@ -1,12 +1,13 @@
-from ctypes import create_string_buffer, cast, c_char_p
 from datetime import (
     datetime, date, time, timedelta, MAXYEAR, MINYEAR, timezone)
-from struct import pack_into
 
 from .lib import Error
+from .common import BaseParameterHandler
 from .constants import (
-    ABSTIMEOID, TINTERVALOID, RELTIMEOID, DATEOID, TIMEOID, TIMESTAMPOID,
-    TIMESTAMPTZOID, INTERVALOID, TIMETZOID, FORMAT_BINARY)
+    ABSTIMEOID, TINTERVALOID, RELTIMEOID, DATEOID, DATEARRAYOID, TIMEOID,
+    TIMEARRAYOID, TIMESTAMPOID, TIMESTAMPTZOID, INTERVALOID, TIMETZOID)
+from poque._poque import TIMESTAMPARRAYOID
+from poque.ctypes.constants import TIMESTAMPTZARRAYOID
 
 INVALID_ABSTIME = 0x7FFFFFFE
 
@@ -68,7 +69,7 @@ def _time_vals_from_int(tm):
     second, usec = divmod(tm, USECS_PER_SEC)
     return hour, minute, second, usec
 
-DATE_OFFSET = 730120
+DATE_OFFSET = 730120  # Postgres date offset
 MIN_ORDINAL = date.min.toordinal()
 MAX_ORDINAL = date.max.toordinal()
 
@@ -146,39 +147,54 @@ def get_date_time_converters():
     }
 
 
-def write_date_bin(val):
-    ret = create_string_buffer(4)
-    pack_into("!i", ret, 0, val.toordinal() - DATE_OFFSET)
-
-    return DATEOID, cast(ret, c_char_p), 4, FORMAT_BINARY
+def date_ordinal(val):
+    return val.toordinal() - DATE_OFFSET
 
 
-def write_time_bin(val):
-    val = (val.hour * USECS_PER_HOUR + val.minute * USECS_PER_MINUTE +
-           val.second * USECS_PER_SEC + val.microsecond)
+class DateParameterHandler(BaseParameterHandler):
 
-    ret = create_string_buffer(8)
-    pack_into("!q", ret, 0, val)
-    return TIMEOID, cast(ret, c_char_p), 8, FORMAT_BINARY
+    oid = DATEOID
+    array_oid = DATEARRAYOID
+    fmt = "i"
 
-
-def write_datetime_bin(val):
-    if val.tzinfo:
-        val = val.astimezone(timezone.utc)
-        oid = TIMESTAMPTZOID
-    else:
-        oid = TIMESTAMPOID
-    val = ((val.toordinal() - DATE_OFFSET) * USECS_PER_DAY +
-           val.hour * USECS_PER_HOUR + val.minute * USECS_PER_MINUTE +
-           val.second * USECS_PER_SEC + val.microsecond)
-    ret = create_string_buffer(8)
-    pack_into("!q", ret, 0, val)
-    return oid, cast(ret, c_char_p), 8, FORMAT_BINARY
+    def binary_value(self, val):
+        return date_ordinal(val)
 
 
-def get_date_time_param_converters():
-    return {
-        date: write_date_bin,
-        time: write_time_bin,
-        datetime: write_datetime_bin,
-    }
+def time_ordinal(val):
+    return (val.hour * USECS_PER_HOUR + val.minute * USECS_PER_MINUTE +
+            val.second * USECS_PER_SEC + val.microsecond)
+
+
+class TimeParameterHandler(BaseParameterHandler):
+
+    oid = TIMEOID
+    array_oid = TIMEARRAYOID
+    fmt = "q"
+
+    def binary_value(self, val):
+        return time_ordinal(val)
+
+
+class DateTimeParameterHandler(BaseParameterHandler):
+
+    oid = TIMESTAMPOID
+    array_oid = TIMESTAMPARRAYOID
+    fmt = "q"
+    has_tz = None
+
+    def check_value(self, val):
+        has_tz = val.tzinfo is not None
+        if self.has_tz is None:
+            self.has_tz = has_tz
+            if has_tz:
+                self.oid = TIMESTAMPTZOID
+                self.array_oid = TIMESTAMPTZARRAYOID
+        elif self.has_tz != has_tz:
+            raise ValueError("Can not mix naive and aware datetimes")
+        super(DateTimeParameterHandler, self).check_value(val)
+
+    def binary_value(self, val):
+        if val.tzinfo:
+            val = val.astimezone(timezone.utc)
+        return date_ordinal(val) * USECS_PER_DAY + time_ordinal(val)

@@ -367,6 +367,7 @@ class Result(c_void_p):
         CHAROID: (read_bytes, read_bytes),
         CHARARRAYOID: (None, get_array_bin_reader(CHAROID)),
         UUIDOID: (_read_uuid_text, _read_uuid_bin),
+        UUIDARRAYOID: (None, get_array_bin_reader(UUIDOID)),
         BYTEAOID: (_read_bytea_text, read_bytes),
         BYTEAARRAYOID: (None, get_array_bin_reader(BYTEAOID)),
         TIDOID: (_read_tid_text, _read_tid_bin),

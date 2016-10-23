@@ -157,5 +157,6 @@ NUMERICARRAYOID = 1231
 
 # uuid
 UUIDOID = 2950
+UUIDARRAYOID = 2951
 
 # TODO: aclitem and _aclitem

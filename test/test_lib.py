@@ -43,15 +43,29 @@ class TestLib():
 
         self.assertIsInstance(self.poque.NUMERICOID, int)
         self.assertIsInstance(self.poque.NUMERICARRAYOID, int)
-        self.assertEqual(self.poque.JSONBOID, 3802)
-        self.assertEqual(self.poque.JSONBARRAYOID, 3807)
-        self.assertEqual(self.poque.LINEOID, 628)
-        self.assertEqual(self.poque.LINEARRAYOID, 629)
-        self.assertEqual(self.poque.BITOID, 1560)
-        self.assertEqual(self.poque.VARBITOID, 1562)
-        self.assertEqual(self.poque.BITARRAYOID, 1561)
-        self.assertEqual(self.poque.VARBITARRAYOID, 1563)
-        self.assertEqual(self.poque.TIMETZOID, 1266)
+        poque = self.poque
+
+        for var, val in [(poque.INT2OID, 21),
+                         (poque.INT2ARRAYOID, 1005),
+                         (poque.INT4OID, 23),
+                         (poque.INT4ARRAYOID, 1007),
+                         (poque.INT8OID, 20),
+                         (poque.INT8ARRAYOID, 1016),
+                         (poque.INT2VECTOROID, 22),
+                         (poque.INT2VECTORARRAYOID, 1006),
+                         (poque.BOOLARRAYOID, 1000),
+                         (poque.JSONBOID, 3802),
+                         (poque.JSONBARRAYOID, 3807),
+                         (poque.LINEOID, 628),
+                         (poque.LINEARRAYOID, 629),
+                         (poque.BITOID, 1560),
+                         (poque.VARBITOID, 1562),
+                         (poque.BITARRAYOID, 1561),
+                         (poque.VARBITARRAYOID, 1563),
+                         (poque.TIMETZOID, 1266),
+                         (poque.UUIDARRAYOID, 2951),
+                         ]:
+            self.assertEqual(var, val)
 
     def test_conn_defaults(self):
         d = self.poque.conn_defaults()

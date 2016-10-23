@@ -1,18 +1,23 @@
 from collections import deque
 from ctypes import (c_void_p, c_char_p, POINTER, c_int, c_uint, c_size_t,
                     c_char, cast)
+from datetime import date, time, datetime
+from decimal import Decimal
 from functools import reduce
 import operator
 from uuid import UUID
 
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
 from .constants import (
-    CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID, INT4OID, INT8OID,
-    BOOLOID, BYTEAOID, UUIDOID, FORMAT_BINARY, INT4ARRAYOID, INT8ARRAYOID,
-    TEXTARRAYOID, FORMAT_TEXT)
-from .common import get_struct
-from .dt import get_date_time_param_converters
-from .numeric import get_numeric_param_converters
+    CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID,
+    BOOLOID, BOOLARRAYOID, BYTEAOID, BYTEAARRAYOID, UUIDOID, UUIDARRAYOID,
+    FORMAT_BINARY, TEXTARRAYOID, FORMAT_TEXT)
+from .common import get_struct, BaseParameterHandler
+from .dt import (
+    DateParameterHandler, TimeParameterHandler, DateTimeParameterHandler)
+from .numeric import (
+    IntArrayParameterHandler, FloatParameterHandler,
+    DecimalArrayParameterHandler)
 from .lib import Error, _get_property, get_method
 from .result import Result
 
@@ -21,78 +26,52 @@ def new_connstring(connstring, blocking=True):
     return [connstring], blocking
 
 
-def _get_str_param(val):
-    val = val.encode()
-    return TEXTOID, c_char_p(val), len(val), FORMAT_BINARY
+class BytesParameterHandler(BaseParameterHandler):
+
+    oid = BYTEAOID
+    array_oid = BYTEAARRAYOID
+
+    def get_item_size(self, val):
+        return len(val)
+
+    def get_format(self, val):
+        return "{0}s".format(len(val))
 
 
-def _get_bool_param(val):
-    return BOOLOID, c_char_p(b'\x01' if val else b'\0'), 1, FORMAT_BINARY
+class BoolParameterHandler(BaseParameterHandler):
+
+    oid = BOOLOID
+    array_oid = BOOLARRAYOID
+    fmt = "?"
 
 
-def _get_bytes_param(val):
-    return BYTEAOID, c_char_p(val), len(val), FORMAT_BINARY
+class UuidParameterHandler(BaseParameterHandler):
+
+    oid = UUIDOID
+    array_oid = UUIDARRAYOID
+    fmt = "16s"
+
+    def binary_value(self, val):
+        return val.bytes
 
 
-def _get_none_param(val):
-    return TEXTOID, 0, 0, FORMAT_BINARY
+class TextParameterHandler(object):
 
-
-def _get_uuid_param(val):
-    return UUIDOID, c_char_p(val.bytes), 16, FORMAT_BINARY
-
-
-class IntArrayParameterHandler(object):
+    oid = TEXTOID
+    array_oid = TEXTARRAYOID
 
     def __init__(self):
-        self.values = []
-        self.oid = INT4OID
-        self.encode_value = self.encode_int4_value
-        self.get_length = self.get_int4_length
+        self.values = deque()
 
     def check_value(self, val):
-        self.values.append(val)
+        self.values.append(str(val).encode())
 
-        if self.oid == INT4OID:
-            if -0x80000000 <= val <= 0x7FFFFFFF:
-                return
-            self.oid = INT8OID
-            self.encode_value = self.encode_int8_value
-            self.get_length = self.get_int8_length
-
-        if self.oid == INT8OID:
-            if -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF:
-                return
-            self.oid = TEXTOID
-            self.encode_value = self.encode_text_value
-            self.get_length = self.get_text_length
-
-    def get_int4_length(self):
-        return len(self.values) * 4
-
-    def encode_int4_value(self, param, val):
-        return "i", val
-
-    def get_int8_length(self):
-        return len(self.values) * 8
-
-    def encode_int8_value(self, param, val):
-        return "q", val
-
-    def get_text_length(self):
-        self.values = deque(str(v).encode() for v in self.values)
+    def get_length(self):
         return sum(len(v) for v in self.values)
 
-    def encode_text_value(self, param, val):
+    def encode_value(self, val):
         val = self.values.popleft()
         return "{0}s".format(len(val)), val
-
-    def get_array_oid(self):
-        if self.oid == INT4OID:
-            return INT4ARRAYOID
-        if self.oid == INT8OID:
-            return INT8ARRAYOID
-        return TEXTARRAYOID
 
 
 class ArrayParameter(object):
@@ -107,6 +86,14 @@ class ArrayParameter(object):
 
     _array_handlers = {
         int: IntArrayParameterHandler,
+        float: FloatParameterHandler,
+        UUID: UuidParameterHandler,
+        bool: BoolParameterHandler,
+        bytes: BytesParameterHandler,
+        date: DateParameterHandler,
+        time: TimeParameterHandler,
+        datetime: DateTimeParameterHandler,
+        Decimal: DecimalArrayParameterHandler,
     }
 
     def walk_list(self, val, depth=0):
@@ -115,16 +102,15 @@ class ArrayParameter(object):
         # correct length
 
         # get length of current dimension
-        val_len = len(val)
         try:
             dim_length = self.dims[depth]
         except IndexError:
-            dim_length = val_len
+            dim_length = len(val)
             self.dims.append(dim_length)
-
-        # compare dimension length with current list length
-        if val_len != dim_length:
-            raise ValueError("Invalid list length")
+        else:
+            # compare dimension length with current list length
+            if len(val) != dim_length:
+                raise ValueError("Invalid list length")
 
         depth += 1
         for item in val:
@@ -148,9 +134,8 @@ class ArrayParameter(object):
                 if self.max_depth == 0:
                     # set the depth at which non list values are found
                     self.max_depth = depth
-
-                # all non list values must be found at the same depth
-                if depth != self.max_depth:
+                elif depth != self.max_depth:
+                    # all non list values must be found at the same depth
                     raise ValueError("Invalid nesting")
 
                 # check for None (NULL)
@@ -163,13 +148,13 @@ class ArrayParameter(object):
                 if self.type is None:
                     # set the type and get the converter
                     self.type = item_type
-                    self.converter = self._array_handlers[item_type]()
-
-                # all non-list items must be of the same type
-                if item_type != self.type:
+                    self.converter = self._array_handlers.get(
+                        item_type, TextParameterHandler)()
+                elif item_type != self.type:
+                    # all non-list items must be of the same type
                     raise ValueError("Can not mix types")
 
-                # give the converter the opportunity to examine tha value
+                # give the converter the opportunity to examine the value
                 self.converter.check_value(item)
 
     def _write(self, stc, *args):
@@ -189,7 +174,7 @@ class ArrayParameter(object):
                 # NULLs are represented by a length of -1
                 self.write("!i", -1)
             else:
-                values = self.converter.encode_value(self, item)
+                values = self.converter.encode_value(item)
                 stc = get_struct("!" + values[0])
                 self.write("!i", stc.size)
                 self._write(stc, *values[1:])
@@ -206,7 +191,7 @@ class ArrayParameter(object):
         if self.converter:
             length += self.converter.get_length()  # add length of values
             elem_type = self.converter.oid
-            array_oid = self.converter.get_array_oid()
+            array_oid = self.converter.array_oid
         else:
             elem_type = TEXTOID
             array_oid = TEXTARRAYOID
@@ -314,16 +299,17 @@ class Conn(c_void_p):
     def __del__(self):
         self.finish()
 
-    _param_converters = {
-        str: _get_str_param,
-        bool: _get_bool_param,
-        bytes: _get_bytes_param,
-        type(None): _get_none_param,
-        UUID: _get_uuid_param,
-        list: _get_array_param,
+    _param_handlers = {
+        int: IntArrayParameterHandler,
+        float: FloatParameterHandler,
+        UUID: UuidParameterHandler,
+        bool: BoolParameterHandler,
+        bytes: BytesParameterHandler,
+        date: DateParameterHandler,
+        time: TimeParameterHandler,
+        datetime: DateTimeParameterHandler,
+        Decimal: DecimalArrayParameterHandler,
     }
-    _param_converters.update(get_date_time_param_converters())
-    _param_converters.update(get_numeric_param_converters())
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
         if parameters is None:
@@ -337,11 +323,27 @@ class Conn(c_void_p):
         lengths = (c_int * num_params)()
         formats = (c_int * num_params)()
         for i, param in enumerate(parameters):
-            conv = self._param_converters.get(type(param))
-            if conv is None:
-                param = str(param)
-                conv = _get_str_param
-            oids[i], values[i], lengths[i], formats[i] = conv(param)
+            if param is None:
+                oids[i], values[i], lengths[i], formats[i] = (
+                    TEXTOID, 0, 0, FORMAT_BINARY)
+                continue
+            if type(param) == list:
+                oids[i], values[i], lengths[i], formats[i] = (
+                    _get_array_param(param))
+                continue
+            handler = self._param_handlers.get(type(param),
+                                               TextParameterHandler)()
+            handler.check_value(param)
+            oids[i] = handler.oid
+            lengths[i] = length = handler.get_length()
+
+            value = (c_char * length)()
+            param_vals = handler.encode_value(param)
+            stc = get_struct("!" + param_vals[0])
+            stc.pack_into(value, 0, *param_vals[1:])
+            values[i] = cast(value, c_char_p)
+            formats[i] = FORMAT_BINARY
+
         return pq.PQexecParams(
             self, command.encode(), num_params, oids, values, lengths,
             formats, result_format)

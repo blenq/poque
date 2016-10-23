@@ -146,6 +146,7 @@ PyObject *Poque_value(Oid oid, int format, char *data, int len);
 
 /* uuid */
 #define UUIDOID             2950
+#define UUIDARRAYOID        2951
 
 /* numeric */
 #define NUMERICOID          1700
