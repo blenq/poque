@@ -1,5 +1,6 @@
 from collections import deque
 from decimal import Decimal
+from struct import calcsize
 
 from .common import BaseParameterHandler
 from .constants import (
@@ -8,15 +9,18 @@ from .constants import (
 from .lib import Error
 
 
-class IntArrayParameterHandler(object):
+class IntArrayParameterHandler(BaseParameterHandler):
 
     oid = INT4OID
     array_oid = INT4ARRAYOID
+    fmt = "i"
+    int8fmt = "q"
+    int8size = calcsize(int8fmt)
 
     def __init__(self):
         self.values = []
 
-    def check_value(self, val):
+    def examine(self, val):
         self.values.append(val)
 
         if self.oid == INT4OID:
@@ -24,8 +28,8 @@ class IntArrayParameterHandler(object):
                 return
             self.oid = INT8OID
             self.array_oid = INT8ARRAYOID
-            self.encode_value = self.encode_int8_value
-            self.get_length = self.get_int8_length
+            self.item_size = self.int8size
+            self.fmt = self.int8fmt
 
         if self.oid == INT8OID:
             if -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF:
@@ -33,34 +37,18 @@ class IntArrayParameterHandler(object):
             self.oid = TEXTOID
             self.array_oid = TEXTARRAYOID
             self.encode_value = self.encode_text_value
-            self.get_length = self.get_text_length
+            self.get_size = self.get_text_size
 
-    def get_length(self):
-        return len(self.values) * 4
+    def get_size(self):
+        return len(self.values) * self.item_size
 
-    def encode_value(self, val):
-        return "i", val
-
-    def get_int8_length(self):
-        return len(self.values) * 8
-
-    def encode_int8_value(self, val):
-        return "q", val
-
-    def get_text_length(self):
+    def get_text_size(self):
         self.values = deque(str(v).encode() for v in self.values)
         return sum(len(v) for v in self.values)
 
     def encode_text_value(self, val):
         val = self.values.popleft()
         return "{0}s".format(len(val)), val
-
-    def get_array_oid(self):
-        if self.oid == INT4OID:
-            return INT4ARRAYOID
-        if self.oid == INT8OID:
-            return INT8ARRAYOID
-        return TEXTARRAYOID
 
 
 class FloatParameterHandler(BaseParameterHandler):
@@ -126,15 +114,19 @@ def get_numeric_converters():
     }
 
 
-class DecimalArrayParameterHandler(object):
+class DecimalParameterHandler(BaseParameterHandler):
 
     oid = NUMERICOID
     array_oid = NUMERICARRAYOID
 
     def __init__(self):
         self.values = deque()
+        self.size = 0
 
-    def check_value(self, val):
+    header_size = calcsize("HhHH")
+    digit_size = calcsize("H")
+
+    def examine(self, val):
         pg_digits = []
         if (val.is_nan()):
             weight = 0
@@ -166,9 +158,7 @@ class DecimalArrayParameterHandler(object):
         npg_digits = len(pg_digits)
         self.values.append((npg_digits, weight, pg_sign, -exponent) +
                            tuple(pg_digits))
-
-    def get_length(self):
-        return sum(8 + v[0] * 2 for v in self.values)
+        self.size += self.header_size + npg_digits * self.digit_size
 
     def encode_value(self, val):
         val = self.values.popleft()

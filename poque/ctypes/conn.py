@@ -17,7 +17,7 @@ from .dt import (
     DateParameterHandler, TimeParameterHandler, DateTimeParameterHandler)
 from .numeric import (
     IntArrayParameterHandler, FloatParameterHandler,
-    DecimalArrayParameterHandler)
+    DecimalParameterHandler)
 from .lib import Error, _get_property, get_method
 from .result import Result
 
@@ -55,19 +55,19 @@ class UuidParameterHandler(BaseParameterHandler):
         return val.bytes
 
 
-class TextParameterHandler(object):
+class TextParameterHandler(BaseParameterHandler):
 
     oid = TEXTOID
     array_oid = TEXTARRAYOID
 
     def __init__(self):
+        super(TextParameterHandler, self).__init__()
         self.values = deque()
 
-    def check_value(self, val):
-        self.values.append(str(val).encode())
-
-    def get_length(self):
-        return sum(len(v) for v in self.values)
+    def examine(self, val):
+        val = str(val).encode()
+        self.values.append(val)
+        self.size += len(val)
 
     def encode_value(self, val):
         val = self.values.popleft()
@@ -93,7 +93,7 @@ class ArrayParameter(object):
         date: DateParameterHandler,
         time: TimeParameterHandler,
         datetime: DateTimeParameterHandler,
-        Decimal: DecimalArrayParameterHandler,
+        Decimal: DecimalParameterHandler,
     }
 
     def walk_list(self, val, depth=0):
@@ -155,7 +155,7 @@ class ArrayParameter(object):
                     raise ValueError("Can not mix types")
 
                 # give the converter the opportunity to examine the value
-                self.converter.check_value(item)
+                self.converter.examine(item)
 
     def _write(self, stc, *args):
         stc.pack_into(self.buf, self.pos, *args)
@@ -189,7 +189,7 @@ class ArrayParameter(object):
         # 4 bytes (length) per value
         length = 12 + dim_len * 8 + reduce(operator.mul, self.dims, 1) * 4
         if self.converter:
-            length += self.converter.get_length()  # add length of values
+            length += self.converter.get_size()  # add length of values
             elem_type = self.converter.oid
             array_oid = self.converter.array_oid
         else:
@@ -213,11 +213,6 @@ class ArrayParameter(object):
         self.write_values(self.val)
 
         return array_oid, cast(self.buf, c_char_p), length, FORMAT_BINARY
-
-
-def _get_array_param(val):
-    param = ArrayParameter(val)
-    return param.get_value()
 
 
 class Conn(c_void_p):
@@ -308,7 +303,7 @@ class Conn(c_void_p):
         date: DateParameterHandler,
         time: TimeParameterHandler,
         datetime: DateTimeParameterHandler,
-        Decimal: DecimalArrayParameterHandler,
+        Decimal: DecimalParameterHandler,
     }
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
@@ -329,19 +324,20 @@ class Conn(c_void_p):
                 continue
             if type(param) == list:
                 oids[i], values[i], lengths[i], formats[i] = (
-                    _get_array_param(param))
+                    ArrayParameter(param).get_value())
                 continue
             handler = self._param_handlers.get(type(param),
                                                TextParameterHandler)()
-            handler.check_value(param)
-            oids[i] = handler.oid
-            lengths[i] = length = handler.get_length()
+            handler.examine(param)
+            length = handler.get_size()
 
             value = (c_char * length)()
             param_vals = handler.encode_value(param)
             stc = get_struct("!" + param_vals[0])
             stc.pack_into(value, 0, *param_vals[1:])
+            oids[i] = handler.oid
             values[i] = cast(value, c_char_p)
+            lengths[i] = length
             formats[i] = FORMAT_BINARY
 
         return pq.PQexecParams(

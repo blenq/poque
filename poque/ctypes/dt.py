@@ -183,7 +183,7 @@ class DateTimeParameterHandler(BaseParameterHandler):
     fmt = "q"
     has_tz = None
 
-    def check_value(self, val):
+    def examine(self, val):
         has_tz = val.tzinfo is not None
         if self.has_tz is None:
             self.has_tz = has_tz
@@ -192,7 +192,7 @@ class DateTimeParameterHandler(BaseParameterHandler):
                 self.array_oid = TIMESTAMPTZARRAYOID
         elif self.has_tz != has_tz:
             raise ValueError("Can not mix naive and aware datetimes")
-        super(DateTimeParameterHandler, self).check_value(val)
+        super(DateTimeParameterHandler, self).examine(val)
 
     def binary_value(self, val):
         if val.tzinfo:

@@ -1,5 +1,5 @@
 from functools import lru_cache
-from struct import Struct
+from struct import Struct, calcsize
 
 
 @lru_cache()
@@ -18,7 +18,7 @@ class BaseParameterHandlerMeta(type):
         except AttributeError:
             pass
         else:
-            handler.item_size = get_struct(fmt).size
+            handler.item_size = calcsize(fmt)
         return handler
 
 
@@ -26,16 +26,16 @@ class BaseParameterHandler(object, metaclass=BaseParameterHandlerMeta):
     """ Helper class to implement paramater handlers """
 
     def __init__(self):
-        self.length = 0
+        self.size = 0
 
     def get_item_size(self, val):
         return self.item_size
 
-    def check_value(self, val):
-        self.length += self.get_item_size(val)
+    def examine(self, val):
+        self.size += self.get_item_size(val)
 
-    def get_length(self):
-        return self.length
+    def get_size(self):
+        return self.size
 
     def get_format(self, val):
         return self.fmt
