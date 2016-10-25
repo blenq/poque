@@ -1126,7 +1126,7 @@ date_binval(data_crs *curs)
 
 
 #define USECS_PER_DAY       86400000000
-#define USECS_PER_HOUR      3600000000
+#define USECS_PER_HOUR      Py_LL(3600000000) /* this might become a uint32 */
 #define USECS_PER_MINUTE    60000000
 #define USECS_PER_SEC       1000000
 
@@ -1134,16 +1134,19 @@ static int
 time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
                    int *usec)
 {
-    *hour = tm / USECS_PER_HOUR;
-    if (tm < 0 || *hour > 23) {
+    PY_INT64_T hr;
+
+    hr = (int)(tm / USECS_PER_HOUR);
+    if (tm < 0 || hr > 23) {
         PyErr_SetString(PoqueError, "Invalid time value");
         return -1;
     }
-    tm -= *hour * USECS_PER_HOUR;
-    *minute = tm / USECS_PER_MINUTE;
+    *hour = (int)hr;
+    tm -= hr * USECS_PER_HOUR;
+    *minute = (int)(tm / USECS_PER_MINUTE);
     tm -= *minute * USECS_PER_MINUTE;
-    *second = tm / USECS_PER_SEC;
-    *usec = tm - *second * USECS_PER_SEC;
+    *second = (int)(tm / USECS_PER_SEC);
+    *usec = (int)(tm - *second * USECS_PER_SEC);
     return 0;
 }
 
