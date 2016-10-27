@@ -1238,7 +1238,7 @@ _timestamp_binval(data_crs *curs, PyObject *tz)
 
     if (read_int64_binval(curs, &value) < 0)
         return NULL;
-    date = value / USECS_PER_DAY;
+    date = (PY_INT32_T)(value / USECS_PER_DAY);
     time = value - date * USECS_PER_DAY;
     if (time < 0) {
         time += USECS_PER_DAY;

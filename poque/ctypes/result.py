@@ -258,7 +258,7 @@ def _get_array_value(crs, array_dims, reader):
 
 
 def get_array_bin_reader(elem_oid):
-    def read_array_bin(crs, length=None):
+    def read_array_bin(crs):
 
         dims, flags, elem_type = crs.advance_struct_format("!IiI")
 
@@ -270,11 +270,8 @@ def get_array_bin_reader(elem_oid):
             raise Error("Invalid value for array flags")
         if dims == 0:
             return []
-        reader = Result._converters[elem_type][1]
-        array_dims = []
-        for i in range(dims):
-            array_dims.append(read_int4_bin(crs))
-            crs.advance(4)
+        reader = Result._converters[elem_type][FORMAT_BINARY]
+        array_dims = [crs.advance_struct_format("!ii")[0] for i in range(dims)]
         return _get_array_value(crs, array_dims, reader)
     return read_array_bin
 
@@ -431,7 +428,7 @@ class Result(c_void_p):
         else:
             # get the proper reader for text or binary
             reader = readers[self.fformat(column_number)]
-            if reader:
+            if reader is not None:
                 # create a cursor from the address and length
                 data = self._pq_getvalue(row_number, column_number)
                 length = self.getlength(row_number, column_number)

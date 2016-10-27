@@ -9,7 +9,7 @@ from .constants import (
 from .lib import Error
 
 
-class IntArrayParameterHandler(BaseParameterHandler):
+class IntParameterHandler(BaseParameterHandler):
 
     oid = INT4OID
     array_oid = INT4ARRAYOID
@@ -20,24 +20,28 @@ class IntArrayParameterHandler(BaseParameterHandler):
     def __init__(self):
         self.values = []
 
+    def check_int8(self, val):
+        return -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF
+
     def examine(self, val):
         self.values.append(val)
 
         if self.oid == INT4OID:
             if -0x80000000 <= val <= 0x7FFFFFFF:
                 return
-            self.oid = INT8OID
-            self.array_oid = INT8ARRAYOID
-            self.item_size = self.int8size
-            self.fmt = self.int8fmt
-
-        if self.oid == INT8OID:
-            if -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF:
+            if self.check_int8(val):
+                self.oid = INT8OID
+                self.array_oid = INT8ARRAYOID
+                self.item_size = self.int8size
+                self.fmt = self.int8fmt
                 return
-            self.oid = TEXTOID
-            self.array_oid = TEXTARRAYOID
-            self.encode_value = self.encode_text_value
-            self.get_size = self.get_text_size
+
+        if self.oid == TEXTOID or self.check_int8(val):
+            return
+        self.oid = TEXTOID
+        self.array_oid = TEXTARRAYOID
+        self.encode_value = self.encode_text_value
+        self.get_size = self.get_text_size
 
     def get_size(self):
         return len(self.values) * self.item_size
@@ -123,8 +127,10 @@ class DecimalParameterHandler(BaseParameterHandler):
         self.values = deque()
         self.size = 0
 
-    header_size = calcsize("HhHH")
-    digit_size = calcsize("H")
+    header_fmt = "HhHH"
+    header_size = calcsize(header_fmt)
+    digit_fmt = "H"
+    digit_size = calcsize(digit_fmt)
 
     def examine(self, val):
         pg_digits = []
@@ -162,4 +168,4 @@ class DecimalParameterHandler(BaseParameterHandler):
 
     def encode_value(self, val):
         val = self.values.popleft()
-        return ("HhHH" + 'H' * val[0],) + val
+        return (self.header_fmt + self.digit_fmt * val[0],) + val

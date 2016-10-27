@@ -16,7 +16,7 @@ from .common import get_struct, BaseParameterHandler
 from .dt import (
     DateParameterHandler, TimeParameterHandler, DateTimeParameterHandler)
 from .numeric import (
-    IntArrayParameterHandler, FloatParameterHandler,
+    IntParameterHandler, FloatParameterHandler,
     DecimalParameterHandler)
 from .lib import Error, _get_property, get_method
 from .result import Result
@@ -69,9 +69,11 @@ class TextParameterHandler(BaseParameterHandler):
         self.values.append(val)
         self.size += len(val)
 
-    def encode_value(self, val):
-        val = self.values.popleft()
-        return "{0}s".format(len(val)), val
+    def binary_value(self, val):
+        return self.values.popleft()
+
+    def get_format(self, val):
+        return "{0}s".format(len(val))
 
 
 class ArrayParameter(object):
@@ -83,18 +85,6 @@ class ArrayParameter(object):
         self.max_depth = 0
         self.has_null = False
         self.converter = None
-
-    _array_handlers = {
-        int: IntArrayParameterHandler,
-        float: FloatParameterHandler,
-        UUID: UuidParameterHandler,
-        bool: BoolParameterHandler,
-        bytes: BytesParameterHandler,
-        date: DateParameterHandler,
-        time: TimeParameterHandler,
-        datetime: DateTimeParameterHandler,
-        Decimal: DecimalParameterHandler,
-    }
 
     def walk_list(self, val, depth=0):
         # A nested list is not the same as a multidimensional array. Therefore
@@ -148,7 +138,7 @@ class ArrayParameter(object):
                 if self.type is None:
                     # set the type and get the converter
                     self.type = item_type
-                    self.converter = self._array_handlers.get(
+                    self.converter = Conn._param_handlers.get(
                         item_type, TextParameterHandler)()
                 elif item_type != self.type:
                     # all non-list items must be of the same type
@@ -295,7 +285,7 @@ class Conn(c_void_p):
         self.finish()
 
     _param_handlers = {
-        int: IntArrayParameterHandler,
+        int: IntParameterHandler,
         float: FloatParameterHandler,
         UUID: UuidParameterHandler,
         bool: BoolParameterHandler,
