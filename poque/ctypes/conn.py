@@ -1,4 +1,3 @@
-from collections import deque
 from ctypes import (c_void_p, c_char_p, POINTER, c_int, c_uint, c_size_t,
                     c_char, cast)
 from datetime import date, time, datetime
@@ -9,71 +8,22 @@ from uuid import UUID
 
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
 from .constants import (
-    CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID,
-    BOOLOID, BOOLARRAYOID, BYTEAOID, BYTEAARRAYOID, UUIDOID, UUIDARRAYOID,
-    FORMAT_BINARY, TEXTARRAYOID, FORMAT_TEXT)
-from .common import get_struct, BaseParameterHandler
+    CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID, FORMAT_BINARY,
+    TEXTARRAYOID, FORMAT_TEXT)
+from .common import get_struct
 from .dt import (
     DateParameterHandler, TimeParameterHandler, DateTimeParameterHandler)
 from .numeric import (
-    IntParameterHandler, FloatParameterHandler,
-    DecimalParameterHandler)
-from .lib import Error, _get_property, get_method
+    IntParameterHandler, FloatParameterHandler, DecimalParameterHandler,
+    BoolParameterHandler)
+from .lib import Error, get_property, get_method
 from .result import Result
+from .text import TextParameterHandler, BytesParameterHandler
+from .various import UuidParameterHandler
 
 
 def new_connstring(connstring, blocking=True):
     return [connstring], blocking
-
-
-class BytesParameterHandler(BaseParameterHandler):
-
-    oid = BYTEAOID
-    array_oid = BYTEAARRAYOID
-
-    def get_item_size(self, val):
-        return len(val)
-
-    def get_format(self, val):
-        return "{0}s".format(len(val))
-
-
-class BoolParameterHandler(BaseParameterHandler):
-
-    oid = BOOLOID
-    array_oid = BOOLARRAYOID
-    fmt = "?"
-
-
-class UuidParameterHandler(BaseParameterHandler):
-
-    oid = UUIDOID
-    array_oid = UUIDARRAYOID
-    fmt = "16s"
-
-    def binary_value(self, val):
-        return val.bytes
-
-
-class TextParameterHandler(BaseParameterHandler):
-
-    oid = TEXTOID
-    array_oid = TEXTARRAYOID
-
-    def __init__(self):
-        super(TextParameterHandler, self).__init__()
-        self.values = deque()
-
-    def examine(self, val):
-        val = str(val).encode()
-        self.values.append(val)
-        self.size += len(val)
-
-    def binary_value(self, val):
-        return self.values.popleft()
-
-    def get_format(self, val):
-        return "{0}s".format(len(val))
 
 
 class ArrayParameter(object):
@@ -162,11 +112,11 @@ class ArrayParameter(object):
                 self.write_values(item)
             elif item is None:
                 # NULLs are represented by a length of -1
-                self.write("!i", -1)
+                self.write("i", -1)
             else:
                 values = self.converter.encode_value(item)
-                stc = get_struct("!" + values[0])
-                self.write("!i", stc.size)
+                stc = get_struct(values[0])
+                self.write("i", stc.size)
                 self._write(stc, *values[1:])
 
     def get_value(self):
@@ -191,13 +141,13 @@ class ArrayParameter(object):
         self.pos = 0
 
         # write header
-        self.write("!IiI", dim_len, self.has_null, elem_type)
+        self.write("IiI", dim_len, self.has_null, elem_type)
 
         # Write for each dimension the length and the lower bound (1). Python
         # does not have a lower bound for lists other than zero, so we choose
         # the default lower bound for PostgreSQL, which is one.
         for dim in self.dims:
-            self.write("!ii", dim, 1)
+            self.write("ii", dim, 1)
 
         # actually write the values
         self.write_values(self.val)
@@ -236,18 +186,18 @@ class Conn(c_void_p):
 
     connect_poll = get_method(pq.PQconnectPoll)
 
-    backend_pid = _get_property(pq.PQbackendPID)
-    transaction_status = _get_property(pq.PQtransactionStatus)
-    protocol_version = _get_property(pq.PQprotocolVersion)
-    server_version = _get_property(pq.PQserverVersion)
-    status = _get_property(pq.PQstatus)
-    db = _get_property(pq.PQdb)
-    error_message = _get_property(pq.PQerrorMessage)
-    user = _get_property(pq.PQuser)
-    password = _get_property(pq.PQpass)
-    port = _get_property(pq.PQport)
-    host = _get_property(pq.PQhost)
-    options = _get_property(pq.PQoptions)
+    backend_pid = get_property(pq.PQbackendPID)
+    transaction_status = get_property(pq.PQtransactionStatus)
+    protocol_version = get_property(pq.PQprotocolVersion)
+    server_version = get_property(pq.PQserverVersion)
+    status = get_property(pq.PQstatus)
+    db = get_property(pq.PQdb)
+    error_message = get_property(pq.PQerrorMessage)
+    user = get_property(pq.PQuser)
+    password = get_property(pq.PQpass)
+    port = get_property(pq.PQport)
+    host = get_property(pq.PQhost)
+    options = get_property(pq.PQoptions)
 
     info = get_method(pq.PQconninfo)
     fileno = get_method(pq.PQsocket)
@@ -323,7 +273,7 @@ class Conn(c_void_p):
 
             value = (c_char * length)()
             param_vals = handler.encode_value(param)
-            stc = get_struct("!" + param_vals[0])
+            stc = get_struct(param_vals[0])
             stc.pack_into(value, 0, *param_vals[1:])
             oids[i] = handler.oid
             values[i] = cast(value, c_char_p)

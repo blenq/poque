@@ -1,10 +1,13 @@
 from functools import lru_cache
 from struct import Struct, calcsize
 
+from .constants import FORMAT_BINARY
+from .lib import Error
+
 
 @lru_cache()
 def get_struct(fmt):
-    return Struct(fmt)
+    return Struct("!" + fmt)
 
 
 class BaseParameterHandlerMeta(type):
@@ -46,3 +49,44 @@ class BaseParameterHandler(object, metaclass=BaseParameterHandlerMeta):
     def encode_value(self, val):
         val = self.binary_value(val)
         return self.get_format(val), val
+
+result_converters = {}
+
+
+def _get_array_value(crs, array_dims, reader):
+    if array_dims:
+        # get an array of (nested) values
+        dim = array_dims[0]
+        return [_get_array_value(crs, array_dims[1:], reader)
+                for _ in range(dim)]
+    else:
+        # get a single value, either NULL or an actual value prefixed by a
+        # length
+        item_len = crs.advance_single("i")
+        if item_len == -1:
+            return None
+        cursor = crs.cursor(item_len)
+        val = reader(cursor)
+        if cursor.idx != cursor.length:
+            # we're not at the end, something must have gone wrong
+            raise Error("Invalid data format")
+        return val
+
+
+def get_array_bin_reader(elem_oid):
+    def read_array_bin(crs):
+
+        dims, flags, elem_type = crs.advance_struct_format("IiI")
+
+        if elem_type != elem_oid:
+            raise Error("Unexpected element type")
+        if dims > 6:
+            raise Error("Number of dimensions exceeded")
+        if flags & 1 != flags:
+            raise Error("Invalid value for array flags")
+        if dims == 0:
+            return []
+        reader = result_converters[elem_type][FORMAT_BINARY]
+        array_dims = [crs.advance_struct_format("ii")[0] for _ in range(dims)]
+        return _get_array_value(crs, array_dims, reader)
+    return read_array_bin

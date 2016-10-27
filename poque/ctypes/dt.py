@@ -2,24 +2,20 @@ from datetime import (
     datetime, date, time, timedelta, MAXYEAR, MINYEAR, timezone)
 
 from .lib import Error
-from .common import BaseParameterHandler
-from .constants import (
-    ABSTIMEOID, TINTERVALOID, RELTIMEOID, DATEOID, DATEARRAYOID, TIMEOID,
-    TIMEARRAYOID, TIMESTAMPOID, TIMESTAMPTZOID, INTERVALOID, TIMETZOID)
-from poque._poque import TIMESTAMPARRAYOID
-from poque.ctypes.constants import TIMESTAMPTZARRAYOID
+from .common import BaseParameterHandler, get_array_bin_reader
+from . import constants
 
 INVALID_ABSTIME = 0x7FFFFFFE
 
 
 def read_abstime_bin(crs):
-    seconds = crs.advance_single("!i")
+    seconds = crs.advance_single("i")
     return datetime.fromtimestamp(seconds)
 
 
 def read_tinterval_bin(crs):
 
-    status, dt1, dt2 = crs.advance_struct_format("!3i")
+    status, dt1, dt2 = crs.advance_struct_format("3i")
     if dt1 == INVALID_ABSTIME or dt2 == INVALID_ABSTIME:
         st = 0
     else:
@@ -31,7 +27,7 @@ def read_tinterval_bin(crs):
 
 
 def read_reltime_bin(crs):
-    return timedelta(seconds=crs.advance_single("!i"))
+    return timedelta(seconds=crs.advance_single("i"))
 
 
 USECS_PER_SEC = 1000000
@@ -75,7 +71,7 @@ MAX_ORDINAL = date.max.toordinal()
 
 
 def read_date_bin(crs):
-    jd = crs.advance_single("!i")
+    jd = crs.advance_single("i")
 
     ordinal = jd + DATE_OFFSET
     if ordinal >= MIN_ORDINAL and ordinal <= MAX_ORDINAL:
@@ -93,18 +89,18 @@ def read_date_bin(crs):
 
 
 def read_time_bin(crs):
-    return time(*_time_vals_from_int(crs.advance_single("!q")))
+    return time(*_time_vals_from_int(crs.advance_single("q")))
 
 
 def read_timetz_bin(crs):
-    jd, seconds = crs.advance_struct_format("!qi")
+    jd, seconds = crs.advance_struct_format("qi")
     args = _time_vals_from_int(jd)
     tzinfo = timezone(timedelta(seconds=-seconds))
     return time(*(args + (tzinfo,)))
 
 
 def read_timestamp_bin(crs):
-    value = crs.advance_single("!q")
+    value = crs.advance_single("q")
     dt, tm = divmod(value, USECS_PER_DAY)
     if tm < 0:
         tm += USECS_PER_DAY
@@ -128,22 +124,38 @@ def read_timestamptz_bin(crs):
 
 
 def read_interval_bin(crs):
-    usecs, days, months = crs.advance_struct_format("!qii")
+    usecs, days, months = crs.advance_struct_format("qii")
     value = timedelta(days, *divmod(usecs, USECS_PER_SEC))
     return months, value
 
 
 def get_date_time_converters():
     return {
-        ABSTIMEOID: (None, read_abstime_bin),
-        TINTERVALOID: (None, read_tinterval_bin),
-        RELTIMEOID: (None, read_reltime_bin),
-        DATEOID: (None, read_date_bin),
-        TIMEOID: (None, read_time_bin),
-        TIMETZOID: (None, read_timetz_bin),
-        TIMESTAMPOID: (None, read_timestamp_bin),
-        TIMESTAMPTZOID: (None, read_timestamptz_bin),
-        INTERVALOID: (None, read_interval_bin),
+        constants.ABSTIMEOID: (None, read_abstime_bin),
+        constants.TINTERVALOID: (None, read_tinterval_bin),
+        constants.RELTIMEOID: (None, read_reltime_bin),
+        constants.DATEOID: (None, read_date_bin),
+        constants.TIMEOID: (None, read_time_bin),
+        constants.TIMETZOID: (None, read_timetz_bin),
+        constants.TIMESTAMPOID: (None, read_timestamp_bin),
+        constants.TIMESTAMPTZOID: (None, read_timestamptz_bin),
+        constants.INTERVALOID: (None, read_interval_bin),
+        constants.ABSTIMEARRAYOID: (
+            None, get_array_bin_reader(constants.ABSTIMEOID)),
+        constants.TINTERVALARRAYOID: (
+            None, get_array_bin_reader(constants.TINTERVALOID)),
+        constants.RELTIMEARRAYOID: (
+            None, get_array_bin_reader(constants.RELTIMEOID)),
+        constants.DATEARRAYOID: (
+            None, get_array_bin_reader(constants.DATEOID)),
+        constants.TIMEARRAYOID: (
+            None, get_array_bin_reader(constants.TIMEOID)),
+        constants.TIMESTAMPARRAYOID: (
+            None, get_array_bin_reader(constants.TIMESTAMPOID)),
+        constants.TIMESTAMPTZARRAYOID: (
+            None, get_array_bin_reader(constants.TIMESTAMPTZOID)),
+        constants.INTERVALARRAYOID: (
+            None, get_array_bin_reader(constants.INTERVALOID)),
     }
 
 
@@ -153,8 +165,8 @@ def date_ordinal(val):
 
 class DateParameterHandler(BaseParameterHandler):
 
-    oid = DATEOID
-    array_oid = DATEARRAYOID
+    oid = constants.DATEOID
+    array_oid = constants.DATEARRAYOID
     fmt = "i"
 
     def binary_value(self, val):
@@ -168,8 +180,8 @@ def time_ordinal(val):
 
 class TimeParameterHandler(BaseParameterHandler):
 
-    oid = TIMEOID
-    array_oid = TIMEARRAYOID
+    oid = constants.TIMEOID
+    array_oid = constants.TIMEARRAYOID
     fmt = "q"
 
     def binary_value(self, val):
@@ -178,8 +190,8 @@ class TimeParameterHandler(BaseParameterHandler):
 
 class DateTimeParameterHandler(BaseParameterHandler):
 
-    oid = TIMESTAMPOID
-    array_oid = TIMESTAMPARRAYOID
+    oid = constants.TIMESTAMPOID
+    array_oid = constants.TIMESTAMPARRAYOID
     fmt = "q"
     has_tz = None
 
@@ -188,8 +200,8 @@ class DateTimeParameterHandler(BaseParameterHandler):
         if self.has_tz is None:
             self.has_tz = has_tz
             if has_tz:
-                self.oid = TIMESTAMPTZOID
-                self.array_oid = TIMESTAMPTZARRAYOID
+                self.oid = constants.TIMESTAMPTZOID
+                self.array_oid = constants.TIMESTAMPTZARRAYOID
         elif self.has_tz != has_tz:
             raise ValueError("Can not mix naive and aware datetimes")
         super(DateTimeParameterHandler, self).examine(val)
