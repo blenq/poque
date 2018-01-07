@@ -138,9 +138,11 @@ PyObject *Poque_value(Oid oid, int format, char *data, int len);
 
 /* network types */
 #define MACADDROID          829
+#define MACADDR8OID         774
 #define INETOID             869
 #define CIDROID             650
 #define MACADDRARRAYOID     1040
+#define MACADDR8ARRAYOID    775
 #define INETARRAYOID        1041
 #define CIDRARRAYOID        651
 

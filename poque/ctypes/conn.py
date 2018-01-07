@@ -310,6 +310,7 @@ def check_async(res, func, args):
         conn._raise_error()
     return res
 
+
 pq.PQconnectPoll.argtypes = [Conn]
 pq.PQconnectPoll.errcheck = check_async
 
@@ -321,6 +322,7 @@ def check_reset(res, func, args):
     conn = args[0]
     if conn.status == CONNECTION_BAD:
         conn._raise_error()
+
 
 pq.PQreset.restype = None
 pq.PQreset.argtypes = [Conn]
@@ -355,6 +357,7 @@ def check_fileno(res, func, args):
     if res == -1:
         raise ValueError("Connection is closed")
     return res
+
 
 pq.PQsocket.restype = int
 pq.PQsocket.argtypes = [Conn]
@@ -425,6 +428,7 @@ def check_string_and_free(res, func, args):
     ret = c_char_p(res).value
     pq.PQfreemem(res)
     return ret.decode()
+
 
 pq.PQescapeLiteral.restype = c_void_p
 pq.PQescapeLiteral.argtypes = [Conn, c_char_p, c_size_t]

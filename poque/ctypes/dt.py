@@ -65,6 +65,7 @@ def _time_vals_from_int(tm):
     second, usec = divmod(tm, USECS_PER_SEC)
     return hour, minute, second, usec
 
+
 DATE_OFFSET = 730120  # Postgres date offset
 MIN_ORDINAL = date.min.toordinal()
 MAX_ORDINAL = date.max.toordinal()

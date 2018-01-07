@@ -13,7 +13,9 @@ class ResultTestParameters():
 
     def _test_param_val(self, val):
         res = self.cn.execute("SELECT $1", [val])
-        self.assertEqual(res.getvalue(0, 0), val)
+        out_val = res.getvalue(0, 0)
+        self.assertEqual(out_val, val)
+        self.assertEqual(type(out_val), type(val))
 
     def test_str_param(self):
         self._test_param_val('hi')
@@ -84,7 +86,7 @@ class ResultTestParameters():
     def test_float_param(self):
         self._test_param_val(3.24)
 
-    def test_float_param(self):
+    def test_float_array_param(self):
         self._test_param_val([3.24, None, 234.765])
 
     def test_bool_param(self):
@@ -174,6 +176,8 @@ class ResultTestParameters():
         self._test_param_decimal(Decimal('9999E+100'))
         self._test_param_decimal(Decimal('NaN'))
         self._test_param_decimal(Decimal('99E-100'))
+        with self.assertRaises(ValueError):
+            self._test_param_decimal(Decimal('Inf'))
 
     def test_decimal_array_param(self):
         self._test_param_val([

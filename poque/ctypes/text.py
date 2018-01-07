@@ -12,39 +12,47 @@ def read_text(crs):
 def read_bytes(crs):
     return crs.advance_bytes()
 
+
 hexdecoder = getdecoder('hex')
 
 
 def read_bytea_text(crs):
-    if crs.length - crs.idx >= 2:
-        prefix = crs.advance_view(2)
-        if prefix == b"\\x":
-            output, length = hexdecoder(crs.data[crs.idx:])
-            crs.idx += length
-            return output
+    prefix = crs.peek_view(2)
+    if prefix == b"\\x":
+        # hex encoding
+        crs.advance(2)
+        return hexdecoder(crs.advance_view())[0]
 
-    backslash = ord(b'\\')
+    # escape encoding
 
-    def get_bytes(crs):
-        biter = iter(crs.data.obj)
+    def next_or_fail(iterator):
+        try:
+            ret = next(iterator)
+        except StopIteration:
+            raise ValueError("Invalid bytea value")
+        return ret
+
+    def get_bytes():
+        backslash = ord(b'\\')
+        biter = iter(crs)
         for b in biter:
             if b != backslash:
                 # regular byte
                 yield b
+                continue
 
-            b = next(biter)
+            b = next_or_fail(biter)
             if b == backslash:
                 # backslash
                 yield b
+                continue
 
             # octal value
-            b2 = next(biter)
-            b3 = next(biter)
-            yield (b - 48) * 64 + (b2 - 48) * 8 + (b3 - 48)
+            b2 = next_or_fail(biter) - 48
+            b3 = next_or_fail(biter) - 48
+            yield (b - 48) * 64 + b2 * 8 + b3
 
-    ret = bytes(get_bytes(crs))
-    crs.idx = crs.length
-    return ret
+    return bytes(get_bytes())
 
 
 def get_text_converters():

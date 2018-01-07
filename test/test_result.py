@@ -1,7 +1,6 @@
 import datetime
 from decimal import Decimal
 from ipaddress import IPv4Interface, IPv6Interface, IPv4Network, IPv6Network
-import sys
 import unittest
 import weakref
 
@@ -355,6 +354,9 @@ class ResultTestValues():
         self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
         res = self.cn.execute(command="SELECT ''::bytea", result_format=0)
         self.assertEqual(res.getvalue(0, 0), b'')
+        res = self.cn.execute(r"SELECT 'h\\oi '::bytea", result_format=0)
+        self.assertEqual(res.getvalue(0, 0), b'h\\oi ')
+        self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
 
     def test_bytea_value_bin(self):
         self._test_value_and_type_bin("SELECT 'hi'::bytea", b'hi',
@@ -401,11 +403,11 @@ class ResultTestValues():
 
     def test_unknown_value_str(self):
         self._test_value_and_type_str("SELECT 'hello'::unknown", 'hello',
-                                      self.poque.UNKNOWNOID)
+                                      self.poque.TEXTOID)
 
     def test_unknown_value_bin(self):
         self._test_value_and_type_bin("SELECT 'hello'::unknown", 'hello',
-                                      self.poque.UNKNOWNOID)
+                                      self.poque.TEXTOID)
 
     def test_null_value_str(self):
         res = self.cn.execute(command="SELECT NULL", result_format=0)
@@ -514,8 +516,9 @@ class ResultTestValues():
             "SELECT 'hello'::cstring", 'hello', self.poque.CSTRINGOID)
 
     def test_cstring_array_value_bin(self):
-        self._test_value_and_type_bin(
-            "SELECT ARRAY['hello'::cstring]", ['hello'], self.poque.CSTRINGARRAYOID)
+        self._test_value_and_type_bin("SELECT ARRAY['hello'::cstring]",
+                                      ['hello'],
+                                      self.poque.CSTRINGARRAYOID)
 
     def test_oid_value_bin(self):
         self._test_value_and_type_bin("SELECT 3::oid", 3, self.poque.OIDOID)
@@ -554,7 +557,8 @@ class ResultTestValues():
 
     def test_xid_array_value_bin(self):
         self._test_value_and_type_bin("SELECT '{2147483648, NULL, 3}'::xid[];",
-                                      [2147483648, None, 3], self.poque.XIDARRAYOID)
+                                      [2147483648, None, 3],
+                                      self.poque.XIDARRAYOID)
 
     def test_cid_value_bin(self):
         self._test_value_and_type_bin("SELECT '2147483648'::cid;", 2147483648,
@@ -567,11 +571,13 @@ class ResultTestValues():
 
     def test_cid_array_value_bin(self):
         self._test_value_and_type_bin("SELECT '{2147483648, NULL, 3}'::cid[];",
-                                      [2147483648, None, 3], self.poque.CIDARRAYOID)
+                                      [2147483648, None, 3],
+                                      self.poque.CIDARRAYOID)
 
     def test_oidvector_value_bin(self):
         self._test_value_and_type_bin("SELECT '3 8 2147483648'::oidvector",
-                                      [3, 8, 2147483648], self.poque.OIDVECTOROID)
+                                      [3, 8, 2147483648],
+                                      self.poque.OIDVECTOROID)
 
     def test_oidvector_array_value_bin(self):
         self._test_value_and_type_bin(
@@ -879,6 +885,20 @@ class ResultTestValues():
             "SELECT ARRAY['24:0a:64:dd:58:c4'::macaddr];", [0x240a64dd58c4],
             self.poque.MACADDRARRAYOID)
 
+    def test_mac_addr8_value_bin(self):
+        if self.cn.server_version >= 100000:
+            self._test_value_and_type_bin(
+                "SELECT '24:0a:64:dd:58:c4'::macaddr8;",
+                0x240a64fffedd58c4,
+                self.poque.MACADDR8OID)
+
+    def test_mac_addr8_array_value_bin(self):
+        if self.cn.server_version >= 100000:
+            self._test_value_and_type_bin(
+                "SELECT ARRAY['24:0a:64:dd:58:c4'::macaddr8];",
+                [0x240a64fffedd58c4],
+                self.poque.MACADDR8ARRAYOID)
+
     def test_ipv4_value_bin(self):
         self._test_value_and_type_bin(
             "SELECT '192.168.0.1'::inet", IPv4Interface('192.168.0.1'),
@@ -895,10 +915,12 @@ class ResultTestValues():
     def test_ipv6_value_bin(self):
         self._test_value_and_type_bin(
             "SELECT '2001:db8:85a3:0:0:8a2e:370:7334'::inet",
-            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334'), self.poque.INETOID)
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334'),
+            self.poque.INETOID)
         self._test_value_and_type_bin(
             "SELECT '2001:db8:85a3:0:0:8a2e:370:7334/64'::inet",
-            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334/64'), self.poque.INETOID)
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334/64'),
+            self.poque.INETOID)
 
     def test_ipv6_array_value_bin(self):
         self._test_value_and_type_bin(
@@ -923,7 +945,8 @@ class ResultTestValues():
 
     def test_bool_array_bin(self):
         self._test_value_and_type_bin("SELECT '{true, NULL, false}'::bool[]",
-                                      [True, None, False], self.poque.BOOLARRAYOID)
+                                      [True, None, False],
+                                      self.poque.BOOLARRAYOID)
 
     def test_bytea_array_bin(self):
         self._test_value_and_type_bin(
@@ -950,7 +973,8 @@ class ResultTestValues():
 
     def test_date_value_bin(self):
         self._test_value_and_type_bin("SELECT '2014-03-01'::date",
-                                      datetime.date(2014, 3, 1), self.poque.DATEOID)
+                                      datetime.date(2014, 3, 1),
+                                      self.poque.DATEOID)
         self._test_value_and_type_bin("SELECT '20140-03-01'::date",
                                       '20140-03-01', self.poque.DATEOID)
         self._test_value_and_type_bin("SELECT '500-03-01 BC'::date",
@@ -1025,10 +1049,12 @@ class ResultTestValues():
     def test_interval_value_bin(self):
         self._test_value_and_type_bin(
             "SELECT '1 century 4 month 2 days 3 hour'::interval;",
-            (1204, datetime.timedelta(days=2, hours=3)), self.poque.INTERVALOID)
+            (1204, datetime.timedelta(days=2, hours=3)),
+            self.poque.INTERVALOID)
         self._test_value_and_type_bin(
             "SELECT '1 century 4 month 2 days 3 hour ago'::interval;",
-            (-1204, datetime.timedelta(days=-2, hours=-3)), self.poque.INTERVALOID)
+            (-1204, datetime.timedelta(days=-2, hours=-3)),
+            self.poque.INTERVALOID)
 
     def test_interval_array_value_bin(self):
         self._test_value_and_type_bin(

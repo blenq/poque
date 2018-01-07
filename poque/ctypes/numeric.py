@@ -2,7 +2,8 @@ from collections import deque
 from decimal import Decimal
 from struct import calcsize
 
-from .common import BaseParameterHandler, get_array_bin_reader
+from .common import (BaseParameterHandler, get_array_bin_reader,
+                     get_single_reader)
 from . import constants
 from .constants import (
     INT4OID, INT4ARRAYOID, INT8OID, INT8ARRAYOID, TEXTOID, TEXTARRAYOID,
@@ -14,10 +15,6 @@ def read_bool_text(crs):
     return crs.advance_view(1) == b't'
 
 
-def read_bool_bin(crs):
-    return crs.advance_single("?")
-
-
 class BoolParameterHandler(BaseParameterHandler):
 
     oid = constants.BOOLOID
@@ -27,22 +24,6 @@ class BoolParameterHandler(BaseParameterHandler):
 
 def read_int_text(crs):
     return int(crs.advance_text())
-
-
-def read_int2_bin(crs):
-    return crs.advance_single("h")
-
-
-def read_int4_bin(crs):
-    return crs.advance_single("i")
-
-
-def read_uint4_bin(crs):
-    return crs.advance_single("I")
-
-
-def read_int8_bin(crs):
-    return crs.advance_single("q")
 
 
 class IntParameterHandler(BaseParameterHandler):
@@ -95,14 +76,6 @@ def _read_float_text(crs):
     return float(crs.advance_text())
 
 
-def read_float4_bin(crs):
-    return crs.advance_single("f")
-
-
-def read_float8_bin(crs):
-    return crs.advance_single("d")
-
-
 class FloatParameterHandler(BaseParameterHandler):
 
     oid = FLOAT8OID
@@ -126,7 +99,7 @@ def _read_numeric_bin(crs):
     # Read field values: number of digits, weight, sign, display scale.
     npg_digits, weight, sign, dscale = crs.advance_struct_format("HhHH")
     if npg_digits:
-        pg_digits = crs.advance_struct_format('H' * npg_digits)
+        pg_digits = crs.advance_struct_format('{}H'.format(npg_digits))
     else:
         pg_digits = []
     if sign == NUMERIC_NAN:
@@ -162,44 +135,44 @@ def _read_numeric_bin(crs):
 
 def get_numeric_converters():
     return {
-        constants.BOOLOID: (read_bool_text, read_bool_bin),
+        constants.BOOLOID: (read_bool_text, get_single_reader("?")),
         constants.BOOLARRAYOID: (
             None, get_array_bin_reader(constants.BOOLOID)),
         constants.NUMERICOID: (_read_numeric_str, _read_numeric_bin),
         constants.NUMERICARRAYOID: (
             None, get_array_bin_reader(constants.NUMERICOID)),
-        constants.FLOAT4OID: (_read_float_text, read_float4_bin),
+        constants.FLOAT4OID: (_read_float_text, get_single_reader("f")),
         constants.FLOAT4ARRAYOID: (
             None, get_array_bin_reader(constants.FLOAT4OID)),
-        constants.FLOAT8OID: (_read_float_text, read_float8_bin),
+        constants.FLOAT8OID: (_read_float_text, get_single_reader("d")),
         constants.FLOAT8ARRAYOID: (
             None, get_array_bin_reader(constants.FLOAT8OID)),
-        constants.INT2OID: (read_int_text, read_int2_bin),
+        constants.INT2OID: (read_int_text, get_single_reader("h")),
         constants.INT2ARRAYOID: (
             None, get_array_bin_reader(constants.INT2OID)),
         constants.INT2VECTOROID: (
             None, get_array_bin_reader(constants.INT2OID)),
         constants.INT2VECTORARRAYOID: (
             None, get_array_bin_reader(constants.INT2VECTOROID)),
-        constants.INT4OID: (read_int_text, read_int4_bin),
+        constants.INT4OID: (read_int_text, get_single_reader("i")),
         constants.INT4ARRAYOID: (
             None, get_array_bin_reader(constants.INT4OID)),
-        constants.INT8OID: (read_int_text, read_int8_bin),
+        constants.INT8OID: (read_int_text, get_single_reader("q")),
         constants.INT8ARRAYOID: (
             None, get_array_bin_reader(constants.INT8OID)),
-        constants.XIDOID: (read_int_text, read_uint4_bin),
+        constants.XIDOID: (read_int_text, get_single_reader("I")),
         constants.XIDARRAYOID: (None, get_array_bin_reader(constants.XIDOID)),
-        constants.CIDOID: (read_int_text, read_uint4_bin),
+        constants.CIDOID: (read_int_text, get_single_reader("I")),
         constants.CIDARRAYOID: (None, get_array_bin_reader(constants.CIDOID)),
-        constants.OIDOID: (read_int_text, read_uint4_bin),
+        constants.OIDOID: (read_int_text, get_single_reader("I")),
         constants.OIDARRAYOID: (None, get_array_bin_reader(constants.OIDOID)),
         constants.OIDVECTOROID: (None, get_array_bin_reader(constants.OIDOID)),
         constants.OIDVECTORARRAYOID: (
             None, get_array_bin_reader(constants.OIDVECTOROID)),
-        constants.REGPROCOID: (None, read_uint4_bin),
+        constants.REGPROCOID: (None, get_single_reader("I")),
         constants.REGPROCARRAYOID: (
             None, get_array_bin_reader(constants.REGPROCOID)),
-        constants.CASHOID: (None, read_int8_bin),
+        constants.CASHOID: (None, get_single_reader("q")),
         constants.CASHARRAYOID: (
             None, get_array_bin_reader(constants.CASHOID)),
     }
@@ -220,6 +193,8 @@ class DecimalParameterHandler(BaseParameterHandler):
     digit_size = calcsize(digit_fmt)
 
     def examine(self, val):
+        if val.is_infinite():
+            raise ValueError("PostgreSQL does not support decimal infinites")
         pg_digits = []
         if (val.is_nan()):
             weight = 0

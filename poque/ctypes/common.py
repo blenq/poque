@@ -10,6 +10,14 @@ def get_struct(fmt):
     return Struct("!" + fmt)
 
 
+def get_single_reader(fmt):
+
+    def reader(crs):
+        return crs.advance_single(fmt)
+
+    return reader
+
+
 class BaseParameterHandlerMeta(type):
 
     def __new__(cls, name, bases, namespace, **kwds):
@@ -50,6 +58,7 @@ class BaseParameterHandler(object, metaclass=BaseParameterHandlerMeta):
         val = self.binary_value(val)
         return self.get_format(val), val
 
+
 result_converters = {}
 
 
@@ -67,7 +76,7 @@ def _get_array_value(crs, array_dims, reader):
             return None
         cursor = crs.cursor(item_len)
         val = reader(cursor)
-        if cursor.idx != cursor.length:
+        if not cursor.at_end():
             # we're not at the end, something must have gone wrong
             raise Error("Invalid data format")
         return val

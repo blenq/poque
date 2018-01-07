@@ -9,22 +9,19 @@ class ValueCursor():
     """ Cursor object to traverse through postgresql data value """
 
     def __init__(self, data, length):
-        self.set_data(data, length)
-        self.length = length
+        self.data = memoryview((c_byte * length).from_address(data))
         self.idx = 0
 
-    def set_data(self, data, length):
-        # a ctypes fixed length array implements the buffer interface, and
-        # is therefore accessible as a memoryview
-        self.data = memoryview((c_byte * length).from_address(data))
+    def at_end(self):
+        return self.idx == len(self.data)
 
     def advance(self, length=None):
         ret = self.idx
 
         if length is None:
-            self.idx = self.length
+            self.idx = len(self.data)
         else:
-            if ret + length > self.length:
+            if ret + length > len(self.data):
                 # check
                 raise Error("Item length exceeds data length")
 
@@ -39,9 +36,17 @@ class ValueCursor():
         stc = get_struct(fmt)
         return stc.unpack_from(self.data, offset=self.advance(stc.size))
 
+    def __iter__(self):
+        length = len(self.data)
+        while self.idx < length:
+            yield self.data.obj[self.idx]
+            self.idx += 1
+
     def advance_view(self, length=None):
-        idx = self.advance(length)
-        return self.data[idx:self.idx]
+        return self.data[self.advance(length):self.idx]
+
+    def peek_view(self, length):
+        return self.data[self.idx:self.idx + length]
 
     def advance_bytes(self, length=None):
         return bytes(self.advance_view(length))
@@ -54,11 +59,11 @@ class ValueCursor():
 
     def cursor(self, length):
         # create sub cursor
-        return SubCursor(self.advance_view(length), length)
+        return SubCursor(self.advance_view(length))
 
 
 class SubCursor(ValueCursor):
 
-    def set_data(self, data, length):
-        # data is already a memoryview
+    def __init__(self, data):
         self.data = data
+        self.idx = 0

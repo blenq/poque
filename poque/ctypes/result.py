@@ -89,7 +89,7 @@ class Result(c_void_p):
 
                 # convert the data in the cursor
                 value = reader(crs)
-                if crs.idx != crs.length:
+                if not crs.at_end():
                     # we're not at the end, something must have gone wrong
                     raise Error("Invalid data format")
                 return value

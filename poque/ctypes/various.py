@@ -3,7 +3,8 @@ import json
 from uuid import UUID
 
 from . import constants
-from .common import get_array_bin_reader, BaseParameterHandler
+from .common import (get_array_bin_reader, BaseParameterHandler,
+                     get_single_reader)
 from .lib import Error
 from .text import read_text
 
@@ -59,6 +60,7 @@ def _read_circle_bin(crs):
     x, y, r = crs.advance_struct_format("3d")
     return ((x, y), r)
 
+
 PGSQL_AF_INET = 2
 PGSQL_AF_INET6 = PGSQL_AF_INET + 1
 
@@ -102,6 +104,8 @@ def _read_json_bin(crs):
 
 def _read_jsonb_bin(crs):
     version = crs.advance_single("B")
+    if version != 1:
+        raise ValueError("Unknown jsonb version")
     return _read_json_bin(crs)
 
 
@@ -186,6 +190,9 @@ def get_various_converters():
         constants.MACADDROID: (None, _read_mac_bin),
         constants.MACADDRARRAYOID: (
             None, get_array_bin_reader(constants.MACADDROID)),
+        constants.MACADDR8OID: (None, get_single_reader("Q")),
+        constants.MACADDR8ARRAYOID: (
+            None, get_array_bin_reader(constants.MACADDR8OID)),
         constants.JSONOID: (_read_json_bin, _read_json_bin),
         constants.JSONARRAYOID: (
             None, get_array_bin_reader(constants.JSONOID)),

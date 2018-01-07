@@ -231,6 +231,7 @@ PyInit__poque(void)
     if (PyModule_AddIntMacro(m, CASHARRAYOID) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, MACADDROID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, MACADDR8OID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, INETOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, CIDROID) == -1) return NULL;
 
@@ -261,6 +262,7 @@ PyInit__poque(void)
     if (PyModule_AddIntMacro(m, TINTERVALARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, POLYGONARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, MACADDRARRAYOID) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, MACADDR8ARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, INETARRAYOID) == -1) return NULL;
     if (PyModule_AddIntMacro(m, CIDRARRAYOID) == -1) return NULL;
 

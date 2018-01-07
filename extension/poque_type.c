@@ -996,6 +996,17 @@ mac_binval(data_crs *curs)
 }
 
 
+static PyObject *
+mac8_binval(data_crs *curs)
+{
+    PY_UINT64_T val;
+
+    if (read_uint64_binval(curs, &val) < 0)
+    	return NULL;
+    return PyLong_FromUnsignedLongLong(val);
+}
+
+
 #define PGSQL_AF_INET 2
 #define PGSQL_AF_INET6 3
 
@@ -1682,6 +1693,7 @@ static PoqueTypeEntry type_table[] = {
     {CASHOID, int64_binval, NULL, InvalidOid, NULL},
     {CASHARRAYOID, array_binval, NULL, InvalidOid, NULL},
     {MACADDROID, mac_binval, NULL, InvalidOid, NULL},
+	{MACADDR8OID, mac8_binval, NULL, InvalidOid, NULL},
     {INETOID, inet_binval, NULL, InvalidOid, NULL},
     {CIDROID, inet_binval, NULL, InvalidOid, NULL},
     {BOOLARRAYOID, array_binval, NULL, InvalidOid, NULL},
@@ -1711,6 +1723,7 @@ static PoqueTypeEntry type_table[] = {
     {TINTERVALARRAYOID, array_binval, NULL, InvalidOid, NULL},
     {POLYGONARRAYOID, array_binval, NULL, InvalidOid, NULL},
     {MACADDRARRAYOID, array_binval, NULL, InvalidOid, NULL},
+    {MACADDR8ARRAYOID, array_binval, NULL, InvalidOid, NULL},
     {INETARRAYOID, array_binval, NULL, InvalidOid, NULL},
     {CIDRARRAYOID, array_binval, NULL, InvalidOid, NULL},
     {FLOAT8OID, float64_binval, float_strval, InvalidOid, NULL},
