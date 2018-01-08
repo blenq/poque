@@ -16,7 +16,7 @@ from .dt import (
 from .numeric import (
     IntParameterHandler, FloatParameterHandler, DecimalParameterHandler,
     BoolParameterHandler)
-from .lib import Error, get_property, get_method
+from .lib import Error, get_property, get_method, InterfaceError
 from .result import Result
 from .text import TextParameterHandler, BytesParameterHandler
 from .various import UuidParameterHandler
@@ -229,8 +229,8 @@ class Conn(c_void_p):
 
     def _raise_error(self):
         if self:
-            raise Error(self.error_message)
-        raise ValueError("Connection is closed")
+            raise InterfaceError(self.error_message)
+        raise InterfaceError("Connection is closed")
 
     def __del__(self):
         self.finish()
@@ -402,7 +402,8 @@ pq.PQparameterStatus.errcheck = check_string
 
 
 def check_exec(res, func, args):
-    if res is None:
+    if not res:
+        # no result returned. Use connection to raise Exception
         conn = args[0]
         conn._raise_error()
     if res.status in [BAD_RESPONSE, FATAL_ERROR]:

@@ -7,6 +7,10 @@ class Error(Exception):
     pass
 
 
+class InterfaceError(Error):
+    pass
+
+
 pq.PQconndefaults.argtypes = []
 pq.PQconndefaults.restype = PQconninfoOptions
 pq.PQconndefaults.errcheck = check_info_options
@@ -53,6 +57,7 @@ def check_encrypt_password(res, func, args):
     ret = c_char_p(res).value
     pq.PQfreemem(res)
     return ret.decode()
+
 
 pq.PQencryptPassword.restype = c_void_p
 pq.PQencryptPassword.argtypes = [c_char_p, c_char_p]

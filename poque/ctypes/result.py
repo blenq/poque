@@ -127,6 +127,7 @@ pq.PQgetlength.argtypes = [Result, c_int, c_int]
 def check_bool(res, func, args):
     return bool(res)
 
+
 pq.PQgetisnull.argtypes = [Result, c_int, c_int]
 pq.PQgetisnull.errcheck = check_bool
 
@@ -142,6 +143,7 @@ def check_clear(res, func, args):
     result = args[0]
     if result:
         result.value = 0
+
 
 pq.PQclear.argtypes = [Result]
 pq.PQclear.restype = None

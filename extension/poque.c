@@ -1,6 +1,7 @@
 #include "poque.h"
 
 PyObject *PoqueError;
+PyObject *PoqueInterfaceError;
 
 PyObject *
 Poque_info_options(PQconninfoOption *options) {
@@ -138,6 +139,11 @@ PyInit__poque(void)
     PoqueError = PyErr_NewException("poque.Error", NULL, NULL);
     Py_INCREF(PoqueError);
     PyModule_AddObject(m, "Error", PoqueError);
+
+    /* add error to module */
+    PoqueInterfaceError = PyErr_NewException("poque.InterfaceError", PoqueError, NULL);
+    Py_INCREF(PoqueInterfaceError);
+    PyModule_AddObject(m, "InterfaceError", PoqueInterfaceError);
 
     /* boilerplate type initialization */
     poque_ConnType.tp_new = PyType_GenericNew;

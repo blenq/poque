@@ -3,7 +3,8 @@ import ssl
 from .conn import Conn
 from .constants import *
 from .lib import (
-    Error, conn_defaults, conninfo_parse, lib_version, encrypt_password)
+    Error, InterfaceError, conn_defaults, conninfo_parse, lib_version,
+    encrypt_password)
 
 
 def connect(*args, **kwargs):

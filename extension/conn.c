@@ -8,9 +8,9 @@ typedef struct {
 
 static void Conn_set_error(PGconn *conn) {
     if (conn == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Connection is closed");
+        PyErr_SetString(PoqueInterfaceError, "Connection is closed");
     } else {
-        PyErr_SetString(PoqueError, PQerrorMessage(conn));
+        PyErr_SetString(PoqueInterfaceError, PQerrorMessage(conn));
     }
 }
 

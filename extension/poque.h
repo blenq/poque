@@ -18,6 +18,7 @@ typedef unsigned short poque_uint16;
 typedef struct poque_Result poque_Result;
 
 extern PyObject *PoqueError;
+extern PyObject *PoqueInterfaceError;
 extern PyTypeObject poque_ConnType;
 extern PyTypeObject poque_ResultType;
 

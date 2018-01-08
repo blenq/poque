@@ -2,7 +2,6 @@ import select
 import unittest
 import weakref
 
-
 from test import config
 from test.config import BaseExtensionTest, BaseCTypesTest
 from test.test_lib import assert_is_conninfo
@@ -37,7 +36,7 @@ class TestConnectionOpen():
         self.assertEqual(cn.status, self.poque.CONNECTION_OK)
 
     def test_connect_wrong_params(self):
-        with self.assertRaises(self.poque.Error):
+        with self.assertRaises(self.poque.InterfaceError):
             self.poque.Conn(zut='zut')
 
 
@@ -157,6 +156,7 @@ class TestConnectionClosed():
     def setUp(self):
         self.cn = self.poque.Conn(config.conninfo())
         self.cn.finish()
+        self.InterfaceError = self.poque.InterfaceError
 
     def test_db(self):
         self.assertIsNone(self.cn.db)
@@ -202,26 +202,31 @@ class TestConnectionClosed():
         self.assertEqual(self.cn.backend_pid, 0)
 
     def test_reset(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(self.InterfaceError):
             self.cn.reset()
 
     def test_reset_async(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(self.InterfaceError):
             self.cn.reset_start()
 
     def test_reset_poll(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(self.InterfaceError):
             self.cn.reset_poll()
 
     def test_escape_literal(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(self.InterfaceError):
             self.cn.escape_literal("h'oi")
 
     def test_escape_identifier(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(self.InterfaceError):
             self.cn.escape_identifier('Hello')
 
+    def test_execute(self):
+        with self.assertRaises(self.InterfaceError):
+            self.cn.execute("SELECT 1")
+
     def test_finish(self):
+        self.assertEqual(self.cn.status, self.poque.CONNECTION_BAD)
         self.cn.finish()
         self.assertEqual(self.cn.status, self.poque.CONNECTION_BAD)
 
