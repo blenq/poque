@@ -28,13 +28,14 @@ def new_connstring(connstring, blocking=True):
 
 class ArrayParameter(object):
 
+    has_null = False
+    type = None
+    max_depth = 0
+    converter = None
+
     def __init__(self, val):
         self.val = val
-        self.type = None
         self.dims = []
-        self.max_depth = 0
-        self.has_null = False
-        self.converter = None
 
     def walk_list(self, val, depth=0):
         # A nested list is not the same as a multidimensional array. Therefore
@@ -152,7 +153,7 @@ class ArrayParameter(object):
         # actually write the values
         self.write_values(self.val)
 
-        return array_oid, cast(self.buf, c_char_p), length, FORMAT_BINARY
+        return array_oid, cast(self.buf, c_char_p), length
 
 
 class Conn(c_void_p):
@@ -258,12 +259,13 @@ class Conn(c_void_p):
         lengths = (c_int * num_params)()
         formats = (c_int * num_params)()
         for i, param in enumerate(parameters):
+            formats[i] = FORMAT_BINARY
             if param is None:
-                oids[i], values[i], lengths[i], formats[i] = (
-                    TEXTOID, 0, 0, FORMAT_BINARY)
+                oids[i], values[i], lengths[i] = (
+                    TEXTOID, 0, 0)
                 continue
             if type(param) == list:
-                oids[i], values[i], lengths[i], formats[i] = (
+                oids[i], values[i], lengths[i] = (
                     ArrayParameter(param).get_value())
                 continue
             handler = self._param_handlers.get(type(param),
@@ -278,7 +280,6 @@ class Conn(c_void_p):
             oids[i] = handler.oid
             values[i] = cast(value, c_char_p)
             lengths[i] = length
-            formats[i] = FORMAT_BINARY
 
         return pq.PQexecParams(
             self, command.encode(), num_params, oids, values, lengths,

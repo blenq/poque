@@ -70,27 +70,23 @@ def _read_inet_bin(crs):
 
     if family == PGSQL_AF_INET:
         correct_size = 4
-        fmt = "4B"
-        addr_format = "{0}.{1}.{2}.{3}/{4}"
         if is_cidr:
             cls = ipaddress.IPv4Network
         else:
             cls = ipaddress.IPv4Interface
+        addr_data = crs.advance_single("I")
     elif family == PGSQL_AF_INET6:
         correct_size = 16
-        fmt = "8H"
-        addr_format = "{0:x}:{1:x}:{2:x}:{3:x}:{4:x}:{5:x}:{6:x}:{7:x}/{8}"
         if is_cidr:
             cls = ipaddress.IPv6Network
         else:
             cls = ipaddress.IPv6Interface
+        addr_data = crs.advance_bytes(16)
     else:
         raise Error("Invalid address family")
     if size != correct_size:
         raise Error("Invalid address size")
-    parts = crs.advance_struct_format(fmt)
-    addr_string = addr_format.format(*(parts + (mask,)))
-    return cls(addr_string)
+    return cls((addr_data, mask))
 
 
 def _read_mac_bin(crs):
@@ -103,8 +99,7 @@ def _read_json_bin(crs):
 
 
 def _read_jsonb_bin(crs):
-    version = crs.advance_single("B")
-    if version != 1:
+    if crs.advance_single("B") != 1:
         raise ValueError("Unknown jsonb version")
     return _read_json_bin(crs)
 
@@ -119,10 +114,12 @@ def _read_bit_text(crs):
     val = 0
     one = ord(b'1')
     zero = ord(b'0')
-    for char in crs.advance_bytes():
-        if char not in (zero, one):
+    for char in crs:
+        val *= 2
+        if char == one:
+            val += 1
+        elif char != zero:
             raise Error('Invalid character in bit string')
-        val = (val << 1) | (char - zero)
     return val
 
 
