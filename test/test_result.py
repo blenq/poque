@@ -16,9 +16,16 @@ from poque.ctypes.constants import (
 
 class ResultTestBasic():
 
+    @classmethod
+    def setUpClass(cls):
+        cls.cn = cls.poque.Conn(config.conninfo())
+
     def setUp(self):
-        cn = self.poque.Conn(config.conninfo())
-        self.res = cn.execute("SELECT 1 AS yo")
+        self.res = self.cn.execute("SELECT 1 AS yo")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cn.finish()
 
     def test_execute(self):
         self.assertIsNotNone(self.res)
@@ -115,16 +122,18 @@ class ResultTestValues():
     @classmethod
     def setUpClass(cls):
         cls.started = datetime.datetime.now()
+        cls.cn = cls.poque.Conn(config.conninfo())
 
     @classmethod
     def tearDownClass(cls):
         print("{0}: {1}".format(cls, datetime.datetime.now() - cls.started))
+        cls.cn.finish()
 
     def setUp(self):
-        self.cn = self.poque.Conn(config.conninfo())
+        self.cn.execute("BEGIN")
 
     def tearDown(self):
-        self.cn.finish()
+        self.cn.execute("ROLLBACK")
 
     def test_is_null(self):
         res = self.cn.execute("SELECT NULL")
@@ -293,7 +302,8 @@ class ResultTestValues():
                     " '-123456789012345678901234567890'::numeric, "
                     " '-0.000000000000001230'::numeric, "
                     " '9999E+100'::numeric, "
-                    " '9999E-100'::numeric;",
+                    " '9999E-100'::numeric, "
+                    " '0'::numeric;",
             result_format=fmt)
         self.assertNumericEqual(res.getvalue(0, 0), Decimal('123.45600'))
         self.assertTrue(res.getvalue(0, 1).is_nan())
@@ -309,6 +319,8 @@ class ResultTestValues():
             res.getvalue(0, 6), Decimal('9999E+100'))
         self.assertNumericEqual(
             res.getvalue(0, 7), Decimal('9999E-100'))
+        self.assertNumericEqual(
+            res.getvalue(0, 8), Decimal('0'))
 
     def test_numeric_value_str(self):
         self._test_numeric_value(0)
@@ -357,6 +369,8 @@ class ResultTestValues():
         res = self.cn.execute(r"SELECT 'h\\oi '::bytea", result_format=0)
         self.assertEqual(res.getvalue(0, 0), b'h\\oi ')
         self.assertEqual(res.ftype(0), self.poque.BYTEAOID)
+        res = self.cn.execute(r"SELECT 'hoi \001'::bytea", result_format=0)
+        self.assertEqual(res.getvalue(0, 0), b'hoi \x01')
 
     def test_bytea_value_bin(self):
         self._test_value_and_type_bin("SELECT 'hi'::bytea", b'hi',
@@ -537,6 +551,9 @@ class ResultTestValues():
                                       self.poque.TIDOID)
 
     def test_tid_value_str(self):
+        res = self.cn.execute("SELECT '(3, 4)'::tid", result_format=0)
+        self.assertEqual(res.getvalue(0, 0), (3, 4))
+        self.assertEqual(res.ftype(0), self.poque.TIDOID)
         res = self.cn.execute("SELECT '(3, 4)'::tid", result_format=0)
         self.assertEqual(res.getvalue(0, 0), (3, 4))
         self.assertEqual(res.ftype(0), self.poque.TIDOID)
@@ -1010,6 +1027,12 @@ class ResultTestValues():
         self._test_value_and_type_bin(
             "SELECT '20130-04-02 13:09:25.123'::timestamp",
             "20130-04-02 13:09:25.123000",
+            self.poque.TIMESTAMPOID)
+        self._test_value_and_type_bin(
+            "SELECT 'infinity'::timestamp", "infinity",
+            self.poque.TIMESTAMPOID)
+        self._test_value_and_type_bin(
+            "SELECT '-infinity'::timestamp", "-infinity",
             self.poque.TIMESTAMPOID)
 
     def test_timestamp_array_value_bin(self):

@@ -8,8 +8,20 @@ from test.config import BaseExtensionTest, BaseCTypesTest, conninfo
 
 class ResultTestParameters():
 
+    @classmethod
+    def setUpClass(cls):
+        cls.cn = cls.poque.Conn(conninfo())
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cn.finish()
+
     def setUp(self):
-        self.cn = self.poque.Conn(conninfo())
+        self.cn.execute("BEGIN")
+#         self.cn = self.poque.Conn(conninfo())
+
+    def tearDown(self):
+        self.cn.execute("ROLLBACK")
 
     def _test_param_val(self, val):
         res = self.cn.execute("SELECT $1", [val])
@@ -169,6 +181,12 @@ class ResultTestParameters():
 
     def test_decimal_param(self):
         self._test_param_decimal(Decimal('123.45600'))
+        self._test_param_decimal(Decimal('1'))
+        self._test_param_decimal(Decimal('12'))
+        self._test_param_decimal(Decimal('123'))
+        self._test_param_decimal(Decimal('1234'))
+        self._test_param_decimal(Decimal('12345'))
+        self._test_param_decimal(Decimal('0'))
         self._test_param_decimal(Decimal('123456789012345678901234567890'))
         self._test_param_decimal(Decimal('0.000000000000001230'))
         self._test_param_decimal(Decimal('-123456789012345678901234567890'))

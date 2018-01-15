@@ -1,5 +1,5 @@
 from datetime import (
-    datetime, date, time, timedelta, MAXYEAR, MINYEAR, timezone)
+    datetime, date, time, timedelta, timezone, MAXYEAR, MINYEAR)
 
 from .lib import Error
 from .common import BaseParameterHandler, get_array_bin_reader
@@ -71,19 +71,28 @@ MIN_ORDINAL = date.min.toordinal()
 MAX_ORDINAL = date.max.toordinal()
 
 
+def date_from_pgordinal(pgordinal):
+    """ returns Python date if postgres date is within Python date range """
+
+    ordinal = pgordinal + DATE_OFFSET
+    if ordinal >= MIN_ORDINAL and ordinal <= MAX_ORDINAL:
+        return date.fromordinal(ordinal)
+    return None
+
+
 def read_date_bin(crs):
     jd = crs.advance_single("i")
 
-    ordinal = jd + DATE_OFFSET
-    if ordinal >= MIN_ORDINAL and ordinal <= MAX_ORDINAL:
-        return date.fromordinal(ordinal)
+    dt = date_from_pgordinal(jd)
+    if dt is not None:
+        return dt
 
     year, month, day = _date_vals_from_int(jd)
 
     # if outside python date range convert to a string
-    if ordinal > MAX_ORDINAL:
+    if year > MAXYEAR:
         fmt = "{0}-{1:02}-{2:02}"
-    elif ordinal < MIN_ORDINAL:
+    elif year < MINYEAR:
         fmt = "{0:04}-{1:02}-{2:02} BC"
         year = -1 * (year - 1)
     return fmt.format(year, month, day)
@@ -102,20 +111,24 @@ def read_timetz_bin(crs):
 
 def read_timestamp_bin(crs):
     value = crs.advance_single("q")
-    dt, tm = divmod(value, USECS_PER_DAY)
-    if tm < 0:
-        tm += USECS_PER_DAY
-        dt -= 1
-
-    year, month, day = _date_vals_from_int(dt)
+    if value == 0x7FFFFFFFFFFFFFFF:
+        return 'infinity'
+    if value == -0x8000000000000000:
+        return '-infinity'
+    jd, tm = divmod(value, USECS_PER_DAY)
     time_vals = _time_vals_from_int(tm)
+
+    dt = date_from_pgordinal(jd)
+    if dt is not None:
+        return datetime.combine(dt, time(*time_vals))
+
+    year, month, day = _date_vals_from_int(jd)
+
     if year > MAXYEAR:
         fmt = "{0}-{1:02}-{2:02} {3:02}:{4:02}:{5:02}.{6:06}"
     elif year < MINYEAR:
         year = -1 * (year - 1)  # There is no year zero
         fmt = "{0:04}-{1:02}-{2:02} {3:02}:{4:02}:{5:02}.{6:06} BC"
-    else:
-        return datetime(year, month, day, *time_vals)
     return fmt.format(year, month, day, *time_vals)
 
 
@@ -203,11 +216,14 @@ class DateTimeParameterHandler(BaseParameterHandler):
             if has_tz:
                 self.oid = constants.TIMESTAMPTZOID
                 self.array_oid = constants.TIMESTAMPTZARRAYOID
+                self.binary_value = self.binary_value_tz
         elif self.has_tz != has_tz:
             raise ValueError("Can not mix naive and aware datetimes")
         super(DateTimeParameterHandler, self).examine(val)
 
     def binary_value(self, val):
-        if val.tzinfo:
-            val = val.astimezone(timezone.utc)
+        return date_ordinal(val) * USECS_PER_DAY + time_ordinal(val)
+
+    def binary_value_tz(self, val):
+        val = val.astimezone(timezone.utc)
         return date_ordinal(val) * USECS_PER_DAY + time_ordinal(val)

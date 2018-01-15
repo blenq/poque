@@ -10,10 +10,20 @@
 #pragma GCC visibility push(hidden)
 #endif
 
-#if SIZEOF_SHORT == 2
+#if SIZEOF_SHORT != 2
+#error no type for int16
+#endif
+
+#if SIZEOF_FLOAT != 4
+#error no type for float32
+#endif
+
+#if SIZEOF_DOUBLE != 8
+#error no type for float64
+#endif
+
 typedef signed short poque_int16;
 typedef unsigned short poque_uint16;
-#endif
 
 typedef struct poque_Result poque_Result;
 
