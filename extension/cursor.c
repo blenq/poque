@@ -92,3 +92,43 @@ crs_read_uint64(data_crs *crs, PY_UINT64_T *value)
              ((PY_UINT64_T)data[6] << 8) | data[7];
     return 0;
 }
+
+/* ----------- floating point read functions ---------------------------------
+ *
+ * This is using undocumented python API functions _PyFloat_Unpack8 and
+ * _PyFloat_Unpack4.
+ *
+ * Reasons:
+ * * No hassle, especially for 64 bit, converting endiannes in a cross
+ *   platform manner
+ * * This converts even when the client platform does not use IEEE floating
+ *   point. (Can anyone name any?)
+ */
+int
+crs_read_double(data_crs *crs, double *value)
+{
+	char *data;
+
+	data = crs_advance(crs, 8);
+    if (data == NULL)
+        return -1;
+    *value = _PyFloat_Unpack8((unsigned char *)data, 0);
+    if (*value == -1.0 && PyErr_Occurred())
+        return -1;
+    return 0;
+}
+
+
+int
+crs_read_float(data_crs *crs, float *value)
+{
+	char *data;
+
+	data = crs_advance(crs, 4);
+    if (data == NULL)
+        return -1;
+    *value = _PyFloat_Unpack4((unsigned char *)data, 0);
+    if (*value == -1.0 && PyErr_Occurred())
+        return -1;
+    return 0;
+}

@@ -1,5 +1,6 @@
 #include "poque.h"
 #include "numeric.h"
+#include "poque_type.h"
 
 PyObject *
 int16_binval(data_crs *crs)
@@ -80,26 +81,20 @@ PyObject *bool_strval(data_crs *crs) {
 PyObject *
 float64_binval(data_crs *crs)
 {
-    union {
-        PY_UINT64_T int_val;
-        double dbl_val;
-    } value;
-    if (crs_read_uint64(crs, &value.int_val) < 0)
+    double val;
+    if (crs_read_double(crs, &val) < 0)
         return NULL;
-    return PyFloat_FromDouble(value.dbl_val);
+    return PyFloat_FromDouble(val);
 }
 
 
 PyObject *
 float32_binval(data_crs *crs)
 {
-    union {
-        PY_UINT32_T int_val;
-        float dbl_val;
-    } value;
-    if (crs_read_uint32(crs, &value.int_val) < 0)
-        return NULL;
-    return PyFloat_FromDouble(value.dbl_val);
+	float val;
+	if (crs_read_float(crs, &val) < 0)
+		return NULL;
+	return PyFloat_FromDouble(val);
 }
 
 
@@ -122,6 +117,42 @@ float_strval(data_crs *crs)
 }
 
 
+static int
+float_examine(param_handler *handler, PyObject *param) {
+	handler->total_size += sizeof(double);
+	return 0;
+}
+
+static int
+float_encode_at(
+		param_handler *handler, PyObject *param, char *loc, size_t *size) {
+	double v;
+
+	v = PyFloat_AsDouble(param);
+	if (_PyFloat_Pack8(v, (unsigned char *)loc, 0) < 0) {
+		return -1;
+	}
+	if (size != NULL) {
+		*size = 8;
+	}
+	return 0;
+}
+
+param_handler *
+new_float_param_handler(int num_param) {
+	static param_handler def_handler = {
+		float_examine,
+		NULL,
+		float_encode_at,
+		(ph_free)PyMem_Free,
+		FLOAT8OID,
+		FLOAT8ARRAYOID,
+		0
+	}; /* static initialized handler */
+
+	/* create new handler identical to static one */
+	return new_param_handler(&def_handler, sizeof(param_handler));
+}
 
 static int
 numeric_set_digit(PyObject *digit_tuple, int val, int idx) {
@@ -183,7 +214,6 @@ numeric_binval(data_crs *crs) {
         /* fill from postgres digits. A postgres digit contains 4 decimal
          * digits */
         poque_uint16 pg_digit;
-        div_t q;
 
         if (crs_read_uint16(crs, &pg_digit) < 0)
             goto end;
@@ -194,25 +224,24 @@ numeric_binval(data_crs *crs) {
 
         if (j == ndigits)
         	continue;
-        q = div(pg_digit, 1000);
-        if (numeric_set_digit(digits, q.quot, j++) < 0)
+        if (numeric_set_digit(digits, pg_digit / 1000, j++) < 0)
             goto end;
 
         if (j == ndigits)
         	continue;
-        q = div(q.rem, 100);
-        if (numeric_set_digit(digits, q.quot, j++) < 0)
+        pg_digit = pg_digit % 1000;
+        if (numeric_set_digit(digits, pg_digit / 100, j++) < 0)
             goto end;
 
         if (j == ndigits)
         	continue;
-        q = div(q.rem, 10);
-        if (numeric_set_digit(digits, q.quot, j++) < 0)
+        pg_digit = pg_digit % 100;
+        if (numeric_set_digit(digits, pg_digit / 10, j++) < 0)
             goto end;
 
         if (j == ndigits)
         	continue;
-        if (numeric_set_digit(digits, q.rem, j++) < 0)
+        if (numeric_set_digit(digits, pg_digit % 10, j++) < 0)
             goto end;
     }
     /* add extra zeroes if necessary */

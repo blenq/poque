@@ -1,4 +1,5 @@
 #include "poque.h"
+#include "poque_type.h"
 
 typedef struct {
     PyObject_HEAD
@@ -189,32 +190,158 @@ Conn_fileno(poque_Conn *self, PyObject *unused)
 }
 
 
+static PGresult *
+Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_params, int format)
+{
+	Oid *param_types = NULL;
+	char **param_values = NULL;
+	int *param_lengths = NULL;
+	int *param_formats = NULL;
+	char **clean_up = NULL;
+	size_t clean_up_count = 0;
+	param_handler **param_handlers = NULL;
+	size_t handler_count = 0;
+	PyObject *param = NULL;
+	int i;
+	PGresult *res = NULL;
+	param_handler *handler;
+	char *param_value;
+
+	param_handlers = PyMem_Calloc(num_params, sizeof(param_handler *));
+	param_types = PyMem_Calloc(num_params, sizeof(Oid));
+	param_values = PyMem_Calloc(num_params, sizeof(char *));
+	param_lengths = PyMem_Calloc(num_params, sizeof(int));
+	param_formats = PyMem_Calloc(num_params, sizeof(int));
+	clean_up = PyMem_Calloc(num_params, sizeof(char *));
+	if (param_handlers == NULL || param_types == NULL || param_values == NULL ||
+			param_lengths == NULL || param_formats == NULL ||
+			clean_up == NULL) {
+		PyErr_SetNone(PyExc_MemoryError);
+		goto end;
+	}
+
+	for (i = 0; i < num_params; i++) {
+		param = PySequence_ITEM(parameters, i);
+		param_formats[i] = FORMAT_BINARY;
+		if (param == Py_None) {
+			/* Special case: NULL values */
+			param_types[i] = TEXTOID;
+			param_values[i] = NULL;
+			param_lengths[i] = 0;
+		}
+		else {
+			/* get the parameter handler based on type */
+			handler = get_param_handler_constructor(Py_TYPE(param))(1);
+			param_handlers[handler_count++] = handler;
+
+			/* examine the value to calculate value size and determine Oid */
+			if (PH_Examine(handler, param) < 0) {
+				goto end;
+			}
+			param_lengths[i] = PH_TotalSize(handler);
+			param_types[i] = PH_Oid(handler);
+
+			/* convert the parameter to pg char * format */
+			if (PH_HasEncode(handler)) {
+				/* If the handler has already access to the raw pointer (as
+				 * for bytes and str objects), just use that without allocating
+				 * and copying memory
+				 */
+				if (PH_EncodeValue(handler, param, &param_values[i]) < 0) {
+					goto end;
+				}
+			}
+			else {
+				/* Allocate memory for value */
+				param_value = PyMem_Malloc(PH_TotalSize(handler));
+				if (param_value == NULL) {
+					PyErr_SetNone(PyExc_MemoryError);
+					goto end;
+				}
+
+				/* set the value pointer and register for cleanup */
+				param_values[i] = param_value;
+				clean_up[clean_up_count++] = param_value;
+
+				/* write char * value into pointer */
+				if (PH_EncodeValueAt(
+						handler, param, param_value, NULL) < 0) {
+					goto end;
+				}
+			}
+		}
+	}
+
+	/* everything set up, send the command with parameters */
+	Py_BEGIN_ALLOW_THREADS
+	res = PQexecParams(conn, sql, num_params, param_types,
+					   (const char * const*)param_values, param_lengths,
+					   param_formats, format);
+	Py_END_ALLOW_THREADS
+
+end:
+
+	/* clean up */
+	for (i = 0; i < handler_count; i++) {
+		PH_Free(param_handlers[i]);
+	}
+	for (i = 0; i < clean_up_count; i++) {
+		PyMem_Free(clean_up[i]);
+	}
+	PyMem_Free(param_types);
+	PyMem_Free(param_values);
+	PyMem_Free(param_lengths);
+	PyMem_Free(param_formats);
+	PyMem_Free(param_handlers);
+	PyMem_Free(clean_up);
+	return res;
+}
+
+
 static PyObject *
 Conn_execute(poque_Conn *self, PyObject *args, PyObject *kwds) {
 
     char *sql;
+    PyObject *parameters = NULL;
     int format = FORMAT_BINARY;
     PGresult *res;
     ExecStatusType res_status;
+    Py_ssize_t num_params = 0;
 
-    static char *kwlist[] = {"command", "result_format", NULL};
+    static char *kwlist[] = {"command", "parameters", "result_format", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "s|i", kwlist, &sql, &format))
+            args, kwds, "s|Oi", kwlist, &sql, &parameters, &format))
         return NULL;
 
     if (format)
         format = FORMAT_BINARY;
-    if (format == FORMAT_BINARY)
-        res = PQexecParams(self->conn, sql, 0, NULL, NULL, NULL, NULL, format);
-    else
-        res = PQexec(self->conn, sql);
-    if (res == NULL) {
-        Conn_set_error(self->conn);
-        return NULL;
+    if (parameters != NULL) {
+    	if (!PySequence_Check(parameters)) {
+			PyErr_SetString(PoqueError, "parameters must be a sequence");
+			return NULL;
+		}
+    	num_params = PySequence_Length(parameters);
     }
+
+    if (num_params == 0) {
+    	Py_BEGIN_ALLOW_THREADS
+		if (format == FORMAT_BINARY)
+			res = PQexecParams(self->conn, sql, 0, NULL, NULL, NULL, NULL, format);
+		else
+			res = PQexec(self->conn, sql);
+    	Py_END_ALLOW_THREADS
+    } else {
+    	res = Conn_exec_params(self->conn, sql, parameters, num_params, format);
+    }
+
+	if (res == NULL) {
+		Conn_set_error(self->conn);
+		return NULL;
+	}
+
     res_status = PQresultStatus(res);
     if (res_status == PGRES_BAD_RESPONSE || res_status == PGRES_FATAL_ERROR) {
-        PyErr_SetString(PoqueError, "An execute error occurred");
+        PyErr_SetString(PoqueError, PQresultErrorMessage(res));
         return NULL;
     }
     return (PyObject *)PoqueResult_New(res);
@@ -408,6 +535,12 @@ static PyGetSetDef Conn_getset[] = {{
         NULL,
         PyDoc_STR("server version"),
         PQserverVersion
+    }, {
+    	"client_encoding",
+		(getter)Conn_intprop,
+		NULL,
+		PyDoc_STR("client encoding"),
+		PQclientEncoding
     }, {
         "db",
         (getter)Conn_charprop,

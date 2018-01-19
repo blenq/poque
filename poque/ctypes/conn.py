@@ -199,6 +199,7 @@ class Conn(c_void_p):
     port = get_property(pq.PQport)
     host = get_property(pq.PQhost)
     options = get_property(pq.PQoptions)
+    client_encoding = get_property(pq.PQclientEncoding)
 
     info = get_method(pq.PQconninfo)
     fileno = get_method(pq.PQsocket)
@@ -248,7 +249,7 @@ class Conn(c_void_p):
     }
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
-        if parameters is None:
+        if not parameters:
             if result_format == FORMAT_TEXT:
                 return pq.PQexec(self, command.encode())
             return pq.PQexecParams(self, command.encode(), 0, None, None, None,
@@ -352,6 +353,9 @@ pq.PQprotocolVersion.argtypes = [Conn]
 
 pq.PQserverVersion.restype = int
 pq.PQserverVersion.argtypes = [Conn]
+
+pq.PQclientEncoding.restype = int
+pq.PQclientEncoding.argtypes = [Conn]
 
 
 def check_fileno(res, func, args):

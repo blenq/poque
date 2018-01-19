@@ -79,8 +79,12 @@ class TestConnectionBasic():
     def test_protocol_version(self):
         self.assertIn(self.cn.protocol_version, [2, 3])
 
-    def test_transaction_status(self):
+    def test_transaction_status_idle(self):
         self.assertEqual(self.cn.transaction_status, self.poque.TRANS_IDLE)
+
+    def test_transaction_status_intrans(self):
+        self.cn.execute("BEGIN")
+        self.assertEqual(self.cn.transaction_status, self.poque.TRANS_INTRANS)
 
     def test_server_version(self):
         self.assertIsInstance(self.cn.server_version, int)
@@ -93,6 +97,9 @@ class TestConnectionBasic():
 
     def test_parameter_status(self):
         self.assertEqual(self.cn.parameter_status('client_encoding'), 'UTF8')
+
+    def test_client_encoding(self):
+        self.assertEqual(self.cn.client_encoding, 6)
 
     def test_parameter_status_wrong(self):
         self.assertIsNone(self.cn.parameter_status('nonsense'))

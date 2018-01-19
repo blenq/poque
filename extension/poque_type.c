@@ -1,8 +1,43 @@
 #include "poque.h"
 #include "cursor.h"
 #include "numeric.h"
+#include "poque_type.h"
 #include <datetime.h>
 
+
+param_handler *
+new_param_handler(param_handler *def_handler, size_t handler_size) {
+	/* Allocator for param handlers.
+	 *
+	 * Copies the content of an existing (static) struct into the newly
+	 * created one.
+	 *
+	 */
+	param_handler *handler; /* handler to create */
+
+	/* allocate mem */
+	handler = PyMem_Malloc(handler_size);
+	if (handler == NULL) {
+		PyErr_SetNone(PyExc_MemoryError);
+		return NULL;
+	}
+
+	/* initialize new handler with static content */
+	memcpy(handler, def_handler, handler_size);
+	return handler;
+}
+
+
+ph_new
+get_param_handler_constructor(PyTypeObject *typ) {
+	if (typ == &PyFloat_Type) {
+		return new_float_param_handler;
+	}
+	else if (typ == &PyBytes_Type) {
+		return new_bytes_param_handler;
+	}
+	return new_text_param_handler;
+}
 
 static PyObject *
 load_python_object(const char *module_name, const char *obj_name) {

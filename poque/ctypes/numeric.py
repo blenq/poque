@@ -4,10 +4,13 @@ from struct import calcsize
 
 from .common import (BaseParameterHandler, get_array_bin_reader,
                      get_single_reader)
-from . import constants
 from .constants import (
     INT4OID, INT4ARRAYOID, INT8OID, INT8ARRAYOID, TEXTOID, TEXTARRAYOID,
-    FLOAT8OID, FLOAT8ARRAYOID)
+    FLOAT8OID, FLOAT8ARRAYOID, BOOLOID, BOOLARRAYOID, NUMERICOID,
+    NUMERICARRAYOID, FLOAT4OID, FLOAT4ARRAYOID, INT2OID, INT2ARRAYOID,
+    INT2VECTOROID, INT2VECTORARRAYOID, XIDOID, XIDARRAYOID, OIDOID,
+    OIDARRAYOID, CIDOID, CIDARRAYOID, OIDVECTOROID, OIDVECTORARRAYOID,
+    REGPROCOID, REGPROCARRAYOID, CASHOID, CASHARRAYOID)
 from .lib import Error
 
 
@@ -17,8 +20,8 @@ def read_bool_text(crs):
 
 class BoolParameterHandler(BaseParameterHandler):
 
-    oid = constants.BOOLOID
-    array_oid = constants.BOOLARRAYOID
+    oid = BOOLOID
+    array_oid = BOOLARRAYOID
     fmt = "?"
 
 
@@ -37,28 +40,33 @@ class IntParameterHandler(BaseParameterHandler):
     def __init__(self):
         self.values = []
 
-    def check_int8(self, val):
-        return -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF
-
     def examine(self, val):
         self.values.append(val)
+        self.examine_item(val)
 
-        if self.oid == INT4OID:
-            if -0x80000000 <= val <= 0x7FFFFFFF:
-                return
-            if self.check_int8(val):
-                self.oid = INT8OID
-                self.array_oid = INT8ARRAYOID
-                self.item_size = self.int8size
-                self.fmt = self.int8fmt
-                return
+    def examine_int4(self, val):
+        if -0x80000000 <= val <= 0x7FFFFFFF:
+            return
+        self.oid = INT8OID
+        self.array_oid = INT8ARRAYOID
+        self.item_size = self.int8size
+        self.fmt = self.int8fmt
+        self.examine_item = self.examine_int8
+        self.examine_item(val)
 
-        if self.oid == TEXTOID or self.check_int8(val):
+    examine_item = examine_int4
+
+    def examine_int8(self, val):
+        if -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF:
             return
         self.oid = TEXTOID
         self.array_oid = TEXTARRAYOID
         self.encode_value = self.encode_text_value
         self.get_size = self.get_text_size
+        self.examine_item = self.examine_text
+
+    def examine_text(self, val):
+        pass
 
     def get_size(self):
         return len(self.values) * self.item_size
@@ -135,53 +143,53 @@ def _read_numeric_bin(crs):
 
 def get_numeric_converters():
     return {
-        constants.BOOLOID: (read_bool_text, get_single_reader("?")),
-        constants.BOOLARRAYOID: (
-            None, get_array_bin_reader(constants.BOOLOID)),
-        constants.NUMERICOID: (_read_numeric_str, _read_numeric_bin),
-        constants.NUMERICARRAYOID: (
-            None, get_array_bin_reader(constants.NUMERICOID)),
-        constants.FLOAT4OID: (_read_float_text, get_single_reader("f")),
-        constants.FLOAT4ARRAYOID: (
-            None, get_array_bin_reader(constants.FLOAT4OID)),
-        constants.FLOAT8OID: (_read_float_text, get_single_reader("d")),
-        constants.FLOAT8ARRAYOID: (
-            None, get_array_bin_reader(constants.FLOAT8OID)),
-        constants.INT2OID: (read_int_text, get_single_reader("h")),
-        constants.INT2ARRAYOID: (
-            None, get_array_bin_reader(constants.INT2OID)),
-        constants.INT2VECTOROID: (
-            None, get_array_bin_reader(constants.INT2OID)),
-        constants.INT2VECTORARRAYOID: (
-            None, get_array_bin_reader(constants.INT2VECTOROID)),
-        constants.INT4OID: (read_int_text, get_single_reader("i")),
-        constants.INT4ARRAYOID: (
-            None, get_array_bin_reader(constants.INT4OID)),
-        constants.INT8OID: (read_int_text, get_single_reader("q")),
-        constants.INT8ARRAYOID: (
-            None, get_array_bin_reader(constants.INT8OID)),
-        constants.XIDOID: (read_int_text, get_single_reader("I")),
-        constants.XIDARRAYOID: (None, get_array_bin_reader(constants.XIDOID)),
-        constants.CIDOID: (read_int_text, get_single_reader("I")),
-        constants.CIDARRAYOID: (None, get_array_bin_reader(constants.CIDOID)),
-        constants.OIDOID: (read_int_text, get_single_reader("I")),
-        constants.OIDARRAYOID: (None, get_array_bin_reader(constants.OIDOID)),
-        constants.OIDVECTOROID: (None, get_array_bin_reader(constants.OIDOID)),
-        constants.OIDVECTORARRAYOID: (
-            None, get_array_bin_reader(constants.OIDVECTOROID)),
-        constants.REGPROCOID: (None, get_single_reader("I")),
-        constants.REGPROCARRAYOID: (
-            None, get_array_bin_reader(constants.REGPROCOID)),
-        constants.CASHOID: (None, get_single_reader("q")),
-        constants.CASHARRAYOID: (
-            None, get_array_bin_reader(constants.CASHOID)),
+        BOOLOID: (read_bool_text, get_single_reader("?")),
+        BOOLARRAYOID: (
+            None, get_array_bin_reader(BOOLOID)),
+        NUMERICOID: (_read_numeric_str, _read_numeric_bin),
+        NUMERICARRAYOID: (
+            None, get_array_bin_reader(NUMERICOID)),
+        FLOAT4OID: (_read_float_text, get_single_reader("f")),
+        FLOAT4ARRAYOID: (
+            None, get_array_bin_reader(FLOAT4OID)),
+        FLOAT8OID: (_read_float_text, get_single_reader("d")),
+        FLOAT8ARRAYOID: (
+            None, get_array_bin_reader(FLOAT8OID)),
+        INT2OID: (read_int_text, get_single_reader("h")),
+        INT2ARRAYOID: (
+            None, get_array_bin_reader(INT2OID)),
+        INT2VECTOROID: (
+            None, get_array_bin_reader(INT2OID)),
+        INT2VECTORARRAYOID: (
+            None, get_array_bin_reader(INT2VECTOROID)),
+        INT4OID: (read_int_text, get_single_reader("i")),
+        INT4ARRAYOID: (
+            None, get_array_bin_reader(INT4OID)),
+        INT8OID: (read_int_text, get_single_reader("q")),
+        INT8ARRAYOID: (
+            None, get_array_bin_reader(INT8OID)),
+        XIDOID: (read_int_text, get_single_reader("I")),
+        XIDARRAYOID: (None, get_array_bin_reader(XIDOID)),
+        CIDOID: (read_int_text, get_single_reader("I")),
+        CIDARRAYOID: (None, get_array_bin_reader(CIDOID)),
+        OIDOID: (read_int_text, get_single_reader("I")),
+        OIDARRAYOID: (None, get_array_bin_reader(OIDOID)),
+        OIDVECTOROID: (None, get_array_bin_reader(OIDOID)),
+        OIDVECTORARRAYOID: (
+            None, get_array_bin_reader(OIDVECTOROID)),
+        REGPROCOID: (None, get_single_reader("I")),
+        REGPROCARRAYOID: (
+            None, get_array_bin_reader(REGPROCOID)),
+        CASHOID: (None, get_single_reader("q")),
+        CASHARRAYOID: (
+            None, get_array_bin_reader(CASHOID)),
     }
 
 
 class DecimalParameterHandler(BaseParameterHandler):
 
-    oid = constants.NUMERICOID
-    array_oid = constants.NUMERICARRAYOID
+    oid = NUMERICOID
+    array_oid = NUMERICARRAYOID
 
     def __init__(self):
         self.values = deque()

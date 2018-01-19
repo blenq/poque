@@ -29,8 +29,27 @@ class ResultTestParameters():
         self.assertEqual(out_val, val)
         self.assertEqual(type(out_val), type(val))
 
+    def test_empty_params(self):
+        res = self.cn.execute("SELECT 1", [])
+        self.assertEqual(res.getvalue(0, 0), 1)
+
     def test_str_param(self):
         self._test_param_val('hi')
+
+    def test_float_param(self):
+        self._test_param_val(3.24)
+
+    def test_bytes_param(self):
+        self._test_param_val(b'hoi')
+
+
+class ResultTestParametersExtension(
+        BaseExtensionTest, ResultTestParameters, unittest.TestCase):
+    pass
+
+
+class ResultTestParametersCtypes(
+        BaseCTypesTest, ResultTestParameters, unittest.TestCase):
 
     def test_str_array_param(self):
         self._test_param_val(['hi', None, 'hello'])
@@ -95,9 +114,6 @@ class ResultTestParameters():
         with self.assertRaises(ValueError):
             self.cn.execute("SELECT $1", ([[[[[[[101]]]]]]],))
 
-    def test_float_param(self):
-        self._test_param_val(3.24)
-
     def test_float_array_param(self):
         self._test_param_val([3.24, None, 234.765])
 
@@ -110,9 +126,6 @@ class ResultTestParameters():
     def test_bool_array_param(self):
         val = [True, False]
         self._test_param_val(val)
-
-    def test_bytes_param(self):
-        self._test_param_val(b'hoi')
 
     def test_bytes_array_param(self):
         self._test_param_val([b'hoi', b'ha\0llo'])
@@ -200,8 +213,3 @@ class ResultTestParameters():
     def test_decimal_array_param(self):
         self._test_param_val([
             Decimal('123.45600'), Decimal('99E-100')])
-
-
-class ResultTestParametersCtypes(
-        BaseCTypesTest, ResultTestParameters, unittest.TestCase):
-    pass
