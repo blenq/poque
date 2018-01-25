@@ -1,8 +1,6 @@
-#include "poque.h"
-#include "numeric.h"
 #include "poque_type.h"
 
-PyObject *
+static PyObject *
 int16_binval(data_crs *crs)
 {
     poque_int16 value;
@@ -12,7 +10,7 @@ int16_binval(data_crs *crs)
 }
 
 
-PyObject *
+static PyObject *
 uint32_binval(data_crs *crs)
 {
     PY_UINT32_T value;
@@ -22,7 +20,7 @@ uint32_binval(data_crs *crs)
 }
 
 
-PyObject *
+static PyObject *
 int32_binval(data_crs *crs)
 {
     PY_INT32_T value;
@@ -32,7 +30,7 @@ int32_binval(data_crs *crs)
 }
 
 
-PyObject *
+static PyObject *
 int64_binval(data_crs *crs)
 {
     PY_INT64_T value;
@@ -43,7 +41,8 @@ int64_binval(data_crs *crs)
 }
 
 
-PyObject *int_strval(data_crs *crs)
+static PyObject *
+int_strval(data_crs *crs)
 {
     char *data, *pend;
     PyObject *value;
@@ -59,7 +58,8 @@ PyObject *int_strval(data_crs *crs)
 }
 
 
-PyObject *bool_binval(data_crs *crs) {
+static PyObject *
+bool_binval(data_crs *crs) {
     char data;
 
     if (crs_read_char(crs, &data) < 0)
@@ -68,7 +68,8 @@ PyObject *bool_binval(data_crs *crs) {
 }
 
 
-PyObject *bool_strval(data_crs *crs) {
+static PyObject *
+bool_strval(data_crs *crs) {
     char data;
 
     if (crs_read_char(crs, &data) < 0)
@@ -93,21 +94,22 @@ bool_encode_at(
 
 
 static param_handler bool_param_handler = {
-    bool_examine,
-    NULL,
-    bool_encode_at,
-    NULL,
-    BOOLOID,
-    BOOLARRAYOID
+    bool_examine,   /* examine */
+    NULL,           /* encode */
+    bool_encode_at, /* encode_at */
+    NULL,           /* free */
+    BOOLOID,        /* oid */
+    BOOLARRAYOID    /* array_oid */
 }; /* static initialized handler */
 
-param_handler *
+
+static param_handler *
 new_bool_param_handler(int num_param) {
     return &bool_param_handler;
 }
 
 
-PyObject *
+static PyObject *
 float64_binval(data_crs *crs)
 {
     double val;
@@ -117,7 +119,7 @@ float64_binval(data_crs *crs)
 }
 
 
-PyObject *
+static PyObject *
 float32_binval(data_crs *crs)
 {
 	float val;
@@ -127,7 +129,7 @@ float32_binval(data_crs *crs)
 }
 
 
-PyObject *
+static PyObject *
 float_strval(data_crs *crs)
 {
 	double val;
@@ -174,7 +176,7 @@ static param_handler float_param_handler = {
 }; /* static initialized handler */
 
 
-param_handler *
+static param_handler *
 new_float_param_handler(int num_param) {
     return &float_param_handler;
 }
@@ -195,7 +197,20 @@ numeric_set_digit(PyObject *digit_tuple, int val, int idx) {
 }
 
 
-PyObject *
+/* reference to decimal.Decimal */
+static PyObject *PyDecimal;
+
+static PyObject *
+numeric_strval(data_crs *crs) {
+    /* Create a Decimal from a text value */
+    char *data;
+
+    data = crs_advance_end(crs);
+    return PyObject_CallFunction(PyDecimal, "s#", data, crs_len(crs));
+}
+
+
+static PyObject *
 numeric_binval(data_crs *crs) {
     /* Create a Decimal from a binary value */
     poque_uint16 npg_digits, sign, dscale;
@@ -284,4 +299,48 @@ numeric_binval(data_crs *crs) {
 end:
 	Py_DECREF(digits);
     return ret;
+}
+
+static PoqueTypeEntry numeric_value_handlers[] = {
+    {INT4OID, int32_binval, int_strval, InvalidOid, NULL},
+    {INT8OID, int64_binval, int_strval, InvalidOid, NULL},
+    {FLOAT8OID, float64_binval, float_strval, InvalidOid, NULL},
+    {INT2OID, int16_binval, int_strval, InvalidOid, NULL},
+    {BOOLOID, bool_binval, bool_strval, InvalidOid, NULL},
+    {NUMERICOID, numeric_binval, numeric_strval, InvalidOid, NULL},
+    {FLOAT4OID, float32_binval, float_strval, InvalidOid, NULL},
+    {CASHOID, int64_binval, NULL, InvalidOid, NULL},
+    {OIDOID, uint32_binval, int_strval, InvalidOid, NULL},
+    {XIDOID, uint32_binval, int_strval, InvalidOid, NULL},
+    {CIDOID, uint32_binval, int_strval, InvalidOid, NULL},
+    {REGPROCOID, uint32_binval, NULL, InvalidOid, NULL},
+
+    {INT4ARRAYOID, array_binval, NULL, INT4OID, NULL},
+    {INT8ARRAYOID, array_binval, NULL, INT8OID, NULL},
+    {FLOAT8ARRAYOID, array_binval, NULL, FLOAT8OID, NULL},
+    {INT2ARRAYOID, array_binval, NULL, INT2OID, NULL},
+    {BOOLARRAYOID, array_binval, NULL, BOOLOID, NULL},
+    {NUMERICARRAYOID, array_binval, NULL, NUMERICOID, NULL},
+    {FLOAT4ARRAYOID, array_binval, NULL, FLOAT4OID, NULL},
+    {CASHARRAYOID, array_binval, NULL, CASHOID, NULL},
+    {OIDARRAYOID, array_binval, NULL, OIDOID, NULL},
+    {XIDARRAYOID, array_binval, NULL, XIDOID, NULL},
+    {CIDARRAYOID, array_binval, NULL, CIDOID, NULL},
+    {REGPROCARRAYOID, array_binval, NULL, REGPROCOID, NULL},
+    {InvalidOid}
+};
+
+int
+init_numeric(void) {
+
+    PyDecimal = load_python_object("decimal", "Decimal");
+    if (PyDecimal == NULL)
+        return -1;
+
+    register_value_handler_table(numeric_value_handlers);
+
+    register_parameter_handler(&PyFloat_Type, new_float_param_handler);
+    register_parameter_handler(&PyBool_Type, new_bool_param_handler);
+
+    return 0;
 }

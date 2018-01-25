@@ -387,7 +387,6 @@ init_datetime(void)
 {   /* Initializes datetime API and get min and max year */
 
     PyObject *datetime_module;
-    PoqueTypeEntry *entry;
 
     /* necessary to call PyDate API */
     PyDateTime_IMPORT;
@@ -407,11 +406,7 @@ init_datetime(void)
 
 
     /* initialize hash table of value converters */
-    entry = dt_value_handlers;
-    while (entry->oid != InvalidOid) {
-        register_value_handler(entry);
-        entry++;
-    }
+    register_value_handler_table(dt_value_handlers);
 
     register_parameter_handler(PyDateTimeAPI->DateType, new_date_param_handler);
     return 0;

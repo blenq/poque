@@ -1,5 +1,7 @@
 #include "poque_type.h"
 #include "numeric.h"
+#include "text.h"
+#include "uuid.h"
 #include "datetime.h"
 
 
@@ -49,13 +51,19 @@ static int array_check_list(
     PyTypeObject *item_type;
     Py_ssize_t list_length;
 
+    /* size of current dimension */
     curr_length = handler->dims[depth];
+
+    /* size of current list */
     list_length = PyList_GET_SIZE(param);
+
     if (curr_length == -1) {
+        /* never been this deep in list hierarchy so initialize dimension */
         handler->dims[depth] = list_length;
         handler->num_dims++;
     }
     else if (list_length != curr_length) {
+        /* lists at the same level should all have same length */
         PyErr_SetString(PyExc_ValueError, "Invalid list length");
         return -1;
     }
@@ -104,10 +112,12 @@ static int array_check_list(
                 }
                 else {
                     if (handler->el_type != item_type) {
+                        /* all items must be of the same type or None */
                         PyErr_SetString(PyExc_ValueError, "Can not mix types");
                         return -1;
                     }
                 }
+                /* count the number of not None values */
                 handler->num_items++;
             }
         }
@@ -117,6 +127,9 @@ static int array_check_list(
 
 
 static int array_examine_items(ArrayParamHandler *handler, PyObject *param) {
+    /* Now we know the number of items, so we can initialize a parameter
+     * handler to examine all the child items and calculate their size
+     */
     Py_ssize_t list_length, i;
     PyObject *item;
     int size = 0, item_size;
@@ -125,10 +138,12 @@ static int array_examine_items(ArrayParamHandler *handler, PyObject *param) {
     for (i = 0; i < list_length; i++) {
         item = PyList_GET_ITEM(param, i);
         if (PyList_CheckExact(item)) {
+            /* it's another list */
             item_size = array_examine_items(handler, item);
         }
         else {
             if (item == Py_None) {
+                /* don't need to examine None values */
                 continue;
             }
             item_size = PH_Examine(handler->el_handler, item);
@@ -314,16 +329,6 @@ load_python_object(const char *module_name, const char *obj_name) {
     obj = PyObject_GetAttrString(module, obj_name);
     Py_DECREF(module);
     return obj;
-}
-
-
-static PyObject *
-text_val(data_crs* crs)
-{
-    char *data;
-
-    data = crs_advance_end(crs);
-    return PyUnicode_FromStringAndSize(data, crs_len(crs));
 }
 
 
@@ -588,9 +593,12 @@ jsonb_bin_val(data_crs *crs)
 static int
 add_float_to_tuple(PyObject *tup, data_crs *crs, int idx)
 {
+    double val;
     PyObject *float_val;
 
-    float_val = float64_binval(crs);
+    if (crs_read_double(crs, &val) < 0)
+        return -1;
+    float_val = PyFloat_FromDouble(val);
     if (float_val == NULL) {
         Py_DECREF(tup);
         return -1;
@@ -679,10 +687,11 @@ static PyObject *
 path_binval(data_crs *crs)
 {
     PyObject *path, *points, *closed;
+    char data;
 
-    closed = bool_binval(crs);
-    if (closed == NULL)
+    if (crs_read_char(crs, &data) < 0)
         return NULL;
+    closed = PyBool_FromLong(data);
 
     points = polygon_binval(crs);
     if (points == NULL) {
@@ -830,35 +839,6 @@ end:
     Py_DECREF(addr_str);
     Py_XDECREF(addr_cls);
     return address;
-}
-
-
-
-
-/* reference to decimal.Decimal */
-PyObject *PyDecimal;
-
-static PyObject *
-numeric_strval(data_crs *crs) {
-    /* Create a Decimal from a text value */
-    PyObject *strval, *args, *ret;
-
-    /* create text argument tuple */
-    args = PyTuple_New(1);
-    if (args == NULL) {
-        return NULL;
-    }
-    strval = text_val(crs);
-    if (strval == NULL) {
-        Py_DECREF(args);
-        return NULL;
-    }
-    PyTuple_SET_ITEM(args, 0, strval);
-
-    /* call decimal constructor */
-    ret = PyObject_CallObject(PyDecimal, args);
-    Py_DECREF(args);
-    return ret;
 }
 
 
@@ -1013,29 +993,11 @@ error:
 
 /* static definition of types with value converters */
 static PoqueTypeEntry type_table[] = {
-    {INT4OID, int32_binval, int_strval, InvalidOid, NULL},
-    {VARCHAROID, text_val, NULL, InvalidOid, NULL},
-    {INT8OID, int64_binval, int_strval, InvalidOid, NULL},
-    {INT2OID, int16_binval, int_strval, InvalidOid, NULL},
-    {BOOLOID, bool_binval, bool_strval, InvalidOid, NULL},
-    {BYTEAOID, bytea_binval, bytea_strval, InvalidOid, NULL},
-    {CHAROID, char_binval, char_binval, InvalidOid, NULL},
-    {NAMEOID, text_val, NULL, InvalidOid, NULL},
     {INT2VECTOROID, array_binval, NULL, INT2OID, NULL},
-    {REGPROCOID, uint32_binval, NULL, InvalidOid, NULL},
-    {TEXTOID, text_val, NULL, InvalidOid, NULL},
-    {CSTRINGOID, text_val, NULL, InvalidOid, NULL},
-    {CSTRINGARRAYOID, array_binval, NULL, CSTRINGOID, NULL},
-    {BPCHAROID, text_val, NULL, InvalidOid, NULL},
-    {OIDOID, uint32_binval, int_strval, InvalidOid, NULL},
     {TIDOID, tid_binval, tid_strval, InvalidOid, NULL},
-    {XIDOID, uint32_binval, int_strval, InvalidOid, NULL},
-    {CIDOID, uint32_binval, int_strval, InvalidOid, NULL},
     {OIDVECTOROID, array_binval, NULL, OIDOID, NULL},
     {JSONOID, json_val, json_val, InvalidOid, NULL},
     {JSONBOID, jsonb_bin_val, json_val, InvalidOid, NULL},
-    {XMLOID, text_val, text_val, InvalidOid, NULL},
-    {XMLARRAYOID, array_binval, NULL, XMLOID, NULL},
     {JSONARRAYOID, array_binval, NULL, JSONOID, NULL},
     {JSONBARRAYOID, array_binval, NULL, JSONBOID, NULL},
     {POINTOID, point_binval, NULL, InvalidOid, NULL},
@@ -1045,49 +1007,24 @@ static PoqueTypeEntry type_table[] = {
     {PATHOID, path_binval, NULL, InvalidOid, NULL},
     {BOXOID, lseg_binval, NULL, InvalidOid, NULL},
     {POLYGONOID, polygon_binval, NULL, InvalidOid, NULL},
-    {UNKNOWNOID, text_val, NULL, InvalidOid, NULL},
     {CIRCLEOID, circle_binval, NULL, InvalidOid, NULL},
     {CIRCLEARRAYOID, array_binval, NULL, CIRCLEOID, NULL},
-    {CASHOID, int64_binval, NULL, InvalidOid, NULL},
-    {CASHARRAYOID, array_binval, NULL, CASHOID, NULL},
     {MACADDROID, mac_binval, NULL, InvalidOid, NULL},
     {MACADDR8OID, mac8_binval, NULL, InvalidOid, NULL},
     {INETOID, inet_binval, NULL, InvalidOid, NULL},
     {CIDROID, inet_binval, NULL, InvalidOid, NULL},
-    {BOOLARRAYOID, array_binval, NULL, BOOLOID, NULL},
-    {BYTEAARRAYOID, array_binval, NULL, BYTEAOID, NULL},
-    {CHARARRAYOID, array_binval, NULL, CHAROID, NULL},
-    {NAMEARRAYOID, array_binval, NULL, NAMEOID, NULL},
-    {INT2ARRAYOID, array_binval, NULL, INT2OID, NULL},
     {INT2VECTORARRAYOID, array_binval, NULL, INT2VECTOROID, NULL},
-    {REGPROCARRAYOID, array_binval, NULL, REGPROCOID, NULL},
-    {TEXTARRAYOID, array_binval, NULL, TEXTOID, NULL},
-    {OIDARRAYOID, array_binval, NULL, OIDOID, NULL},
     {TIDARRAYOID, array_binval, NULL, TIDOID, NULL},
-    {XIDARRAYOID, array_binval, NULL, XIDOID, NULL},
-    {CIDARRAYOID, array_binval, NULL, CIDOID, NULL},
-    {BPCHARARRAYOID, array_binval, NULL, BPCHAROID, NULL},
-    {VARCHARARRAYOID, array_binval, NULL, VARCHAROID, NULL},
     {OIDVECTORARRAYOID, array_binval, NULL, OIDVECTOROID, NULL},
-    {INT8ARRAYOID, array_binval, NULL, INT8OID, NULL},
     {POINTARRAYOID, array_binval, NULL, POINTOID, NULL},
     {LSEGARRAYOID, array_binval, NULL, LSEGOID, NULL},
     {PATHARRAYOID, array_binval, NULL, PATHOID, NULL},
     {BOXARRAYOID, array_binval, NULL, BOXOID, NULL},
-    {FLOAT4ARRAYOID, array_binval, NULL, FLOAT4OID, NULL},
-    {FLOAT8ARRAYOID, array_binval, NULL, FLOAT8OID, NULL},
     {POLYGONARRAYOID, array_binval, NULL, POLYGONOID, NULL},
     {MACADDRARRAYOID, array_binval, NULL, MACADDROID, NULL},
     {MACADDR8ARRAYOID, array_binval, NULL, MACADDR8OID, NULL},
     {INETARRAYOID, array_binval, NULL, INETOID, NULL},
     {CIDRARRAYOID, array_binval, NULL, CIDROID, NULL},
-    {FLOAT8OID, float64_binval, float_strval, InvalidOid, NULL},
-    {FLOAT4OID, float32_binval, float_strval, InvalidOid, NULL},
-    {INT4ARRAYOID, array_binval, NULL, INT4OID, NULL},
-    {UUIDOID, uuid_binval, uuid_strval, InvalidOid, NULL},
-    {UUIDARRAYOID, array_binval, NULL, UUIDOID, NULL},
-    {NUMERICOID, numeric_binval, numeric_strval, InvalidOid, NULL},
-    {NUMERICARRAYOID, array_binval, NULL, NUMERICOID, NULL},
     {BITOID, bit_binval, bit_strval, InvalidOid, NULL},
     {BITARRAYOID, array_binval, NULL, BITOID, NULL},
     {VARBITOID, bit_binval, bit_strval, InvalidOid, NULL},
@@ -1101,7 +1038,7 @@ static PoqueTypeEntry type_table[] = {
 static PoqueTypeEntry *type_map[TYPEMAP_SIZE];
 
 
-void
+static void
 register_value_handler(PoqueTypeEntry *entry)
 {
     size_t idx = entry->oid % TYPEMAP_SIZE;
@@ -1118,16 +1055,30 @@ register_value_handler(PoqueTypeEntry *entry)
 }
 
 
+void
+register_value_handler_table(PoqueTypeEntry *table) {
+    PoqueTypeEntry *entry;
+
+    entry = table;
+    while (entry->oid != InvalidOid) {
+        register_value_handler(entry);
+        entry++;
+    }
+}
+
+
 int
 init_type_map(void) {
-    PoqueTypeEntry *entry;
-//    int j = 0;
 
-    register_parameter_handler(&PyFloat_Type, new_float_param_handler);
     register_parameter_handler(&PyBytes_Type, new_bytes_param_handler);
-    register_parameter_handler(&PyBool_Type, new_bool_param_handler);
     register_parameter_handler(&PyList_Type, new_array_param_handler);
 
+    if (init_numeric() < 0) {
+        return -1;
+    }
+    if (init_text() < 0) {
+        return -1;
+    }
     if (init_datetime() < 0) {
         return -1;
     }
@@ -1135,29 +1086,12 @@ init_type_map(void) {
         return -1;
     }
 
-    PyDecimal = load_python_object("decimal", "Decimal");
-    if (PyDecimal == NULL)
-        return -1;
-
     json_loads = load_python_object("json", "loads");
     if (json_loads == NULL)
         return -1;
 
     /* initialize hash table of value converters */
-    entry = type_table;
-    while (entry->oid != InvalidOid) {
-        register_value_handler(entry);
-        entry++;
-        //j++;
-    }
-/*    int i;
-    int filled = 0;
-    for (i = 0; i < TYPEMAP_SIZE; i++) {
-        if (type_map[i])
-            filled++;
-    }
-    printf("%f\n", 1.0 * j / TYPEMAP_SIZE);
-    printf("%f\n", 1.0 * filled / TYPEMAP_SIZE); */
+    register_value_handler_table(type_table);
     return 0;
 }
 

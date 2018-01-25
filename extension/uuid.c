@@ -1,4 +1,4 @@
-#include "uuid.h"
+#include "poque_type.h"
 
 #define UUID_LEN    16
 
@@ -66,13 +66,30 @@ new_uuid_param_handler(int num_param) {
 }
 
 
+static PoqueTypeEntry uuid_value_handlers[] = {
+    {UUIDOID, uuid_binval, uuid_strval, InvalidOid, NULL},
+    {UUIDARRAYOID, array_binval, NULL, UUIDOID, NULL},
+    {InvalidOid}
+};
+
+
 int
-init_uuid() {
+init_uuid(void) {
+//    PoqueTypeEntry *entry;
 
     PyUUID_Type = (PyTypeObject *)load_python_object("uuid", "UUID");
     if (PyUUID_Type == NULL) {
         return -1;
     }
+
+    /* initialize hash table of value converters */
+    register_value_handler_table(uuid_value_handlers);
+//    entry = uuid_value_handlers;
+//    while (entry->oid != InvalidOid) {
+//        register_value_handler(entry);
+//        entry++;
+//    }
+
     register_parameter_handler(PyUUID_Type, new_uuid_param_handler);
     return 0;
 }

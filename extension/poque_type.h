@@ -15,7 +15,6 @@ typedef struct _poqueTypeEntry {
 } PoqueTypeEntry;
 
 PyObject *array_binval(data_crs *crs);
-void register_value_handler(PoqueTypeEntry *entry);
 
 
 typedef struct _param_handler param_handler;
@@ -46,18 +45,14 @@ typedef struct _param_handler {
 #define PH_Free(ph) (ph)->free(ph)
 
 param_handler *new_text_param_handler(int num_param);
-param_handler *new_float_param_handler(int num_param);
 param_handler *new_bytes_param_handler(int num_param);
-param_handler *new_bool_param_handler(int num_param);
 
 ph_new get_param_handler_constructor(PyTypeObject *typ);
 param_handler *new_param_handler(param_handler *def_handler, size_t handler_size);
 
 void write_uint32(char **p, PY_UINT32_T val);
 
+void register_value_handler_table(PoqueTypeEntry *table);
 void register_parameter_handler(PyTypeObject *typ, ph_new constructor);
-
-#include "text.h"
-#include "uuid.h"
 
 #endif

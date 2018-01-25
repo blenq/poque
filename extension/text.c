@@ -203,6 +203,16 @@ new_bytes_param_handler(int num_param) {
 
 /* ======== pg text type ==================================================== */
 
+PyObject *
+text_val(data_crs* crs)
+{
+    char *data;
+
+    data = crs_advance_end(crs);
+    return PyUnicode_FromStringAndSize(data, crs_len(crs));
+}
+
+
 typedef struct _TextParam {
     char *string;
     Py_ssize_t size;
@@ -357,3 +367,36 @@ char_binval(data_crs* crs)
         return NULL;
     return PyBytes_FromStringAndSize(&data, 1);
 }
+
+
+/* ======== initialization ================================================== */
+
+static PoqueTypeEntry text_value_handlers[] = {
+    {VARCHAROID, text_val, NULL, InvalidOid, NULL},
+    {TEXTOID, text_val, NULL, InvalidOid, NULL},
+    {BYTEAOID, bytea_binval, bytea_strval, InvalidOid, NULL},
+    {XMLOID, text_val, text_val, InvalidOid, NULL},
+    {NAMEOID, text_val, NULL, InvalidOid, NULL},
+    {CHAROID, char_binval, char_binval, InvalidOid, NULL},
+    {CSTRINGOID, text_val, NULL, InvalidOid, NULL},
+    {BPCHAROID, text_val, NULL, InvalidOid, NULL},
+    {UNKNOWNOID, text_val, NULL, InvalidOid, NULL},
+
+    {VARCHARARRAYOID, array_binval, NULL, VARCHAROID, NULL},
+    {TEXTARRAYOID, array_binval, NULL, TEXTOID, NULL},
+    {BYTEAARRAYOID, array_binval, NULL, BYTEAOID, NULL},
+    {XMLARRAYOID, array_binval, NULL, XMLOID, NULL},
+    {NAMEARRAYOID, array_binval, NULL, NAMEOID, NULL},
+    {CHARARRAYOID, array_binval, NULL, CHAROID, NULL},
+    {CSTRINGARRAYOID, array_binval, NULL, CSTRINGOID, NULL},
+    {BPCHARARRAYOID, array_binval, NULL, BPCHAROID, NULL},
+
+    {InvalidOid}
+};
+
+int
+init_text(void)
+{
+    register_value_handler_table(text_value_handlers);
+    return 0;
+};
