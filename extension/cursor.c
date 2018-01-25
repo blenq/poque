@@ -1,4 +1,3 @@
-#include "poque.h"
 #include "cursor.h"
 
 void crs_init(data_crs *crs, char *data, int len, Oid el_oid)

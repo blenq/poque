@@ -77,6 +77,35 @@ PyObject *bool_strval(data_crs *crs) {
 }
 
 
+static int
+bool_examine(param_handler *handler, PyObject *param) {
+    return 1;
+}
+
+
+static int
+bool_encode_at(
+        param_handler *handler, PyObject *param, char *loc) {
+
+    loc[0] = (param == Py_True);
+    return 1;
+}
+
+
+static param_handler bool_param_handler = {
+    bool_examine,
+    NULL,
+    bool_encode_at,
+    NULL,
+    BOOLOID,
+    BOOLARRAYOID
+}; /* static initialized handler */
+
+param_handler *
+new_bool_param_handler(int num_param) {
+    return &bool_param_handler;
+}
+
 
 PyObject *
 float64_binval(data_crs *crs)
@@ -119,40 +148,37 @@ float_strval(data_crs *crs)
 
 static int
 float_examine(param_handler *handler, PyObject *param) {
-	handler->total_size += sizeof(double);
-	return 0;
+	return sizeof(double);
 }
 
 static int
 float_encode_at(
-		param_handler *handler, PyObject *param, char *loc, size_t *size) {
+		param_handler *handler, PyObject *param, char *loc) {
 	double v;
 
 	v = PyFloat_AsDouble(param);
 	if (_PyFloat_Pack8(v, (unsigned char *)loc, 0) < 0) {
 		return -1;
 	}
-	if (size != NULL) {
-		*size = 8;
-	}
-	return 0;
+	return sizeof(double);
 }
+
+
+static param_handler float_param_handler = {
+    float_examine,
+    NULL,
+    float_encode_at,
+    NULL,
+    FLOAT8OID,
+    FLOAT8ARRAYOID
+}; /* static initialized handler */
+
 
 param_handler *
 new_float_param_handler(int num_param) {
-	static param_handler def_handler = {
-		float_examine,
-		NULL,
-		float_encode_at,
-		(ph_free)PyMem_Free,
-		FLOAT8OID,
-		FLOAT8ARRAYOID,
-		0
-	}; /* static initialized handler */
-
-	/* create new handler identical to static one */
-	return new_param_handler(&def_handler, sizeof(param_handler));
+    return &float_param_handler;
 }
+
 
 static int
 numeric_set_digit(PyObject *digit_tuple, int val, int idx) {

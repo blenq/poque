@@ -39,16 +39,17 @@ pq.PQlibVersion.argtypes = []
 lib_version = pq.PQlibVersion
 
 
-def get_property(res_func):
-    def result_method(self):
-        return res_func(self)
-    return property(result_method)
-
-
+# helper function to create methods which have the object as sole
+# parameter
 def get_method(func):
     def method(self):
         return func(self)
     return method
+
+
+# helper function to create properties for an object
+def get_property(res_func):
+    return property(get_method(res_func))
 
 
 def check_encrypt_password(res, func, args):

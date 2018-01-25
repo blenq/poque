@@ -1,21 +1,19 @@
 #!/usr/bin/env python
-from distutils.core import setup, Extension
+from setuptools import setup, Extension
 from subprocess import Popen, PIPE
 
-pg_config = Popen(
-    ['pg_config', '--includedir'], stdout=PIPE, stderr=PIPE)
-out, err = pg_config.communicate()
-if pg_config.returncode != 0:
-    raise Exception('Error executing pg_config: {0}'.format(err or ''))
-pq_incdir = out.decode().strip()
 
-pg_config = Popen(
-    ['pg_config', '--libdir'], stdout=PIPE, stderr=PIPE)
-out, err = pg_config.communicate()
-if pg_config.returncode != 0:
-    raise Exception('Error executing pg_config: {0}'.format(err or ''))
-pq_libdir = out.decode().strip()
+def execute_pg_config(option):
+    pg_config = Popen(
+        ['pg_config', '--' + option], stdout=PIPE, stderr=PIPE)
+    out, err = pg_config.communicate()
+    if pg_config.returncode != 0:
+        raise Exception('Error executing pg_config: {0}'.format(err or ''))
+    return out.decode().strip()
 
+
+pq_incdir = execute_pg_config("includedir")
+pq_libdir = execute_pg_config("libdir")
 
 poque_ext = Extension('poque._poque',
                       sources=['extension/poque.c',
@@ -24,11 +22,16 @@ poque_ext = Extension('poque._poque',
                                'extension/cursor.c',
                                'extension/poque_type.c',
                                'extension/numeric.c',
-                               'extension/text.c'],
+                               'extension/text.c',
+                               'extension/uuid.c',
+                               'extension/datetime.c'],
                       depends=['extension/poque.h',
                                'extension/cursor.h',
                                'extension/numeric.h',
-                               'extension/poque_type.h'],
+                               'extension/poque_type.h',
+                               'extension/uuid.h',
+                               'extension/text.h',
+                               'extension/datetime.h'],
                       include_dirs=[pq_incdir],
                       library_dirs=[pq_libdir],
                       libraries=['pq'])

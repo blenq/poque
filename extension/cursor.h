@@ -1,6 +1,8 @@
 #ifndef _POQUE_CURSOR_H_
 #define _POQUE_CURSOR_H_
 
+#include "poque.h"
+
 typedef struct {
     char *data;
     int len;

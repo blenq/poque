@@ -1,45 +1,309 @@
-#include "poque.h"
-#include "cursor.h"
-#include "numeric.h"
 #include "poque_type.h"
-#include <datetime.h>
+#include "numeric.h"
+#include "datetime.h"
 
 
 param_handler *
 new_param_handler(param_handler *def_handler, size_t handler_size) {
-	/* Allocator for param handlers.
-	 *
-	 * Copies the content of an existing (static) struct into the newly
-	 * created one.
-	 *
-	 */
-	param_handler *handler; /* handler to create */
+    /* Allocator for param handlers.
+     *
+     * Copies the content of an existing (static) struct into the newly
+     * created one.
+     *
+     */
+    param_handler *handler; /* handler to create */
 
-	/* allocate mem */
-	handler = PyMem_Malloc(handler_size);
-	if (handler == NULL) {
-		PyErr_SetNone(PyExc_MemoryError);
-		return NULL;
-	}
+    /* allocate mem */
+    handler = PyMem_Malloc(handler_size);
+    if (handler == NULL) {
+        PyErr_SetNone(PyExc_MemoryError);
+        return NULL;
+    }
 
-	/* initialize new handler with static content */
-	memcpy(handler, def_handler, handler_size);
-	return handler;
+    /* initialize new handler with static content */
+    memcpy(handler, def_handler, handler_size);
+    return handler;
+}
+
+
+typedef struct _ArrayParamHandler {
+    param_handler handler;
+    param_handler *el_handler;
+    PyTypeObject *el_type;
+    int has_null;
+    int item_depth;
+    int num_items;
+    unsigned int num_dims;
+    int dims[6];
+} ArrayParamHandler;
+
+
+static int array_check_list(
+        ArrayParamHandler *handler, PyObject *param, int depth) {
+    /* A nested list is not the same as a multidimensional array. Therefore
+     * some checks to make sure all lists of a certain dimension have the
+     * same length
+     */
+    int curr_length, i;
+    PyObject *item;
+    PyTypeObject *item_type;
+    Py_ssize_t list_length;
+
+    curr_length = handler->dims[depth];
+    list_length = PyList_GET_SIZE(param);
+    if (curr_length == -1) {
+        handler->dims[depth] = list_length;
+        handler->num_dims++;
+    }
+    else if (list_length != curr_length) {
+        PyErr_SetString(PyExc_ValueError, "Invalid list length");
+        return -1;
+    }
+    for (i = 0; i < list_length; i++) {
+        item = PyList_GET_ITEM(param, i);
+        if (PyList_CheckExact(item)) {
+            /* a child list */
+
+            if (depth == handler->item_depth) {
+                /* we already found non list values at this depth. a list
+                 * must not appear here */
+                PyErr_SetString(PyExc_ValueError, "Invalid nesting");
+                return -1;
+            }
+
+            /* postgres supports up to 6 dimensions */
+            if (depth == 5) {
+                PyErr_SetString(PyExc_ValueError, "Too deeply nested");
+                return -1;
+            }
+
+            /* repeat ourselves for the child list */
+            if (array_check_list(handler, item, depth + 1) < 0) {
+                return -1;
+            }
+        }
+        else {
+            /* non list item */
+            if (handler->item_depth == -1) {
+                /* set the depth at which non list values are found */
+                handler->item_depth = depth;
+            }
+            else if (handler->item_depth != depth) {
+                /* all non list values must be found at the same depth */
+                PyErr_SetString(PyExc_ValueError, "Invalid nesting");
+                return -1;
+            }
+
+            if (item == Py_None) {
+                handler->has_null = 1;
+            }
+            else {
+                item_type = Py_TYPE(item);
+                if (handler->el_type == NULL) {
+                    handler->el_type = item_type;
+                }
+                else {
+                    if (handler->el_type != item_type) {
+                        PyErr_SetString(PyExc_ValueError, "Can not mix types");
+                        return -1;
+                    }
+                }
+                handler->num_items++;
+            }
+        }
+    }
+    return 0;
+}
+
+
+static int array_examine_items(ArrayParamHandler *handler, PyObject *param) {
+    Py_ssize_t list_length, i;
+    PyObject *item;
+    int size = 0, item_size;
+
+    list_length = PyList_GET_SIZE(param);
+    for (i = 0; i < list_length; i++) {
+        item = PyList_GET_ITEM(param, i);
+        if (PyList_CheckExact(item)) {
+            item_size = array_examine_items(handler, item);
+        }
+        else {
+            if (item == Py_None) {
+                continue;
+            }
+            item_size = PH_Examine(handler->el_handler, item);
+        }
+        if (item_size < 0) {
+            return -1;
+        }
+        size += item_size;
+    }
+    return size;
+}
+
+
+static int
+array_examine(ArrayParamHandler *handler, PyObject *param) {
+    int size, total_items, i;
+
+    if (array_check_list(handler, param, 0) < 0) {
+        return -1;
+    }
+    handler->el_handler = get_param_handler_constructor(handler->el_type)(
+            handler->num_items);
+    size = array_examine_items(handler, param);
+    if (size < 0) {
+        return -1;
+    }
+    total_items = 1;
+    for (i = 0; i < handler->num_dims; i++) {
+        total_items *= handler->dims[i];
+    }
+    handler->handler.oid = handler->el_handler->array_oid;
+    return 12 + handler->num_dims * 8 + total_items * 4 + size;
+}
+
+void
+write_uint32(char **p, PY_UINT32_T val) {
+    int i;
+    unsigned char *q = (unsigned char *)*p;
+
+    for (i = 3; i >=0; i--) {
+        *(q + i) = (unsigned char)(val & 0xffL);
+         val >>= 8;
+    }
+    *p += 4;
+}
+
+
+static int
+array_write_values(ArrayParamHandler *handler, PyObject *param, char **loc) {
+    Py_ssize_t list_length, i;
+    PyObject *item;
+    int item_size;
+
+    list_length = PyList_GET_SIZE(param);
+    for (i = 0; i < list_length; i++) {
+        item = PyList_GET_ITEM(param, i);
+        if (PyList_CheckExact(item)) {
+            if (array_write_values(handler, item, loc) < 0) {
+                return -1;
+            }
+        }
+        else if (item == Py_None) {
+                /* NULL value is just a -1 for length */
+                write_uint32(loc, -1);
+        }
+        else {
+            /* write the value and get the size */
+            item_size = PH_EncodeValueAt(handler->el_handler, item, *loc + 4);
+            if (item_size < 0) {
+                return -1;
+            }
+            /* prefix value with size */
+            write_uint32(loc, item_size);
+
+            /* advance past value */
+            *loc += item_size;
+        }
+    }
+    return 0;
+}
+
+
+static int
+array_encode_at(param_handler *handler, PyObject *param, char *loc) {
+    int i;
+    ArrayParamHandler *self;
+
+    self = (ArrayParamHandler *)handler;
+
+    /* write array header */
+    write_uint32(&loc, self->num_dims);
+    write_uint32(&loc, self->has_null);
+    write_uint32(&loc, self->el_handler->oid);
+    for(i = 0; i < self->num_dims; i++) {
+        /* write dimension header */
+        write_uint32(&loc, self->dims[i]);
+        write_uint32(&loc, 1);
+    }
+    /* write values */
+    i = array_write_values(self, param, &loc);
+    return i;
+}
+
+
+static void
+array_free(param_handler *handler) {
+    ArrayParamHandler *self;
+    param_handler *el_handler;
+
+    self = (ArrayParamHandler *)handler;
+    el_handler = self->el_handler;
+    if (el_handler && PH_HasFree(el_handler)) {
+        PH_Free(el_handler);
+    }
+    PyMem_Free(self);
+}
+
+
+static param_handler *
+new_array_param_handler(int num_param) {
+    static ArrayParamHandler def_handler = {{
+            (ph_examine)array_examine,  /* examine */
+            NULL,                       /* encode */
+            array_encode_at,            /* encode_at */
+            array_free,                 /* free */
+            TEXTARRAYOID,               /* oid */
+            0                           /* array oid */
+        },
+        NULL,                           /* el_handler */
+        NULL,                           /* el_type */
+        0,                              /* has_null */
+        -1,                             /* item_depth */
+        0,                              /* num_items */
+        0,                              /* num_dims */
+        {-1, -1, -1, -1, -1, -1}    /* dims */
+    }; /* static initialized handler */
+
+    return new_param_handler((param_handler *)&def_handler, sizeof(ArrayParamHandler));
+}
+
+
+typedef struct _param_handler_constructor {
+    PyTypeObject *typ;
+    ph_new constructor;
+} param_handler_constructor;
+
+static param_handler_constructor param_handler_constructors[6];
+static int num_phcons;
+
+
+void
+register_parameter_handler(PyTypeObject *typ, ph_new constructor) {
+    param_handler_constructor *cons;
+
+    cons = param_handler_constructors + num_phcons++;
+    cons->typ = typ;
+    cons->constructor = constructor;
 }
 
 
 ph_new
 get_param_handler_constructor(PyTypeObject *typ) {
-	if (typ == &PyFloat_Type) {
-		return new_float_param_handler;
-	}
-	else if (typ == &PyBytes_Type) {
-		return new_bytes_param_handler;
-	}
-	return new_text_param_handler;
+    int i;
+    param_handler_constructor *cons;
+
+    for (i = 0; i < num_phcons; i++) {
+        cons = param_handler_constructors + i;
+        if (typ == cons->typ) {
+            return cons->constructor;
+        }
+    }
+    return new_text_param_handler;
 }
 
-static PyObject *
+PyObject *
 load_python_object(const char *module_name, const char *obj_name) {
     PyObject *module, *obj;
 
@@ -50,219 +314,6 @@ load_python_object(const char *module_name, const char *obj_name) {
     obj = PyObject_GetAttrString(module, obj_name);
     Py_DECREF(module);
     return obj;
-}
-
-
-static long min_year;
-static long max_year;
-
-static int
-datetime_long_attr(PyObject *mod, const char *attr, long *value) {
-    PyObject *py_value;
-
-    py_value = PyObject_GetAttrString(mod, attr);
-    if (py_value == NULL) {
-        return -1;
-    }
-    *value = PyLong_AsLong(py_value);
-    Py_DECREF(py_value);
-    return 0;
-}
-
-int
-init_datetime(void)
-{   /* Initializes datetime API and get min and max year */
-
-    PyObject *datetime_module;
-
-    /* necessary to call PyDate API */
-    PyDateTime_IMPORT;
-
-    /* load datetime module */
-    datetime_module = PyImport_ImportModule("datetime");
-    if (datetime_module == NULL)
-        return -1;
-
-    /* get min and max year */
-    if ((datetime_long_attr(datetime_module, "MINYEAR", &min_year) != 0) ||
-            (datetime_long_attr(datetime_module, "MAXYEAR", &max_year) != 0)) {
-        Py_DECREF(datetime_module);
-        return -1;
-    }
-    Py_DECREF(datetime_module);
-    return 0;
-}
-
-typedef PyObject *(*pq_read)(data_crs *crs);
-
-typedef struct {
-    Oid oid;
-    pq_read binval;
-    pq_read strval;
-} PoqueTypeDef;
-
-
-static char
-hex_to_char(char hex) {
-    char c = -1;
-    static const char const hex_vals[] = {
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1,
-        -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, 10, 11, 12, 13, 14, 15
-    };
-
-    if (hex >= 0x30 && hex <= 0x66)
-        c = hex_vals[(unsigned char)hex];
-    if (c == -1)
-        PyErr_SetString(PoqueError, "Invalid hexadecimal character");
-    return c;
-}
-
-
-static int
-bytea_fill_fromhex(char *data, char *end, char *dest) {
-    /* Converts a hexadecimal bytea value to a binary value */
-
-    char *src;
-
-    src = data + 2;  /* skip hex prefix ('\x') */
-    while (src < end) {
-        char v1, v2;
-
-        v1 = hex_to_char(*src++);
-        if (v1 == -1) {
-            return -1;
-        }
-        if (src == end) {
-            PyErr_SetString(
-                PoqueError,
-                "Odd number of hexadecimal characters in bytea value");
-            return -1;
-        }
-        v2 = hex_to_char(*src++);
-        if (v2 == -1) {
-            return -1;
-        }
-        *dest++ = (v1 << 4) | v2;
-    }
-    return 0;
-}
-
-
-static int
-bytea_fill_fromescape(char *data, char *end, char *dest) {
-    /* Converts a classically escaped bytea value to a binary value */
-
-    while (data < end) {
-        /* fill destination buffer */
-        if (data[0] != '\\')
-            /* regular byte */
-        	*dest = *data++;
-        else if ((data[1] >= '0' && data[1] <= '3') &&
-                 (data[2] >= '0' && data[2] <= '7') &&
-                 (data[3] >= '0' && data[3] <= '7')) {
-            /* escaped octal value */
-        	*dest = (data[1] - '0') << 6 | (data[2] - '0') << 3 | (data[3] - '0');
-        	data += 4;
-        }
-        else if (data[1] == '\\') {
-            /* escaped backslash */
-        	*dest = '\\';
-        	data += 2;
-        }
-        else {
-            /* Should be impossible, but compiler complains */
-            PyErr_SetString(PoqueError, "Invalid escaped bytea value");
-            return -1;
-        }
-        dest++;
-    }
-    return 0;
-}
-
-
-static PyObject *
-bytea_strval(data_crs *crs)
-{
-    /* converts the textual representation of a bytea value to a Python
-     * bytes value
-     */
-    int bytea_len;
-    char *data, *dest, *end;
-    PyObject *bytea = NULL;
-    int (*fill_func)(char *, char *, char *);
-
-    data = crs_advance_end(crs);
-    end = crs_end(crs);
-
-    /* determine number of bytes and parse function based on format */
-    if (strncmp(data, "\\x", 2) == 0) {
-        /* hexadecimal format */
-        bytea_len = (crs_len(crs) - 2) / 2;
-        fill_func = bytea_fill_fromhex;
-    } else {
-        /* escape format */
-        char *src = data;
-        bytea_len = 0;
-        while (src < end) {
-            /* get length of value in bytes */
-            if (src[0] != '\\')
-                /* just a byte */
-                src++;
-            else if (end - src >= 4 &&
-            		 (src[1] >= '0' && src[1] <= '3') &&
-                     (src[2] >= '0' && src[2] <= '7') &&
-                     (src[3] >= '0' && src[3] <= '7'))
-                /* octal value */
-                src += 4;
-            else if (end - src >= 2 && src[1] == '\\')
-                /* escaped backslash */
-                src += 2;
-            else {
-                /* erronous value */
-                PyErr_SetString(PoqueError, "Invalid escaped bytea value");
-                return NULL;
-            }
-            bytea_len++;
-        }
-        fill_func = bytea_fill_fromescape;
-    }
-
-    /* Create the Python bytes value using the determined length */
-    bytea = PyBytes_FromStringAndSize(NULL, bytea_len);
-    if (bytea == NULL)
-        return NULL;
-
-    /* Fill the newly created bytes value with the appropriate function */
-    dest = PyBytes_AsString(bytea);
-    if (fill_func(data, end, dest) < 0) {
-        Py_DECREF(bytea);
-        return NULL;
-    }
-
-    return bytea;
-}
-
-static PyObject *bytea_binval(data_crs* crs)
-{
-    char *data;
-
-    data = crs_advance_end(crs);
-    return PyBytes_FromStringAndSize(data, crs_len(crs));
-}
-
-
-static PyObject *char_binval(data_crs* crs)
-{
-    char data;
-
-    if (crs_read_char(crs, &data) < 0)
-        return NULL;
-    return PyBytes_FromStringAndSize(&data, 1);
 }
 
 
@@ -301,7 +352,7 @@ read_value(char *data, int len, pq_read read_func, Oid el_oid) {
 
 static PyObject *
 get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
-		      Oid el_oid)
+              Oid el_oid)
 {
     /* Get multidimensional array as a nested list of item values
      * crs: The data cursor
@@ -363,7 +414,7 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
 }
 
 
-static PyObject *
+PyObject *
 array_binval(data_crs *crs) {
     int i;
     PY_UINT32_T dims;
@@ -489,7 +540,7 @@ tid_strval(data_crs *crs)
     dt[0] = '\0';
     bl_num = PyLong_FromString(bl_data, &pend, 10);
     if (pend != dt)
-    	PyErr_SetString(PoqueError, "Invalid tid value");
+        PyErr_SetString(PoqueError, "Invalid tid value");
     dt[0] = ',';
     if (bl_num == NULL) {
         Py_DECREF(tid);
@@ -499,7 +550,7 @@ tid_strval(data_crs *crs)
     *(crs_end(crs) - 1) = '\0';
     bl_num = PyLong_FromString(dt + 1, &pend, 10);
     if (pend != crs_end(crs) - 1)
-    	PyErr_SetString(PoqueError, "Invalid tid value");
+        PyErr_SetString(PoqueError, "Invalid tid value");
     *(crs_end(crs) - 1) = ')';
     crs_advance_end(crs);
     if (bl_num == NULL) {
@@ -520,7 +571,7 @@ json_val(data_crs *crs)
 
     remaining = crs_remaining(crs);
     ret = PyObject_CallFunction(
-    		json_loads, "s#", crs_advance_end(crs), remaining);
+            json_loads, "s#", crs_advance_end(crs), remaining);
     return ret;
 }
 
@@ -531,41 +582,6 @@ jsonb_bin_val(data_crs *crs)
     if (crs_advance(crs, 1)[0] != 1)
         PyErr_SetString(PoqueError, "Invalid jsonb version");
     return json_val(crs);
-}
-
-#define UUID_LEN    16
-
-
-static PyObject *
-uuid_binval(data_crs *crs) {
-    char *data;
-    PyObject *uuid_cls, *uuid;
-
-    data = crs_advance(crs, UUID_LEN);
-    if (data == NULL)
-        return NULL;
-    uuid_cls = load_python_object("uuid", "UUID");
-    if (uuid_cls == NULL)
-        return NULL;
-    uuid = PyObject_CallFunction(uuid_cls, "sy#", NULL, data, UUID_LEN);
-    Py_DECREF(uuid_cls);
-    return uuid;
-}
-
-
-static PyObject *
-uuid_strval(data_crs *crs)
-{
-    char *data;
-    PyObject *uuid_cls, *uuid;
-
-    data = crs_advance_end(crs);
-    uuid_cls = load_python_object("uuid", "UUID");
-    if (uuid_cls == NULL)
-        return NULL;
-    uuid = PyObject_CallFunction(uuid_cls, "s#", data, crs_end(crs) - data);
-    Py_DECREF(uuid_cls);
-    return uuid;
 }
 
 
@@ -691,59 +707,7 @@ path_binval(data_crs *crs)
 }
 
 
-static PyObject *
-abstime_binval(data_crs *crs)
-{
-    PyObject *abstime, *seconds, *args;
-    PY_INT32_T value;
 
-    if (crs_read_int32(crs, &value) < 0)
-        return NULL;
-    seconds = PyLong_FromLong(value);
-    if (seconds == NULL)
-        return NULL;
-    args = PyTuple_New(1);
-    if (args == NULL) {
-        Py_DECREF(seconds);
-        return NULL;
-    }
-    PyTuple_SET_ITEM(args, 0, seconds);
-    abstime = PyDateTime_FromTimestamp(args);
-    Py_DECREF(args);
-    return abstime;
-}
-
-
-static PyObject *
-reltime_binval(data_crs *crs)
-{
-    PY_INT32_T value;
-
-    if (crs_read_int32(crs, &value) < 0)
-        return NULL;
-    return PyDelta_FromDSU(0, value, 0);
-}
-
-
-static PyObject *
-tinterval_binval(data_crs *crs) {
-    PyObject *tinterval, *abstime;
-    int i;
-
-    crs_advance(crs, 4);
-    tinterval = PyTuple_New(2);
-    if (tinterval == NULL)
-        return NULL;
-    for (i = 0; i < 2; i++) {
-        abstime = abstime_binval(crs);
-        if (abstime == NULL) {
-            Py_DECREF(tinterval);
-            return NULL;
-        }
-        PyTuple_SET_ITEM(tinterval, i, abstime);
-    }
-    return tinterval;
-}
 
 
 static PyObject *
@@ -788,7 +752,7 @@ mac8_binval(data_crs *crs)
     PY_UINT64_T val;
 
     if (crs_read_uint64(crs, &val) < 0)
-    	return NULL;
+        return NULL;
     return PyLong_FromUnsignedLongLong(val);
 }
 
@@ -869,252 +833,7 @@ end:
 }
 
 
-#define POSTGRES_EPOCH_JDATE   2451545
 
-static void
-date_vals_from_int(PY_INT32_T jd, int *year, int *month, int *day)
-{
-    unsigned int julian, quad, extra;
-    int y;
-
-    /* julian day magic to retrieve day, month and year, shamelessly copied
-     * from postgres server code */
-    julian = jd + POSTGRES_EPOCH_JDATE;
-    julian += 32044;
-    quad = julian / 146097;
-    extra = (julian - quad * 146097) * 4 + 3;
-    julian += 60 + quad * 3 + extra / 146097;
-    quad = julian / 1461;
-    julian -= quad * 1461;
-    y = julian * 4 / 1461;
-    julian = ((y != 0) ? ((julian + 305) % 365) : ((julian + 306) % 366))
-           + 123;
-    y += quad * 4;
-    *year = y - 4800;
-    quad = julian * 2141 / 65536;
-    *day = julian - 7834 * quad / 256;
-    *month = (quad + 10) % 12 + 1;
-}
-
-
-static PyObject *
-date_binval(data_crs *crs)
-{
-    PY_INT32_T jd;
-    int year, month, day;
-    char *fmt;
-
-    if (crs_read_int32(crs, &jd) < 0)
-        return NULL;
-
-    date_vals_from_int(jd, &year, &month, &day);
-
-    /* if outside python date range convert to a string */
-    if (year > max_year)
-        fmt = "%i-%02i-%02i";
-    else if (year < min_year) {
-        fmt = "%04i-%02i-%02i BC";
-        year = -1 * (year - 1);  /* There is no year zero */
-    }
-    else
-        return PyDate_FromDate(year, month, day);
-    return PyUnicode_FromFormat(fmt, year, month, day);
-}
-
-
-#define USECS_PER_DAY       86400000000
-#define USECS_PER_HOUR      Py_LL(3600000000) /* this might become a uint32 */
-#define USECS_PER_MINUTE    60000000
-#define USECS_PER_SEC       1000000
-
-static int
-time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
-                   int *usec)
-{
-    PY_INT64_T hr;
-
-    hr = (int)(tm / USECS_PER_HOUR);
-    if (tm < 0 || hr > 23) {
-        PyErr_SetString(PoqueError, "Invalid time value");
-        return -1;
-    }
-    *hour = (int)hr;
-    tm -= hr * USECS_PER_HOUR;
-    *minute = (int)(tm / USECS_PER_MINUTE);
-    tm -= *minute * USECS_PER_MINUTE;
-    *second = (int)(tm / USECS_PER_SEC);
-    *usec = (int)(tm - *second * USECS_PER_SEC);
-    return 0;
-}
-
-
-static PyObject *
-_time_binval(data_crs *crs, PY_INT64_T value, PyObject *tz)
-{
-    int hour, minute, second, usec;
-
-    if (time_vals_from_int(value, &hour, &minute, &second, &usec) < 0)
-        return NULL;
-    return PyDateTimeAPI->Time_FromTime(hour, minute, second, usec, tz,
-                                        PyDateTimeAPI->TimeType);
-}
-
-
-static PyObject *
-time_binval(data_crs *crs)
-{
-    PY_INT64_T value;
-
-    if (crs_read_int64(crs, &value) < 0)
-        return NULL;
-    return _time_binval(crs, value, Py_None);
-}
-
-
-static PyObject *
-get_utc(void) {
-
-    static PyObject *utc;
-    PyObject *tz;
-
-    if (utc == NULL) {
-        tz = load_python_object("datetime", "timezone");
-        if (tz == NULL)
-            return NULL;
-        utc = PyObject_GetAttrString(tz, "utc");
-        Py_DECREF(tz);
-    }
-    return utc;
-}
-
-
-static PyObject *
-timetz_binval(data_crs *crs)
-{
-    PyObject *tz, *timedelta, *ret, *offset, *timezone;
-    PY_INT64_T value;
-    int seconds;
-
-    if (crs_read_int64(crs, &value) < 0)
-        return NULL;
-    if (crs_read_int32(crs, &seconds) < 0)
-        return NULL;
-
-    timedelta = load_python_object("datetime", "timedelta");
-    if (timedelta == NULL)
-        return NULL;
-    offset = PyObject_CallFunction(timedelta, "ii", 0, -seconds);
-    Py_DECREF(timedelta);
-    if (offset == NULL)
-        return NULL;
-
-    tz = load_python_object("datetime", "timezone");
-    if (tz == NULL) {
-        Py_DECREF(offset);
-        return NULL;
-    }
-    timezone = PyObject_CallFunctionObjArgs(tz, offset, NULL);
-    Py_DECREF(offset);
-    Py_DECREF(tz);
-    if (timezone == NULL)
-        return NULL;
-
-    ret = _time_binval(crs, value, timezone);
-    Py_DECREF(timezone);
-    return ret;
-}
-
-
-static PyObject *
-_timestamp_binval(data_crs *crs, PyObject *tz)
-{
-    PY_INT64_T value, time;
-    PY_INT32_T date;
-    int year, month, day, hour, minute, second, usec;
-    char *fmt;
-
-    if (crs_read_int64(crs, &value) < 0)
-        return NULL;
-    if (value == PY_LLONG_MAX)
-        return PyUnicode_FromString("infinity");
-    if (value == PY_LLONG_MIN)
-        return PyUnicode_FromString("-infinity");
-    date = (PY_INT32_T)(value / USECS_PER_DAY);
-    time = value - date * USECS_PER_DAY;
-    if (time < 0) {
-        time += USECS_PER_DAY;
-        date -= 1;
-    }
-
-    date_vals_from_int(date, &year, &month, &day);
-    if (time_vals_from_int(time, &hour, &minute, &second, &usec) < 0)
-        return NULL;
-    if (year > max_year) {
-        fmt = "%i-%02i-%02i %02i:%02i:%02i.%06i";
-    }
-    else if (year < min_year) {
-        year = -1 * (year - 1);  /* There is no year zero */
-        fmt = "%04i-%02i-%02i %02i:%02i:%02i.%06i BC";
-    }
-    else
-        return PyDateTimeAPI->DateTime_FromDateAndTime(
-            year, month, day, hour, minute, second, usec, tz,
-            PyDateTimeAPI->DateTimeType);
-    return PyUnicode_FromFormat(fmt, year, month, day, hour, minute, second,
-                                usec);
-}
-
-
-static PyObject *
-timestamp_binval(data_crs *crs) {
-    return _timestamp_binval(crs, Py_None);
-}
-
-
-static PyObject *
-timestamptz_binval(data_crs *crs)
-{
-    PyObject *utc;
-
-    utc = get_utc();
-    if (utc == NULL)
-        return NULL;
-    return _timestamp_binval(crs, utc);
-}
-
-
-static PyObject *
-interval_binval(data_crs *crs)
-{
-    PY_INT64_T secs, usecs;
-    PY_INT32_T days, months;
-    PyObject *interval, *value;
-
-    if (crs_read_int64(crs, &usecs) < 0)
-        return NULL;
-    if (crs_read_int32(crs, &days) < 0)
-        return NULL;
-    if (crs_read_int32(crs, &months) < 0)
-        return NULL;
-    interval = PyTuple_New(2);
-    if (interval == NULL)
-        return NULL;
-    value = PyLong_FromLong(months);
-    if (value == NULL) {
-        Py_DECREF(interval);
-        return NULL;
-    }
-    PyTuple_SET_ITEM(interval, 0, value);
-    secs = usecs / USECS_PER_SEC;
-    usecs -= secs * USECS_PER_SEC;
-    value = PyDelta_FromDSU(days, secs, usecs);
-    if (value == NULL) {
-        Py_DECREF(interval);
-        return NULL;
-    }
-    PyTuple_SET_ITEM(interval, 1, value);
-    return interval;
-}
 
 /* reference to decimal.Decimal */
 PyObject *PyDecimal;
@@ -1292,14 +1011,6 @@ error:
 }
 
 
-typedef struct _poqueTypeEntry {
-    Oid oid;
-    pq_read binval;
-    pq_read strval;
-    Oid el_oid;		/* type of subelement for array_binval converter */
-    struct _poqueTypeEntry *next;
-} PoqueTypeEntry;
-
 /* static definition of types with value converters */
 static PoqueTypeEntry type_table[] = {
     {INT4OID, int32_binval, int_strval, InvalidOid, NULL},
@@ -1334,16 +1045,13 @@ static PoqueTypeEntry type_table[] = {
     {PATHOID, path_binval, NULL, InvalidOid, NULL},
     {BOXOID, lseg_binval, NULL, InvalidOid, NULL},
     {POLYGONOID, polygon_binval, NULL, InvalidOid, NULL},
-    {ABSTIMEOID, abstime_binval, NULL, InvalidOid, NULL},
-    {RELTIMEOID, reltime_binval, NULL, InvalidOid, NULL},
-    {TINTERVALOID, tinterval_binval, NULL, InvalidOid, NULL},
     {UNKNOWNOID, text_val, NULL, InvalidOid, NULL},
     {CIRCLEOID, circle_binval, NULL, InvalidOid, NULL},
     {CIRCLEARRAYOID, array_binval, NULL, CIRCLEOID, NULL},
     {CASHOID, int64_binval, NULL, InvalidOid, NULL},
     {CASHARRAYOID, array_binval, NULL, CASHOID, NULL},
     {MACADDROID, mac_binval, NULL, InvalidOid, NULL},
-	{MACADDR8OID, mac8_binval, NULL, InvalidOid, NULL},
+    {MACADDR8OID, mac8_binval, NULL, InvalidOid, NULL},
     {INETOID, inet_binval, NULL, InvalidOid, NULL},
     {CIDROID, inet_binval, NULL, InvalidOid, NULL},
     {BOOLARRAYOID, array_binval, NULL, BOOLOID, NULL},
@@ -1368,9 +1076,6 @@ static PoqueTypeEntry type_table[] = {
     {BOXARRAYOID, array_binval, NULL, BOXOID, NULL},
     {FLOAT4ARRAYOID, array_binval, NULL, FLOAT4OID, NULL},
     {FLOAT8ARRAYOID, array_binval, NULL, FLOAT8OID, NULL},
-    {ABSTIMEARRAYOID, array_binval, NULL, ABSTIMEOID, NULL},
-    {RELTIMEARRAYOID, array_binval, NULL, RELTIMEOID, NULL},
-    {TINTERVALARRAYOID, array_binval, NULL, TINTERVALOID, NULL},
     {POLYGONARRAYOID, array_binval, NULL, POLYGONOID, NULL},
     {MACADDRARRAYOID, array_binval, NULL, MACADDROID, NULL},
     {MACADDR8ARRAYOID, array_binval, NULL, MACADDR8OID, NULL},
@@ -1380,17 +1085,7 @@ static PoqueTypeEntry type_table[] = {
     {FLOAT4OID, float32_binval, float_strval, InvalidOid, NULL},
     {INT4ARRAYOID, array_binval, NULL, INT4OID, NULL},
     {UUIDOID, uuid_binval, uuid_strval, InvalidOid, NULL},
-    {DATEOID, date_binval, NULL, InvalidOid, NULL},
-    {TIMEOID, time_binval, NULL, InvalidOid, NULL},
-    {TIMETZOID, timetz_binval, NULL, InvalidOid, NULL},
-    {TIMESTAMPOID, timestamp_binval, NULL, InvalidOid, NULL},
-    {TIMESTAMPTZOID, timestamptz_binval, NULL, InvalidOid, NULL},
-    {DATEARRAYOID, array_binval, NULL, DATEOID, NULL},
-    {TIMESTAMPARRAYOID, array_binval, NULL, TIMESTAMPOID, NULL},
-    {TIMESTAMPTZARRAYOID, array_binval, NULL, TIMESTAMPTZOID, NULL},
-    {TIMEARRAYOID, array_binval, NULL, TIMEOID, NULL},
-    {INTERVALOID, interval_binval, NULL, InvalidOid, NULL},
-    {INTERVALARRAYOID, array_binval, NULL, INTERVALOID, NULL},
+    {UUIDARRAYOID, array_binval, NULL, UUIDOID, NULL},
     {NUMERICOID, numeric_binval, numeric_strval, InvalidOid, NULL},
     {NUMERICARRAYOID, array_binval, NULL, NUMERICOID, NULL},
     {BITOID, bit_binval, bit_strval, InvalidOid, NULL},
@@ -1406,10 +1101,39 @@ static PoqueTypeEntry type_table[] = {
 static PoqueTypeEntry *type_map[TYPEMAP_SIZE];
 
 
+void
+register_value_handler(PoqueTypeEntry *entry)
+{
+    size_t idx = entry->oid % TYPEMAP_SIZE;
+    PoqueTypeEntry *prev = type_map[idx];
+    if (prev == NULL) {
+        type_map[idx] = entry;
+    }
+    else {
+        while (prev->next) {
+            prev = prev->next;
+        }
+        prev->next = entry;
+    }
+}
+
+
 int
 init_type_map(void) {
     PoqueTypeEntry *entry;
 //    int j = 0;
+
+    register_parameter_handler(&PyFloat_Type, new_float_param_handler);
+    register_parameter_handler(&PyBytes_Type, new_bytes_param_handler);
+    register_parameter_handler(&PyBool_Type, new_bool_param_handler);
+    register_parameter_handler(&PyList_Type, new_array_param_handler);
+
+    if (init_datetime() < 0) {
+        return -1;
+    }
+    if (init_uuid() < 0) {
+        return -1;
+    }
 
     PyDecimal = load_python_object("decimal", "Decimal");
     if (PyDecimal == NULL)
@@ -1417,22 +1141,12 @@ init_type_map(void) {
 
     json_loads = load_python_object("json", "loads");
     if (json_loads == NULL)
-    	return -1;
+        return -1;
 
     /* initialize hash table of value converters */
     entry = type_table;
     while (entry->oid != InvalidOid) {
-        size_t idx = entry->oid % TYPEMAP_SIZE;
-        PoqueTypeEntry *prev = type_map[idx];
-        if (prev == NULL) {
-            type_map[idx] = entry;
-        }
-        else {
-            while (prev->next) {
-                prev = prev->next;
-            }
-            prev->next = entry;
-        }
+        register_value_handler(entry);
         entry++;
         //j++;
     }
@@ -1464,16 +1178,14 @@ get_read_func(Oid oid, int format, Oid *el_oid) {
             return entry->strval ? entry->strval : text_val;
         }
     }
-    if (format == 1)
-        return bytea_binval;
-    return text_val;
+    return format ? bytea_binval : text_val;
 }
 
 
 PyObject *
 Poque_value(Oid oid, int format, char *data, int len) {
     pq_read read_func;
-    Oid el_oid=InvalidOid;
+    Oid el_oid = InvalidOid;
 
     if (format == 0 && data[len] != '\0') {
         PyErr_SetString(PoqueError, "Invalid text format");

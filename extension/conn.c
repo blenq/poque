@@ -193,21 +193,16 @@ Conn_fileno(poque_Conn *self, PyObject *unused)
 static PGresult *
 Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_params, int format)
 {
+    param_handler **param_handlers = NULL;
 	Oid *param_types = NULL;
-	char **param_values = NULL;
-	int *param_lengths = NULL;
-	int *param_formats = NULL;
-	char **clean_up = NULL;
-	size_t clean_up_count = 0;
-	param_handler **param_handlers = NULL;
-	size_t handler_count = 0;
+	char **param_values = NULL, **clean_up = NULL;
+	int *param_lengths = NULL, *param_formats = NULL;
+	size_t clean_up_count = 0, handler_count = 0;
 	PyObject *param = NULL;
-	int i;
+	Py_ssize_t i;
 	PGresult *res = NULL;
-	param_handler *handler;
-	char *param_value;
 
-	param_handlers = PyMem_Calloc(num_params, sizeof(param_handler *));
+	param_handlers = PyMem_Malloc(num_params * sizeof(param_handler *));
 	param_types = PyMem_Calloc(num_params, sizeof(Oid));
 	param_values = PyMem_Calloc(num_params, sizeof(char *));
 	param_lengths = PyMem_Calloc(num_params, sizeof(int));
@@ -230,15 +225,21 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 			param_lengths[i] = 0;
 		}
 		else {
+			int size;
+			param_handler *handler;
+
 			/* get the parameter handler based on type */
 			handler = get_param_handler_constructor(Py_TYPE(param))(1);
-			param_handlers[handler_count++] = handler;
+			if (PH_HasFree(handler)) {
+			    param_handlers[handler_count++] = handler;
+			}
 
 			/* examine the value to calculate value size and determine Oid */
-			if (PH_Examine(handler, param) < 0) {
+			size = PH_Examine(handler, param);
+			if (size < 0) {
 				goto end;
 			}
-			param_lengths[i] = PH_TotalSize(handler);
+			param_lengths[i] = size;
 			param_types[i] = PH_Oid(handler);
 
 			/* convert the parameter to pg char * format */
@@ -252,8 +253,10 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 				}
 			}
 			else {
+			    char *param_value;
+
 				/* Allocate memory for value */
-				param_value = PyMem_Malloc(PH_TotalSize(handler));
+				param_value = PyMem_Malloc(size);
 				if (param_value == NULL) {
 					PyErr_SetNone(PyExc_MemoryError);
 					goto end;
@@ -265,7 +268,7 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 
 				/* write char * value into pointer */
 				if (PH_EncodeValueAt(
-						handler, param, param_value, NULL) < 0) {
+						handler, param, param_value) < 0) {
 					goto end;
 				}
 			}
@@ -330,14 +333,18 @@ Conn_execute(poque_Conn *self, PyObject *args, PyObject *kwds) {
 		else
 			res = PQexec(self->conn, sql);
     	Py_END_ALLOW_THREADS
+    	if (res == NULL) {
+            Conn_set_error(self->conn);
+            return NULL;
+        }
     } else {
     	res = Conn_exec_params(self->conn, sql, parameters, num_params, format);
+    	if (res == NULL) {
+            return NULL;
+        }
     }
 
-	if (res == NULL) {
-		Conn_set_error(self->conn);
-		return NULL;
-	}
+
 
     res_status = PQresultStatus(res);
     if (res_status == PGRES_BAD_RESPONSE || res_status == PGRES_FATAL_ERROR) {

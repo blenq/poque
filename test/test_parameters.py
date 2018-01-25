@@ -36,53 +36,56 @@ class ResultTestParameters():
     def test_str_param(self):
         self._test_param_val('hi')
 
-    def test_float_param(self):
-        self._test_param_val(3.24)
-
-    def test_bytes_param(self):
-        self._test_param_val(b'hoi')
-
-
-class ResultTestParametersExtension(
-        BaseExtensionTest, ResultTestParameters, unittest.TestCase):
-    pass
-
-
-class ResultTestParametersCtypes(
-        BaseCTypesTest, ResultTestParameters, unittest.TestCase):
-
     def test_str_array_param(self):
         self._test_param_val(['hi', None, 'hello'])
         self._test_param_val(['hi', 'hello'])
 
-    def test_int_param(self):
-        res = self.cn.execute(
-            "SELECT $1, $2, $3", [3, 2147483648, 17000000000000000000])
-        self.assertEqual(res.getvalue(0, 0), 3)
-        self.assertEqual(res.getvalue(0, 1), 2147483648)
-        self.assertEqual(res.getvalue(0, 2), "17000000000000000000")
+    def test_float_param(self):
+        self._test_param_val(3.24)
 
-    def test_int_array_param(self):
+    def test_float_array_param(self):
+        self._test_param_val([3.24, None, 234.765])
+
+    def test_bytes_param(self):
+        self._test_param_val(b'hoi')
+
+    def test_bytes_array_param(self):
+        self._test_param_val([b'hoi', b'ha\0llo'])
+
+    def test_bool_param(self):
         res = self.cn.execute(
-            "SELECT $1", ([3, 17000000000000000000, 2147483648],))
-        self.assertEqual(
-            res.getvalue(0, 0), ['3', '17000000000000000000', '2147483648'])
-        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
-        res = self.cn.execute("SELECT $1", ([3, None, 12],))
-        self.assertEqual(
-            res.getvalue(0, 0), [3, None, 12])
-        self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
-        res = self.cn.execute("SELECT $1", ([3, None, 0x80000000],))
-        self.assertEqual(
-            res.getvalue(0, 0), [3, None, 0x80000000])
-        self.assertEqual(res.ftype(0), self.poque.INT8ARRAYOID)
-        res = self.cn.execute("SELECT $1", ([[[[[[101]]]]]],))
-        self.assertEqual(
-            res.getvalue(0, 0), [[[[[[101]]]]]])
+            "SELECT $1, $2", [True, False])
+        self.assertIs(res.getvalue(0, 0), True)
+        self.assertIs(res.getvalue(0, 1), False)
+
+    def test_bool_array_param(self):
+        val = [True, False]
+        self._test_param_val(val)
+
+    def test_uuid_param(self):
+        self._test_param_val(uuid.uuid4())
+
+    def test_uuid_array_param(self):
+        val = [uuid.uuid4(), uuid.uuid4()]
+        self._test_param_val(val)
+
+    def test_date_param(self):
+        self._test_param_val(datetime.date.today())
+
+    def test_date_array_param(self):
+        self._test_param_val([
+            datetime.date.today(),
+            datetime.date.today() - datetime.timedelta(days=1),
+            None
+        ])
 
     def test_mixed_array_param(self):
         with self.assertRaises(ValueError):
             self.cn.execute("SELECT $1", ([3, 'hi'],))
+
+    def test_none_param(self):
+        res = self.cn.execute("SELECT $1", [None])
+        self.assertIsNone(res.getvalue(0, 0))
 
     def test_all_none_array_param(self):
         res = self.cn.execute(
@@ -114,42 +117,39 @@ class ResultTestParametersCtypes(
         with self.assertRaises(ValueError):
             self.cn.execute("SELECT $1", ([[[[[[[101]]]]]]],))
 
-    def test_float_array_param(self):
-        self._test_param_val([3.24, None, 234.765])
 
-    def test_bool_param(self):
+class ResultTestParametersExtension(
+        BaseExtensionTest, ResultTestParameters, unittest.TestCase):
+    pass
+
+
+class ResultTestParametersCtypes(
+        BaseCTypesTest, ResultTestParameters, unittest.TestCase):
+
+    def test_int_param(self):
         res = self.cn.execute(
-            "SELECT $1, $2", [True, False])
-        self.assertIs(res.getvalue(0, 0), True)
-        self.assertIs(res.getvalue(0, 1), False)
+            "SELECT $1, $2, $3", [3, 2147483648, 17000000000000000000])
+        self.assertEqual(res.getvalue(0, 0), 3)
+        self.assertEqual(res.getvalue(0, 1), 2147483648)
+        self.assertEqual(res.getvalue(0, 2), "17000000000000000000")
 
-    def test_bool_array_param(self):
-        val = [True, False]
-        self._test_param_val(val)
-
-    def test_bytes_array_param(self):
-        self._test_param_val([b'hoi', b'ha\0llo'])
-
-    def test_none_param(self):
-        res = self.cn.execute("SELECT $1", [None])
-        self.assertIsNone(res.getvalue(0, 0))
-
-    def test_uuid_param(self):
-        self._test_param_val(uuid.uuid4())
-
-    def test_uuid_array_param(self):
-        val = [uuid.uuid4(), uuid.uuid4()]
-        self._test_param_val(val)
-
-    def test_date_param(self):
-        self._test_param_val(datetime.date.today())
-
-    def test_date_array_param(self):
-        self._test_param_val([
-            datetime.date.today(),
-            datetime.date.today() - datetime.timedelta(days=1),
-            None
-        ])
+    def test_int_array_param(self):
+        res = self.cn.execute(
+            "SELECT $1", ([3, 17000000000000000000, 2147483648],))
+        self.assertEqual(
+            res.getvalue(0, 0), ['3', '17000000000000000000', '2147483648'])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
+        res = self.cn.execute("SELECT $1", ([3, None, 12],))
+        self.assertEqual(
+            res.getvalue(0, 0), [3, None, 12])
+        self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
+        res = self.cn.execute("SELECT $1", ([3, None, 0x80000000],))
+        self.assertEqual(
+            res.getvalue(0, 0), [3, None, 0x80000000])
+        self.assertEqual(res.ftype(0), self.poque.INT8ARRAYOID)
+        res = self.cn.execute("SELECT $1", ([[[[[[101]]]]]],))
+        self.assertEqual(
+            res.getvalue(0, 0), [[[[[[101]]]]]])
 
     def test_time_param(self):
         self._test_param_val(datetime.datetime.now().time())

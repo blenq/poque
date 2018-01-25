@@ -159,6 +159,10 @@ class ArrayParameter(object):
 class Conn(c_void_p):
 
     def __new__(cls, *args, **kwargs):
+        # Use __new__ to instantiate object. This way we can inherit from
+        # c_void_p and actually be the connection pointer instead of
+        # wrapping it and creating another level of indirection.
+        # The c_void_p class is alreay a wrapper round a C pointer
         if args:
             names = ['dbname']
             values, blocking = new_connstring(*args, **kwargs)
@@ -182,6 +186,9 @@ class Conn(c_void_p):
             return pq.PQconnectdbParams(pq_names, pq_values, expand_dbname)
         return pq.PQconnectStartParams(pq_names, pq_values, expand_dbname)
 
+    # Necessary to prevent the base __init__ to be called which errors out.
+    # The pointer value is already correctly set by the __new__ method, so it
+    # does not need to be called anyway
     def __init__(self, *args, **kwargs):
         pass
 

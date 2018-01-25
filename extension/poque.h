@@ -166,11 +166,12 @@ PyObject *Poque_value(Oid oid, int format, char *data, int len);
 #define NUMERICARRAYOID     1231
 
 
-int init_datetime(void);
 int init_type_map(void);
 
 #define NUMERIC_NAN         0xC000
 #define NUMERIC_POS         0x0000
 #define NUMERIC_NEG         0x4000
+
+PyObject *load_python_object(const char *module_name, const char *obj_name);
 
 #endif

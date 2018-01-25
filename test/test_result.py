@@ -121,12 +121,10 @@ class ResultTestValues():
 
     @classmethod
     def setUpClass(cls):
-        cls.started = datetime.datetime.now()
         cls.cn = cls.poque.Conn(config.conninfo())
 
     @classmethod
     def tearDownClass(cls):
-        print("{0}: {1}".format(cls, datetime.datetime.now() - cls.started))
         cls.cn.finish()
 
     def setUp(self):
