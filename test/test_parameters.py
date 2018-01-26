@@ -33,6 +33,53 @@ class ResultTestParameters():
         res = self.cn.execute("SELECT 1", [])
         self.assertEqual(res.getvalue(0, 0), 1)
 
+    def test_int_param(self):
+        res = self.cn.execute(
+            "SELECT $1, $2, $3, $4, $5",
+            [3, 2147483648, 17000000000000000000, -4, -2147483649])
+        self.assertEqual(res.getvalue(0, 0), 3)
+        self.assertEqual(res.getvalue(0, 1), 2147483648)
+        self.assertEqual(res.getvalue(0, 2), "17000000000000000000")
+        self.assertEqual(res.getvalue(0, 3), -4)
+        self.assertEqual(res.getvalue(0, 4), -2147483649)
+
+    def test_int_array_param(self):
+        res = self.cn.execute(
+            "SELECT $1", ([3, 17000000000000000000, 2147483648],))
+        self.assertEqual(
+            res.getvalue(0, 0), ['3', '17000000000000000000', '2147483648'])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
+
+        res = self.cn.execute(
+            "SELECT $1", ([3, 2147483648, 17000000000000000000],))
+        self.assertEqual(
+            res.getvalue(0, 0), ['3', '2147483648', '17000000000000000000'])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
+
+        res = self.cn.execute(
+            "SELECT $1", ([2147483648, 3, 17000000000000000000],))
+        self.assertEqual(
+            res.getvalue(0, 0), ['2147483648', '3', '17000000000000000000'])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
+
+        res = self.cn.execute(
+            "SELECT $1", ([2147483648, 17000000000000000000, 3],))
+        self.assertEqual(
+            res.getvalue(0, 0), ['2147483648', '17000000000000000000', '3'])
+        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
+
+        res = self.cn.execute("SELECT $1", ([3, None, 12],))
+        self.assertEqual(
+            res.getvalue(0, 0), [3, None, 12])
+        self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
+        res = self.cn.execute("SELECT $1", ([3, None, 0x80000000],))
+        self.assertEqual(
+            res.getvalue(0, 0), [3, None, 0x80000000])
+        self.assertEqual(res.ftype(0), self.poque.INT8ARRAYOID)
+        res = self.cn.execute("SELECT $1", ([[[[[[101]]]]]],))
+        self.assertEqual(
+            res.getvalue(0, 0), [[[[[[101]]]]]])
+
     def test_str_param(self):
         self._test_param_val('hi')
 
@@ -125,31 +172,6 @@ class ResultTestParametersExtension(
 
 class ResultTestParametersCtypes(
         BaseCTypesTest, ResultTestParameters, unittest.TestCase):
-
-    def test_int_param(self):
-        res = self.cn.execute(
-            "SELECT $1, $2, $3", [3, 2147483648, 17000000000000000000])
-        self.assertEqual(res.getvalue(0, 0), 3)
-        self.assertEqual(res.getvalue(0, 1), 2147483648)
-        self.assertEqual(res.getvalue(0, 2), "17000000000000000000")
-
-    def test_int_array_param(self):
-        res = self.cn.execute(
-            "SELECT $1", ([3, 17000000000000000000, 2147483648],))
-        self.assertEqual(
-            res.getvalue(0, 0), ['3', '17000000000000000000', '2147483648'])
-        self.assertEqual(res.ftype(0), self.poque.TEXTARRAYOID)
-        res = self.cn.execute("SELECT $1", ([3, None, 12],))
-        self.assertEqual(
-            res.getvalue(0, 0), [3, None, 12])
-        self.assertEqual(res.ftype(0), self.poque.INT4ARRAYOID)
-        res = self.cn.execute("SELECT $1", ([3, None, 0x80000000],))
-        self.assertEqual(
-            res.getvalue(0, 0), [3, None, 0x80000000])
-        self.assertEqual(res.ftype(0), self.poque.INT8ARRAYOID)
-        res = self.cn.execute("SELECT $1", ([[[[[[101]]]]]],))
-        self.assertEqual(
-            res.getvalue(0, 0), [[[[[[101]]]]]])
 
     def test_time_param(self):
         self._test_param_val(datetime.datetime.now().time())

@@ -46,6 +46,7 @@ date_encode_at(
 
 static param_handler date_param_handler = {
     date_examine,       /* examine */
+    NULL,               /* total_size */
     NULL,               /* encode */
     date_encode_at,     /* encode_at */
     NULL,               /* free */

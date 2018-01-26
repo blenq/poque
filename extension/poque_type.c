@@ -3,11 +3,55 @@
 #include "text.h"
 #include "uuid.h"
 #include "datetime.h"
+#include "network.h"
+#include "geometric.h"
 
+
+/* ======= param handlers ====================================================
+ *
+ * Parameter handlers are responsible for converting and encoding Python values
+ * into the pg wire protocol value.
+ *
+ * This happens in two steps.
+ * * The value is examined by the handler. The handler reports the size in bytes
+ *   required to encode the value.
+ * * The value is encoded by the handler.
+ *
+ * Handlers are called from two places.
+ * * By the Conn_exec_params function. Both steps are executed once for a value.
+ * * By the Array parameter handler, which use the handler for the array
+ *   elements. The examine step will be executed for all values first. Then the
+ *   encode step will take place for all values.
+ *
+ * Methods:
+ * * examine:    first opportunity for a handler to do anything. It reports the
+ *               encoded size of the value
+ * * total_size: Reports the total encoded size of all values. Can be NULL. Will
+ *               only be called from array parameter handler. Only necessary
+ *               if earlier reported size by examine has changed. (see int
+ *               parameter handler)
+ * * encode:     Returns a pointer to the encoded value. Can be NULL. Not used
+ *               by array parameter handler. This is meant for Python values
+ *               that give access to the pointer value without the need to
+ *               allocate memory. (see text and bytes parameter handlers)
+ * * encode_at:  Encodes the value at the specified location. Returns the size.
+ * * free:       Deallocates the parameter handler. Can be NULL in case of
+ *               statically allocated handlers without the need for state. (for
+ *               example uuid handler)
+ *
+ * Properties:
+ * * oid: the pg type oid.
+ * * array_oid: the pg type oid of the corresponding array type
+ * Both are evaluated after the examine step
+ *
+ *
+ * Handlers are registered
+ */
 
 param_handler *
 new_param_handler(param_handler *def_handler, size_t handler_size) {
-    /* Allocator for param handlers.
+    /* Allocator for param handlers. Helper function for parameter handler
+     * constructors.
      *
      * Copies the content of an existing (static) struct into the newly
      * created one.
@@ -27,24 +71,76 @@ new_param_handler(param_handler *def_handler, size_t handler_size) {
     return handler;
 }
 
+/* param handler table record */
+typedef struct _param_handler_constructor {
+    PyTypeObject *typ;
+    ph_new constructor;
+} param_handler_constructor;
 
+/* param handler table */
+static param_handler_constructor param_handler_constructors[8];
+static int num_phcons = 0;
+
+
+void
+register_parameter_handler(PyTypeObject *typ, ph_new constructor) {
+    /* registers a parameter handler for a Python type */
+    param_handler_constructor *cons;
+
+    cons = param_handler_constructors + num_phcons++;
+    cons->typ = typ;
+    cons->constructor = constructor;
+}
+
+
+ph_new
+get_param_handler_constructor(PyTypeObject *typ) {
+    /* Returns the appropriate param handler for a Python type from the
+     * registered handlers.
+     *
+     * The text parameter handler is the fallback
+     */
+    int i;
+    param_handler_constructor *cons;
+
+    for (i = 0; i < num_phcons; i++) {
+        cons = param_handler_constructors + i;
+        if (typ == cons->typ) {
+            return cons->constructor;
+        }
+    }
+    return new_text_param_handler;
+}
+
+/* ====== Array parameter handler =========================================== */
+
+/* This handler is used to convert (nested) Python lists into PostgreSQL arrays.
+ *
+ * It uses element parameter handlers to encode the elements of the list
+ * hierarchy
+ */
 typedef struct _ArrayParamHandler {
-    param_handler handler;
-    param_handler *el_handler;
-    PyTypeObject *el_type;
-    int has_null;
-    int item_depth;
-    int num_items;
-    unsigned int num_dims;
-    int dims[6];
+    param_handler handler;      /* base handler */
+    param_handler *el_handler;  /* param handler of elements */
+    PyTypeObject *el_type;      /* Python type of elements */
+    int has_null;               /* Are there None/NULL values */
+    int item_depth;             /* depth at which items are found */
+    int num_items;              /* number of non NULL items */
+    unsigned int num_dims;      /* number of dimensions */
+    int dims[6];                /* sizes of dimensions */
 } ArrayParamHandler;
 
 
-static int array_check_list(
+static int array_examine_list(
         ArrayParamHandler *handler, PyObject *param, int depth) {
-    /* A nested list is not the same as a multidimensional array. Therefore
+    /* Determine dimension sizes, existence of NULL values and python type.
+     *
+     * A nested list is not the same as a multidimensional array. Therefore
      * some checks to make sure all lists of a certain dimension have the
-     * same length
+     * same length.
+     *
+     * Also check if all non NULL values are of the same Python type and if the
+     * maximum number of dimensions is not exceeded.
      */
     int curr_length, i;
     PyObject *item;
@@ -67,8 +163,11 @@ static int array_check_list(
         PyErr_SetString(PyExc_ValueError, "Invalid list length");
         return -1;
     }
+
+    /* loop over all elements in the list */
     for (i = 0; i < list_length; i++) {
         item = PyList_GET_ITEM(param, i);
+
         if (PyList_CheckExact(item)) {
             /* a child list */
 
@@ -85,8 +184,8 @@ static int array_check_list(
                 return -1;
             }
 
-            /* repeat ourselves for the child list */
-            if (array_check_list(handler, item, depth + 1) < 0) {
+            /* recursively call ourselves for the child list */
+            if (array_examine_list(handler, item, depth + 1) < 0) {
                 return -1;
             }
         }
@@ -108,9 +207,11 @@ static int array_check_list(
             else {
                 item_type = Py_TYPE(item);
                 if (handler->el_type == NULL) {
+                    /* set the Python type */
                     handler->el_type = item_type;
                 }
                 else {
+                    /* check the Python type */
                     if (handler->el_type != item_type) {
                         /* all items must be of the same type or None */
                         PyErr_SetString(PyExc_ValueError, "Can not mix types");
@@ -161,15 +262,31 @@ static int
 array_examine(ArrayParamHandler *handler, PyObject *param) {
     int size, total_items, i;
 
-    if (array_check_list(handler, param, 0) < 0) {
+    /* First examine the list */
+    if (array_examine_list(handler, param, 0) < 0) {
         return -1;
     }
+
+    /* Python type is known. Now we can set the element parameter handler */
     handler->el_handler = get_param_handler_constructor(handler->el_type)(
-            handler->num_items);
+                              handler->num_items);
+
+    /* examine the elements to get total element size */
     size = array_examine_items(handler, param);
     if (size < 0) {
         return -1;
     }
+    /* Size is computed above as the sum of the size of examining all elements.
+     * In the case of an int parameter handler this can be wrong, if the pg type
+     * has changed while examining the values. To overcome this, there is the
+     * total_size method. If available call it to get correct size.
+     */
+    if (PH_HasTotalSize(handler->el_handler)) {
+        size = PH_TotalSize(handler->el_handler);
+    }
+
+    /* Now calculate the total size, 12 for the header, 8 for each dimension,
+     * 4 for each item and the size of the non NULL items calculated above */
     total_items = 1;
     for (i = 0; i < handler->num_dims; i++) {
         total_items *= handler->dims[i];
@@ -180,12 +297,15 @@ array_examine(ArrayParamHandler *handler, PyObject *param) {
 
 void
 write_uint32(char **p, PY_UINT32_T val) {
+    /* writes a 4 byte unsigned integer in network order at the provided
+     * location
+     */
     int i;
     unsigned char *q = (unsigned char *)*p;
 
     for (i = 3; i >=0; i--) {
-        *(q + i) = (unsigned char)(val & 0xffL);
-         val >>= 8;
+        q[i] = (unsigned char)(val & 0xffL);
+        val >>= 8;
     }
     *p += 4;
 }
@@ -227,96 +347,67 @@ array_write_values(ArrayParamHandler *handler, PyObject *param, char **loc) {
 
 
 static int
-array_encode_at(param_handler *handler, PyObject *param, char *loc) {
+array_encode_at(ArrayParamHandler *handler, PyObject *param, char *loc) {
     int i;
-    ArrayParamHandler *self;
-
-    self = (ArrayParamHandler *)handler;
 
     /* write array header */
-    write_uint32(&loc, self->num_dims);
-    write_uint32(&loc, self->has_null);
-    write_uint32(&loc, self->el_handler->oid);
-    for(i = 0; i < self->num_dims; i++) {
-        /* write dimension header */
-        write_uint32(&loc, self->dims[i]);
+    write_uint32(&loc, handler->num_dims);
+    write_uint32(&loc, handler->has_null);
+    write_uint32(&loc, handler->el_handler->oid);
+
+    /* write dimension headers */
+    for(i = 0; i < handler->num_dims; i++) {
+        write_uint32(&loc, handler->dims[i]);
         write_uint32(&loc, 1);
     }
+
     /* write values */
-    i = array_write_values(self, param, &loc);
+    i = array_write_values(handler, param, &loc);
     return i;
 }
 
 
 static void
-array_free(param_handler *handler) {
-    ArrayParamHandler *self;
+array_free(ArrayParamHandler *handler) {
+    /* Array parameter handler itself needs no more than to free itself.
+     * The element handler might need to be freed though.
+     */
     param_handler *el_handler;
 
-    self = (ArrayParamHandler *)handler;
-    el_handler = self->el_handler;
+    el_handler = handler->el_handler;
     if (el_handler && PH_HasFree(el_handler)) {
         PH_Free(el_handler);
     }
-    PyMem_Free(self);
+    PyMem_Free(handler);
 }
 
 
 static param_handler *
 new_array_param_handler(int num_param) {
+    /* array parameter handler constructor */
+
     static ArrayParamHandler def_handler = {{
-            (ph_examine)array_examine,  /* examine */
-            NULL,                       /* encode */
-            array_encode_at,            /* encode_at */
-            array_free,                 /* free */
-            TEXTARRAYOID,               /* oid */
-            0                           /* array oid */
+            (ph_examine)array_examine,      /* examine */
+            NULL,                           /* total_size */
+            NULL,                           /* encode */
+            (ph_encode_at)array_encode_at,  /* encode_at */
+            (ph_free)array_free,            /* free */
+            TEXTARRAYOID,                   /* oid */
+            InvalidOid                      /* array oid */
         },
-        NULL,                           /* el_handler */
-        NULL,                           /* el_type */
-        0,                              /* has_null */
-        -1,                             /* item_depth */
-        0,                              /* num_items */
-        0,                              /* num_dims */
-        {-1, -1, -1, -1, -1, -1}    /* dims */
+        NULL,                               /* el_handler */
+        NULL,                               /* el_type */
+        0,                                  /* has_null */
+        -1,                                 /* item_depth */
+        0,                                  /* num_items */
+        0,                                  /* num_dims */
+        {-1, -1, -1, -1, -1, -1}            /* dims */
     }; /* static initialized handler */
 
-    return new_param_handler((param_handler *)&def_handler, sizeof(ArrayParamHandler));
+    return new_param_handler((param_handler *)&def_handler,
+                             sizeof(ArrayParamHandler));
 }
 
-
-typedef struct _param_handler_constructor {
-    PyTypeObject *typ;
-    ph_new constructor;
-} param_handler_constructor;
-
-static param_handler_constructor param_handler_constructors[6];
-static int num_phcons;
-
-
-void
-register_parameter_handler(PyTypeObject *typ, ph_new constructor) {
-    param_handler_constructor *cons;
-
-    cons = param_handler_constructors + num_phcons++;
-    cons->typ = typ;
-    cons->constructor = constructor;
-}
-
-
-ph_new
-get_param_handler_constructor(PyTypeObject *typ) {
-    int i;
-    param_handler_constructor *cons;
-
-    for (i = 0; i < num_phcons; i++) {
-        cons = param_handler_constructors + i;
-        if (typ == cons->typ) {
-            return cons->constructor;
-        }
-    }
-    return new_text_param_handler;
-}
 
 PyObject *
 load_python_object(const char *module_name, const char *obj_name) {
@@ -590,256 +681,8 @@ jsonb_bin_val(data_crs *crs)
 }
 
 
-static int
-add_float_to_tuple(PyObject *tup, data_crs *crs, int idx)
-{
-    double val;
-    PyObject *float_val;
-
-    if (crs_read_double(crs, &val) < 0)
-        return -1;
-    float_val = PyFloat_FromDouble(val);
-    if (float_val == NULL) {
-        Py_DECREF(tup);
-        return -1;
-    }
-    PyTuple_SET_ITEM(tup, idx, float_val);
-    return 0;
-}
 
 
-static PyObject *
-float_tuple_binval(data_crs *crs, int len) {
-    PyObject *tup;
-    int i;
-
-    tup = PyTuple_New(len);
-    if (tup == NULL)
-        return NULL;
-    for (i=0; i < len; i++) {
-        if (add_float_to_tuple(tup, crs, i) < 0)
-            return NULL;
-    }
-    return tup;
-}
-
-static PyObject *
-point_binval(data_crs *crs) {
-    return float_tuple_binval(crs, 2);
-}
-
-
-static PyObject *
-line_binval(data_crs *crs) {
-    return float_tuple_binval(crs, 3);
-}
-
-
-static PyObject *
-lseg_binval(data_crs *crs)
-{
-    PyObject *point, *lseg;
-    int i;
-
-    lseg = PyTuple_New(2);
-    if (lseg == NULL)
-        return NULL;
-    for (i = 0; i < 2; i++) {
-        point = point_binval(crs);
-        if (point == NULL) {
-            Py_DECREF(lseg);
-            return NULL;
-        }
-        PyTuple_SET_ITEM(lseg, i, point);
-    }
-    return lseg;
-}
-
-
-static PyObject *
-polygon_binval(data_crs *crs) {
-    PyObject *points;
-    PY_INT32_T npoints, i;
-
-    if (crs_read_int32(crs, &npoints) < 0) {
-        return NULL;
-    }
-    if (npoints < 0) {
-        PyErr_SetString(PoqueError, "Path length can not be less than zero");
-        return NULL;
-    }
-    points = PyList_New(npoints);
-    for (i = 0; i < npoints; i++) {
-        PyObject *point;
-
-        point = point_binval(crs);
-        if (point == NULL) {
-            Py_DECREF(points);
-            return NULL;
-        }
-        PyList_SET_ITEM(points, i, point);
-    }
-    return points;
-}
-
-
-static PyObject *
-path_binval(data_crs *crs)
-{
-    PyObject *path, *points, *closed;
-    char data;
-
-    if (crs_read_char(crs, &data) < 0)
-        return NULL;
-    closed = PyBool_FromLong(data);
-
-    points = polygon_binval(crs);
-    if (points == NULL) {
-        Py_DECREF(closed);
-        return NULL;
-    }
-
-    path = PyDict_New();
-    if (path == NULL) {
-        Py_DECREF(closed);
-        Py_DECREF(points);
-    }
-
-    if ((PyDict_SetItemString(path, "closed", closed) < 0) ||
-            (PyDict_SetItemString(path, "path", points) < 0)) {
-        Py_DECREF(path);
-        path = NULL;
-    }
-    Py_DECREF(closed);
-    Py_DECREF(points);
-    return path;
-}
-
-
-
-
-
-static PyObject *
-circle_binval(data_crs *crs) {
-    PyObject *circle, *center;
-
-    circle = PyTuple_New(2);
-    if (circle == NULL) {
-        return NULL;
-    }
-    center = point_binval(crs);
-    if (center == NULL) {
-        Py_DECREF(circle);
-        return NULL;
-    }
-    PyTuple_SET_ITEM(circle, 0, center);
-    if (add_float_to_tuple(circle, crs, 1) < 0) {
-        Py_DECREF(circle);
-        return NULL;
-    }
-    return circle;
-}
-
-
-static PyObject *
-mac_binval(data_crs *crs)
-{
-    poque_uint16 first;
-    PY_UINT32_T second;
-
-    if (crs_read_uint16(crs, &first) < 0)
-        return NULL;
-    if (crs_read_uint32(crs, &second) < 0)
-        return NULL;
-    return PyLong_FromLongLong(((PY_UINT64_T)first << 32) + second);
-}
-
-
-static PyObject *
-mac8_binval(data_crs *crs)
-{
-    PY_UINT64_T val;
-
-    if (crs_read_uint64(crs, &val) < 0)
-        return NULL;
-    return PyLong_FromUnsignedLongLong(val);
-}
-
-
-#define PGSQL_AF_INET 2
-#define PGSQL_AF_INET6 3
-
-static PyObject *
-inet_binval(data_crs *crs)
-{
-    PyObject *addr_cls, *addr_str, *address=NULL;
-    char *cls_name;
-    unsigned char mask, *cr, family, size, is_cidr;
-
-    cr = (unsigned char *)crs_advance(crs, 4);
-    if (cr == NULL)
-        return NULL;
-    family = cr[0];
-    mask = cr[1];
-    is_cidr = cr[2];
-    size = cr[3];
-    if (is_cidr > 1) {
-        PyErr_SetString(PoqueError, "Invalid value for is_cidr");
-        return NULL;
-    }
-
-    /* Get address as string and Python class name */
-    if (family == PGSQL_AF_INET ) {
-
-        if (size != 4) {
-            PyErr_SetString(PoqueError, "Invalid address size");
-            return NULL;
-        }
-        cr = (unsigned char *)crs_advance(crs, size);
-        if (cr == NULL)
-            return NULL;
-        addr_str = PyUnicode_FromFormat(
-            "%u.%u.%u.%u/%u", cr[0], cr[1], cr[2], cr[3], mask);
-        if (is_cidr)
-            cls_name = "IPv4Network";
-        else
-            cls_name = "IPv4Interface";
-    } else if (family == PGSQL_AF_INET6) {
-        poque_uint16 parts[8];
-        int i;
-
-        if (size != 16) {
-            PyErr_SetString(PoqueError, "Invalid address size");
-            return NULL;
-        }
-        for (i = 0; i < 8; i++) {
-            if (crs_read_uint16(crs, parts + i) < 0)
-                return NULL;
-        }
-        addr_str = PyUnicode_FromFormat(
-            "%x:%x:%x:%x:%x:%x:%x:%x/%u", parts[0], parts[1], parts[2],
-            parts[3], parts[4], parts[5], parts[6], parts[7], mask);
-        if (is_cidr)
-            cls_name = "IPv6Network";
-        else
-            cls_name = "IPv6Interface";
-    } else {
-        PyErr_SetString(PoqueError, "Unknown network family");
-        return NULL;
-    }
-    if (addr_str == NULL)
-        return NULL;
-
-    /* Instantiate network class */
-    addr_cls = load_python_object("ipaddress", cls_name);
-    if (addr_cls == NULL)
-        goto end;
-    address = PyObject_CallFunctionObjArgs(addr_cls, addr_str, NULL);
-end:
-    Py_DECREF(addr_str);
-    Py_XDECREF(addr_cls);
-    return address;
-}
 
 
 static PyObject *
@@ -1000,31 +843,9 @@ static PoqueTypeEntry type_table[] = {
     {JSONBOID, jsonb_bin_val, json_val, InvalidOid, NULL},
     {JSONARRAYOID, array_binval, NULL, JSONOID, NULL},
     {JSONBARRAYOID, array_binval, NULL, JSONBOID, NULL},
-    {POINTOID, point_binval, NULL, InvalidOid, NULL},
-    {LINEOID, line_binval, NULL, InvalidOid, NULL},
-    {LINEARRAYOID, array_binval, NULL, LINEOID, NULL},
-    {LSEGOID, lseg_binval, NULL, InvalidOid, NULL},
-    {PATHOID, path_binval, NULL, InvalidOid, NULL},
-    {BOXOID, lseg_binval, NULL, InvalidOid, NULL},
-    {POLYGONOID, polygon_binval, NULL, InvalidOid, NULL},
-    {CIRCLEOID, circle_binval, NULL, InvalidOid, NULL},
-    {CIRCLEARRAYOID, array_binval, NULL, CIRCLEOID, NULL},
-    {MACADDROID, mac_binval, NULL, InvalidOid, NULL},
-    {MACADDR8OID, mac8_binval, NULL, InvalidOid, NULL},
-    {INETOID, inet_binval, NULL, InvalidOid, NULL},
-    {CIDROID, inet_binval, NULL, InvalidOid, NULL},
     {INT2VECTORARRAYOID, array_binval, NULL, INT2VECTOROID, NULL},
     {TIDARRAYOID, array_binval, NULL, TIDOID, NULL},
     {OIDVECTORARRAYOID, array_binval, NULL, OIDVECTOROID, NULL},
-    {POINTARRAYOID, array_binval, NULL, POINTOID, NULL},
-    {LSEGARRAYOID, array_binval, NULL, LSEGOID, NULL},
-    {PATHARRAYOID, array_binval, NULL, PATHOID, NULL},
-    {BOXARRAYOID, array_binval, NULL, BOXOID, NULL},
-    {POLYGONARRAYOID, array_binval, NULL, POLYGONOID, NULL},
-    {MACADDRARRAYOID, array_binval, NULL, MACADDROID, NULL},
-    {MACADDR8ARRAYOID, array_binval, NULL, MACADDR8OID, NULL},
-    {INETARRAYOID, array_binval, NULL, INETOID, NULL},
-    {CIDRARRAYOID, array_binval, NULL, CIDROID, NULL},
     {BITOID, bit_binval, bit_strval, InvalidOid, NULL},
     {BITARRAYOID, array_binval, NULL, BITOID, NULL},
     {VARBITOID, bit_binval, bit_strval, InvalidOid, NULL},
@@ -1070,9 +891,6 @@ register_value_handler_table(PoqueTypeEntry *table) {
 int
 init_type_map(void) {
 
-    register_parameter_handler(&PyBytes_Type, new_bytes_param_handler);
-    register_parameter_handler(&PyList_Type, new_array_param_handler);
-
     if (init_numeric() < 0) {
         return -1;
     }
@@ -1085,6 +903,14 @@ init_type_map(void) {
     if (init_uuid() < 0) {
         return -1;
     }
+    if (init_network() < 0) {
+        return -1;
+    }
+    if (init_geometric() < 0) {
+        return -1;
+    }
+
+    register_parameter_handler(&PyList_Type, new_array_param_handler);
 
     json_loads = load_python_object("json", "loads");
     if (json_loads == NULL)

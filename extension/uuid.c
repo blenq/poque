@@ -52,6 +52,7 @@ uuid_encode_at(
 
 static param_handler uuid_param_handler = {
     uuid_examine,       /* examine */
+    NULL,               /* total_size */
     NULL,               /* encode */
     uuid_encode_at,     /* encode_at */
     NULL,               /* free */
@@ -75,21 +76,11 @@ static PoqueTypeEntry uuid_value_handlers[] = {
 
 int
 init_uuid(void) {
-//    PoqueTypeEntry *entry;
-
     PyUUID_Type = (PyTypeObject *)load_python_object("uuid", "UUID");
     if (PyUUID_Type == NULL) {
         return -1;
     }
-
-    /* initialize hash table of value converters */
     register_value_handler_table(uuid_value_handlers);
-//    entry = uuid_value_handlers;
-//    while (entry->oid != InvalidOid) {
-//        register_value_handler(entry);
-//        entry++;
-//    }
-
     register_parameter_handler(PyUUID_Type, new_uuid_param_handler);
     return 0;
 }

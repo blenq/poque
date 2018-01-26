@@ -1,4 +1,3 @@
-#include "poque.h"
 #include "poque_type.h"
 
 
@@ -87,7 +86,7 @@ bytea_fill_fromescape(char *data, char *end, char *dest) {
 }
 
 
-PyObject *
+static PyObject *
 bytea_strval(data_crs *crs)
 {
     /* converts the textual representation of a bytea value to a Python
@@ -187,6 +186,7 @@ bytes_encode_at(param_handler *handler, PyObject *param, char *loc) {
 
 static param_handler bytes_param_handler = {
     bytes_examine,
+    NULL,
     bytes_encode,
     bytes_encode_at,
     NULL,
@@ -195,13 +195,13 @@ static param_handler bytes_param_handler = {
 }; /* static initialized handler */
 
 
-param_handler *
+static param_handler *
 new_bytes_param_handler(int num_param) {
     return &bytes_param_handler;
 }
 
 
-/* ======== pg text type ==================================================== */
+/* ======== pg text types =================================================== */
 
 PyObject *
 text_val(data_crs* crs)
@@ -326,6 +326,7 @@ new_text_param_handler(int num_params) {
 	static TextParamHandler def_handler = {
 		{
 			text_examine,		/* examine */
+			NULL,               /* total_size */
 			text_encode,		/* encode */
 			text_encode_at,		/* encode_at */
 			text_handler_free,	/* free */
@@ -358,7 +359,7 @@ new_text_param_handler(int num_params) {
 
 /* ======== pg char type ==================================================== */
 
-PyObject *
+static PyObject *
 char_binval(data_crs* crs)
 {
     char data;
@@ -394,9 +395,12 @@ static PoqueTypeEntry text_value_handlers[] = {
     {InvalidOid}
 };
 
+
 int
 init_text(void)
 {
     register_value_handler_table(text_value_handlers);
+    register_parameter_handler(&PyUnicode_Type, new_text_param_handler);
+    register_parameter_handler(&PyBytes_Type, new_bytes_param_handler);
     return 0;
 };
