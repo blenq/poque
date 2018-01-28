@@ -18,7 +18,6 @@ class ResultTestParameters():
 
     def setUp(self):
         self.cn.execute("BEGIN")
-#         self.cn = self.poque.Conn(conninfo())
 
     def tearDown(self):
         self.cn.execute("ROLLBACK")
