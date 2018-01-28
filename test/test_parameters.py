@@ -126,6 +126,15 @@ class ResultTestParameters():
             None
         ])
 
+    def test_time_param(self):
+        self._test_param_val(datetime.datetime.now().time())
+
+    def test_time_array_param(self):
+        self._test_param_val([
+            datetime.datetime.now().time(),
+            datetime.datetime.now().time()
+        ])
+
     def test_datetime_param(self):
         self._test_param_val(datetime.datetime.now())
 
@@ -194,15 +203,6 @@ class ResultTestParametersExtension(
 
 class ResultTestParametersCtypes(
         BaseCTypesTest, ResultTestParameters, unittest.TestCase):
-
-    def test_time_param(self):
-        self._test_param_val(datetime.datetime.now().time())
-
-    def test_time_array_param(self):
-        self._test_param_val([
-            datetime.datetime.now().time(),
-            datetime.datetime.now().time()
-        ])
 
     def _test_param_decimal(self, val):
         res = self.cn.execute("SELECT $1", [val])

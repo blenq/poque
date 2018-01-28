@@ -80,7 +80,7 @@ typedef struct _param_handler_constructor {
 } param_handler_constructor;
 
 /* param handler table */
-static param_handler_constructor param_handler_constructors[9];
+static param_handler_constructor param_handler_constructors[10];
 static int num_phcons = 0;
 
 

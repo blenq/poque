@@ -94,6 +94,45 @@ new_date_param_handler(int num_param) {
 }
 
 
+/* ==== time parameter handler ============================================== */
+
+
+static int
+time_examine(param_handler *handler, PyObject *param) {
+    return 8;
+}
+
+
+static int
+time_encode_at(param_handler *handler, PyObject *param, char *loc) {
+    PY_INT64_T val;
+
+    val = (PyDateTime_TIME_GET_HOUR(param)  * USECS_PER_HOUR +
+           PyDateTime_TIME_GET_MINUTE(param) * USECS_PER_MINUTE +
+           PyDateTime_TIME_GET_SECOND(param) * USECS_PER_SEC +
+           PyDateTime_TIME_GET_MICROSECOND(param));
+    write_uint64(&loc, val);
+    return 8;
+}
+
+
+static param_handler time_param_handler = {
+    time_examine,       /* examine */
+    NULL,               /* total_size */
+    NULL,               /* encode */
+    time_encode_at,     /* encode_at */
+    NULL,               /* free */
+    TIMEOID,            /* oid */
+    TIMEARRAYOID        /* array_oid */
+}; /* static initialized handler */
+
+
+static param_handler *
+new_time_param_handler(int num_param) {
+    /* date parameter constructor */
+    return &time_param_handler;
+}
+
 /* ==== datetime parameter handler ========================================== */
 
 
@@ -106,11 +145,11 @@ datetime_encode_at(
     if (date_pgordinal(param, &ordinal) < 0) {
         return -1;
     }
-    val = ordinal * USECS_PER_DAY;
-    val += (PyDateTime_DATE_GET_HOUR(param)  * USECS_PER_HOUR +
-            PyDateTime_DATE_GET_MINUTE(param) * USECS_PER_MINUTE +
-            PyDateTime_DATE_GET_SECOND(param) * USECS_PER_SEC +
-            PyDateTime_DATE_GET_MICROSECOND(param));
+    val = (ordinal * USECS_PER_DAY +
+           PyDateTime_DATE_GET_HOUR(param)  * USECS_PER_HOUR +
+           PyDateTime_DATE_GET_MINUTE(param) * USECS_PER_MINUTE +
+           PyDateTime_DATE_GET_SECOND(param) * USECS_PER_SEC +
+           PyDateTime_DATE_GET_MICROSECOND(param));
     write_uint64(&loc, val);
     return 8;
 }
@@ -122,10 +161,13 @@ datetimetz_encode_at(
     PyObject *utc_param;
     int ret;
 
+    /* convert datetime object to UTC */
     utc_param = PyObject_CallMethod(param, "astimezone", "O", utc);
     if (utc_param == NULL) {
         return -1;
     }
+
+    /* Use the UTC datetime for serialization */
     ret = datetime_encode_at(handler, utc_param, loc);
     Py_DECREF(utc_param);
     return ret;
@@ -155,7 +197,6 @@ datetime_examine(param_handler *handler, PyObject *param) {
         }
         else {
             handler->oid = TIMESTAMPOID;
-            handler->array_oid = TIMESTAMPARRAYOID;
         }
     }
     else if (has_tz != (handler->oid == TIMESTAMPTZOID)) {
@@ -181,6 +222,8 @@ new_datetime_param_handler(int num_param) {
     return new_param_handler(&def_handler, sizeof(param_handler));
 }
 
+
+/* ====== datetime retrieval funcs ========================================== */
 
 static void
 date_vals_from_int(PY_INT32_T jd, int *year, int *month, int *day)
@@ -516,5 +559,6 @@ init_datetime(void)
     register_parameter_handler(PyDateTimeAPI->DateType, new_date_param_handler);
     register_parameter_handler(PyDateTimeAPI->DateTimeType,
                                new_datetime_param_handler);
+    register_parameter_handler(PyDateTimeAPI->TimeType, new_time_param_handler);
     return 0;
 }
