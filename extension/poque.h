@@ -14,6 +14,15 @@
 #error no type for int16
 #endif
 
+#if SIZEOF_INT != 4
+#error no type for int32
+#endif
+
+#if SIZEOF_LONG != 4 && SIZEOF_LONG != 8
+#error weird long type
+#endif
+
+
 #if SIZEOF_FLOAT != 4
 #error no type for float32
 #endif

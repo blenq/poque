@@ -64,6 +64,16 @@ int_examine_text(IntParamHandler *handler, PyObject *param) {
 
 
 static int
+int_encode_text(IntParamHandler *handler, PyObject *param, char **loc) {
+    IntParam *ip;
+
+    ip = int_get_current_param(handler, &handler->encode_pos);
+    *loc = ip->value.string;
+    return 0;
+}
+
+
+static int
 int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
     IntParam *ip;
     int size;
@@ -77,6 +87,7 @@ int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
 
 static int
 int_total_size_text(IntParamHandler *handler) {
+    /* calculate total size using previously cached values */
     int i, ret=0;
 
     for (i = 0; i < handler->examine_pos; i++) {
@@ -96,13 +107,17 @@ int_set_examine_text(IntParamHandler *handler, PyObject *param) {
     handler->handler.array_oid = TEXTARRAYOID;
     handler->handler.encode_at = (ph_encode_at)int_encode_at_text;
 
-    /* if this is the only parameter, don't bother about the rest */
-    if (!int_handler_single(handler)) {
+    if (int_handler_single(handler)) {
+        /* one less malloc and copy */
+        handler->handler.encode = (ph_encode)int_encode_text;
+    }
+    else {
+        /* set up stuff for multiple values */
         handler->handler.examine = (ph_examine)int_examine_text;
         if (handler->examine_pos) {
             /* Other values have been examined earlier. First set up size
-             * calculation because the summing the previous examine results
-             * gives the wrong number.
+             * calculation because the running total of the previous examine
+             * results gives the wrong number.
              */
             handler->handler.total_size = (ph_total_size)int_total_size_text;
 
@@ -113,11 +128,22 @@ int_set_examine_text(IntParamHandler *handler, PyObject *param) {
                 PyObject *py_str;
 
                 p = &handler->params.params[i];
+
+                /* replace ref with string version */
                 py_str = PyObject_Str(p->ref);
+                if (py_str == NULL) {
+                    /* free uses examine_pos in decref loop */
+                    handler->examine_pos = i;
+                    return -1;
+                }
                 p->ref = py_str;
+
+                /* get char pointer and size and store for later */
                 val = PyUnicode_AsUTF8AndSize(p->ref, &p->size);
                 if (val == NULL) {
-                    handler->examine_pos = i + 1;
+                    Py_DECREF(py_str);
+                    /* free uses examine_pos in decref loop */
+                    handler->examine_pos = i;
                     return -1;
                 }
                 p->value.string = val;
@@ -244,23 +270,19 @@ int_handler_free(IntParamHandler *handler)
 {
     int i;
 
-    if (handler->handler.oid == TEXTOID) {
-        if (int_handler_single(handler)) {
+    if (int_handler_single(handler)) {
+        if (handler->handler.oid == TEXTOID) {
             /* clean up cached PyUnicode value */
-            if (handler->examine_pos) {
-                Py_DECREF(handler->params.param.ref);
-            }
+            Py_XDECREF(handler->params.param.ref);
         }
-        else {
+    }
+    else {
+        if (handler->handler.oid == TEXTOID) {
             /* clean up cached PyUnicode value */
             for (i = 0; i < handler->examine_pos; i++) {
                 Py_DECREF(handler->params.params[i].ref);
             }
-            /* deallocate param array */
-            PyMem_Free(handler->params.params);
         }
-    }
-    else if (!int_handler_single(handler)) {
         /* deallocate param array */
         PyMem_Free(handler->params.params);
     }

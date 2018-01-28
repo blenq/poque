@@ -12,16 +12,17 @@
  * Parameter handlers are responsible for converting and encoding Python values
  * into the pg wire protocol value.
  *
- * This happens in two steps.
+ * This happens in the following steps.
  * * The value is examined by the handler. The handler reports the size in bytes
  *   required to encode the value.
+ * * The pg type oid is retrieved from the handler
  * * The value is encoded by the handler.
  *
  * Handlers are called from two places.
- * * By the Conn_exec_params function. Both steps are executed once for a value.
- * * By the Array parameter handler, which use the handler for the array
- *   elements. The examine step will be executed for all values first. Then the
- *   encode step will take place for all values.
+ * * By the Conn_exec_params function. All steps are executed once for a value.
+ * * By the Array parameter handler, which uses the handler for the array
+ *   elements. The examine step will be executed for all values first. After
+ *   retrieving the oid, the encode step will take place for all values.
  *
  * Methods:
  * * examine:    first opportunity for a handler to do anything. It reports the
@@ -30,9 +31,9 @@
  *               only be called from array parameter handler. Only necessary
  *               if earlier reported size by examine has changed. (see int
  *               parameter handler)
- * * encode:     Returns a pointer to the encoded value. Can be NULL. Not used
- *               by array parameter handler. This is meant for Python values
- *               that give access to the pointer value without the need to
+ * * encode:     Can be NULL. Returns a pointer to the encoded value. Not used
+ *               by the array parameter handler. This is meant for Python values
+ *               that give access to the raw pointer value without the need to
  *               allocate memory. (see text and bytes parameter handlers)
  * * encode_at:  Encodes the value at the specified location. Returns the size.
  * * free:       Deallocates the parameter handler. Can be NULL in case of
@@ -45,7 +46,8 @@
  * Both are evaluated after the examine step
  *
  *
- * Handlers are registered
+ * Handlers are registered with the register_parameter_handler. It links a
+ * constructor function to a Python type.
  */
 
 param_handler *
@@ -228,8 +230,8 @@ static int array_examine_list(
 
 
 static int array_examine_items(ArrayParamHandler *handler, PyObject *param) {
-    /* Now we know the number of items, so we can initialize a parameter
-     * handler to examine all the child items and calculate their size
+    /* Now we have a parameter handler to examine all the child items and
+     * calculate their size
      */
     Py_ssize_t list_length, i;
     PyObject *item;
