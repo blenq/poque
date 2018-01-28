@@ -51,6 +51,7 @@ ph_new get_param_handler_constructor(PyTypeObject *typ);
 param_handler *new_param_handler(param_handler *def_handler, size_t handler_size);
 
 void write_uint32(char **p, PY_UINT32_T val);
+void write_uint64(char **p, PY_UINT64_T val);
 
 void register_value_handler_table(PoqueTypeEntry *table);
 void register_parameter_handler(PyTypeObject *typ, ph_new constructor);

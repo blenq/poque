@@ -161,25 +161,13 @@ int_examine_int8(IntParamHandler *handler, PyObject *param) {
 
     val = PyLong_AsLongLongAndOverflow(param, &overflow);
     if (overflow) {
+        /* value does not fit into 64 bits integer, use text */
         return int_set_examine_text(handler, param);
     }
     ip = int_get_current_param(handler, &handler->examine_pos);
     ip->ref = param;
     ip->value.int8 = val;
     return 8;
-}
-
-
-void
-write_uint64(char **p, PY_UINT64_T val) {
-    int i;
-    unsigned char *q = (unsigned char *)*p;
-
-    for (i = 7; i >=0; i--) {
-        *(q + i) = (unsigned char)(val & 0xffL);
-         val >>= 8;
-    }
-    *p += 8;
 }
 
 
@@ -195,6 +183,7 @@ int_encode_at_int8(IntParamHandler *handler, PyObject *param, char *loc) {
 
 static int
 int_total_size_int8(IntParamHandler *handler) {
+    /* returns the total size for 64 bits integer values */
     return handler->examine_pos * 8;
 }
 
@@ -213,7 +202,7 @@ int_set_examine_int8(IntParamHandler *handler, PyObject *param) {
         handler->handler.examine = (ph_examine)int_examine_int8;
         if (handler->examine_pos) {
             /* Other values have been examined earlier. First set up size
-             * calculation because the summing the previous examine results
+             * calculation because the running total of previous examine results
              * gives the wrong number.
              */
             handler->handler.total_size = (ph_total_size)int_total_size_int8;
@@ -235,18 +224,22 @@ int_examine(IntParamHandler *handler, PyObject *param) {
     IntParam *ip;
 
     val = PyLong_AsLongAndOverflow(param, &overflow);
-#if SIZEOF_LONG == 4
+#if SIZEOF_LONG == 4    /* for example on windows or 32 bits linux */
     if (overflow) {
+        /* value does not fit in 32 bits, try with 64 bit integer instead */
         return int_set_examine_int8(handler, param);
     }
-#else
+#else                   /* for example 64 bits linux */
     if (overflow) {
+        /* value does not fit in 64 bits, use text instead */
         return int_set_examine_text(handler, param);
     }
     if (val < INT32_MIN || val > INT32_MAX) {
+        /* value outside 32 bit range, use 64 bit integer instead */
         return int_set_examine_int8(handler, param);
     }
 #endif
+    /* value fits in 32 bits, set up parameter */
     ip = int_get_current_param(handler, &handler->examine_pos);
     ip->ref = param;
     ip->value.int4 = val;

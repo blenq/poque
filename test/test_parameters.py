@@ -126,6 +126,28 @@ class ResultTestParameters():
             None
         ])
 
+    def test_datetime_param(self):
+        self._test_param_val(datetime.datetime.now())
+
+    def test_datetime_array_param(self):
+        self._test_param_val([datetime.datetime.now(),
+                              datetime.datetime.now()])
+
+    def test_datetimetz_param(self):
+        self._test_param_val(datetime.datetime.now(
+            datetime.timezone(datetime.timedelta(hours=2))))
+
+    def test_datetime_mixed_array_param(self):
+        with self.assertRaises(ValueError):
+            self.cn.execute("SELECT $1", ([
+                datetime.datetime.now(),
+                datetime.datetime.now(
+                    datetime.timezone(datetime.timedelta(hours=2)))],))
+
+    def test_datetimetz_array_param(self):
+        self._test_param_val([datetime.datetime.now(
+            datetime.timezone(datetime.timedelta(hours=2)))])
+
     def test_mixed_array_param(self):
         with self.assertRaises(ValueError):
             self.cn.execute("SELECT $1", ([3, 'hi'],))
@@ -181,28 +203,6 @@ class ResultTestParametersCtypes(
             datetime.datetime.now().time(),
             datetime.datetime.now().time()
         ])
-
-    def test_datetime_param(self):
-        self._test_param_val(datetime.datetime.now())
-
-    def test_datetime_array_param(self):
-        self._test_param_val([datetime.datetime.now(),
-                              datetime.datetime.now()])
-
-    def test_datetimetz_param(self):
-        self._test_param_val(datetime.datetime.now(
-            datetime.timezone(datetime.timedelta(hours=2))))
-
-    def test_datetime_mixed_array_param(self):
-        with self.assertRaises(ValueError):
-            self.cn.execute("SELECT $1", ([
-                datetime.datetime.now(),
-                datetime.datetime.now(
-                    datetime.timezone(datetime.timedelta(hours=2)))],))
-
-    def test_datetimetz_array_param(self):
-        self._test_param_val([datetime.datetime.now(
-            datetime.timezone(datetime.timedelta(hours=2)))])
 
     def _test_param_decimal(self, val):
         res = self.cn.execute("SELECT $1", [val])

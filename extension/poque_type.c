@@ -80,7 +80,7 @@ typedef struct _param_handler_constructor {
 } param_handler_constructor;
 
 /* param handler table */
-static param_handler_constructor param_handler_constructors[8];
+static param_handler_constructor param_handler_constructors[9];
 static int num_phcons = 0;
 
 
@@ -112,6 +112,19 @@ get_param_handler_constructor(PyTypeObject *typ) {
         }
     }
     return new_text_param_handler;
+}
+
+
+void
+write_uint64(char **p, PY_UINT64_T val) {
+    int i;
+    unsigned char *q = (unsigned char *)*p;
+
+    for (i = 7; i >=0; i--) {
+        *(q + i) = (unsigned char)(val & 0xffL);
+         val >>= 8;
+    }
+    *p += 8;
 }
 
 /* ====== Array parameter handler =========================================== */

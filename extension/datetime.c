@@ -4,6 +4,9 @@
 static long min_year;
 static long max_year;
 
+static PyObject *utc;
+
+
 static int
 datetime_long_attr(PyObject *mod, const char *attr, long *value) {
     PyObject *py_value;
@@ -21,6 +24,32 @@ datetime_long_attr(PyObject *mod, const char *attr, long *value) {
 #define POSTGRES_EPOCH_JDATE    2451545
 #define DATE_OFFSET             730120
 
+#define USECS_PER_DAY       86400000000
+#define USECS_PER_HOUR      Py_LL(3600000000)
+#define USECS_PER_MINUTE    60000000
+#define USECS_PER_SEC       1000000
+
+
+/* ======= parameter helper functions ======================================= */
+
+static int
+date_pgordinal(PyObject *param, int *ordinal)
+{
+    PyObject *py_ordinal;
+
+    /* get the Python ordinal */
+    py_ordinal = PyObject_CallMethod(param, "toordinal", NULL);
+    if (py_ordinal == NULL) {
+        return -1;
+    }
+
+    /* convert to PG ordinal */
+    *ordinal = (int) (PyLong_AsLong(py_ordinal) - DATE_OFFSET);
+    Py_DECREF(py_ordinal);
+    return 0;
+}
+
+/* ======= date parameter handler =========================================== */
 
 static int
 date_examine(param_handler *handler, PyObject *param) {
@@ -30,16 +59,19 @@ date_examine(param_handler *handler, PyObject *param) {
 static int
 date_encode_at(
         param_handler *handler, PyObject *param, char *loc) {
-    PyObject *py_ordinal;
+    /* PG uses a 32 bit integer which is just the day number, i.e. the ordinal.
+     * Only difference with python ordinal is a different offset
+     */
     int ordinal;
 
-    py_ordinal = PyObject_CallMethod(param, "toordinal", NULL);
-    if (py_ordinal == NULL) {
+    if (date_pgordinal(param, &ordinal) < 0) {
         return -1;
     }
-    ordinal = (int) PyLong_AsLong(py_ordinal) - DATE_OFFSET;
+
+    /* write ordinal as parameter value */
     write_uint32(&loc, ordinal);
-    Py_DECREF(py_ordinal);
+
+    /* 4 bytes further */
     return 4;
 }
 
@@ -57,7 +89,96 @@ static param_handler date_param_handler = {
 
 static param_handler *
 new_date_param_handler(int num_param) {
+    /* date parameter constructor */
     return &date_param_handler;
+}
+
+
+/* ==== datetime parameter handler ========================================== */
+
+
+static int
+datetime_encode_at(
+        param_handler *handler, PyObject *param, char *loc) {
+    int ordinal;
+    PY_INT64_T val;
+
+    if (date_pgordinal(param, &ordinal) < 0) {
+        return -1;
+    }
+    val = ordinal * USECS_PER_DAY;
+    val += (PyDateTime_DATE_GET_HOUR(param)  * USECS_PER_HOUR +
+            PyDateTime_DATE_GET_MINUTE(param) * USECS_PER_MINUTE +
+            PyDateTime_DATE_GET_SECOND(param) * USECS_PER_SEC +
+            PyDateTime_DATE_GET_MICROSECOND(param));
+    write_uint64(&loc, val);
+    return 8;
+}
+
+
+static int
+datetimetz_encode_at(
+        param_handler *handler, PyObject *param, char *loc) {
+    PyObject *utc_param;
+    int ret;
+
+    utc_param = PyObject_CallMethod(param, "astimezone", "O", utc);
+    if (utc_param == NULL) {
+        return -1;
+    }
+    ret = datetime_encode_at(handler, utc_param, loc);
+    Py_DECREF(utc_param);
+    return ret;
+
+}
+
+
+static int
+datetime_examine(param_handler *handler, PyObject *param) {
+    PyObject *tz;
+    int has_tz;
+
+    /* Presence of timezone must be the same for all items in an datetime array.
+     */
+    tz = PyObject_GetAttrString(param, "tzinfo");
+    if (tz == NULL) {
+        return -1;
+    }
+    has_tz = tz != Py_None;
+    Py_DECREF(tz);
+    if (handler->oid == InvalidOid) {
+        /* first time, adjust the handler appropriately */
+        if (has_tz) {
+            handler->oid = TIMESTAMPTZOID;
+            handler->array_oid = TIMESTAMPTZARRAYOID;
+            handler->encode_at = datetimetz_encode_at;
+        }
+        else {
+            handler->oid = TIMESTAMPOID;
+            handler->array_oid = TIMESTAMPARRAYOID;
+        }
+    }
+    else if (has_tz != (handler->oid == TIMESTAMPTZOID)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "Can not mix naive and aware datetimes");
+        return -1;
+    }
+    return 8;
+}
+
+
+static param_handler *
+new_datetime_param_handler(int num_param) {
+    static param_handler def_handler = {
+        datetime_examine,               /* examine */
+        NULL,                           /* total_size */
+        NULL,                           /* encode */
+        datetime_encode_at,             /* encode_at */
+        (ph_free)PyMem_Free,            /* free */
+        InvalidOid,                     /* oid */
+        TIMESTAMPARRAYOID               /* array_oid */
+    };
+    return new_param_handler(&def_handler, sizeof(param_handler));
 }
 
 
@@ -112,11 +233,6 @@ date_binval(data_crs *crs)
 }
 
 
-#define USECS_PER_DAY       86400000000
-#define USECS_PER_HOUR      Py_LL(3600000000) /* this might become a uint32 */
-#define USECS_PER_MINUTE    60000000
-#define USECS_PER_SEC       1000000
-
 static int
 time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
                    int *usec)
@@ -158,23 +274,6 @@ time_binval(data_crs *crs)
     if (crs_read_int64(crs, &value) < 0)
         return NULL;
     return _time_binval(crs, value, Py_None);
-}
-
-
-static PyObject *
-get_utc(void) {
-
-    static PyObject *utc;
-    PyObject *tz;
-
-    if (utc == NULL) {
-        tz = load_python_object("datetime", "timezone");
-        if (tz == NULL)
-            return NULL;
-        utc = PyObject_GetAttrString(tz, "utc");
-        Py_DECREF(tz);
-    }
-    return utc;
 }
 
 
@@ -264,11 +363,6 @@ timestamp_binval(data_crs *crs) {
 static PyObject *
 timestamptz_binval(data_crs *crs)
 {
-    PyObject *utc;
-
-    utc = get_utc();
-    if (utc == NULL)
-        return NULL;
     return _timestamp_binval(crs, utc);
 }
 
@@ -388,6 +482,7 @@ init_datetime(void)
 {   /* Initializes datetime API and get min and max year */
 
     PyObject *datetime_module;
+    PyObject *tz;
 
     /* necessary to call PyDate API */
     PyDateTime_IMPORT;
@@ -405,10 +500,21 @@ init_datetime(void)
     }
     Py_DECREF(datetime_module);
 
+    tz = load_python_object("datetime", "timezone");
+    if (tz == NULL) {
+        return -1;
+    }
+    utc = PyObject_GetAttrString(tz, "utc");
+    Py_DECREF(tz);
+    if (utc == NULL) {
+        return -1;
+    }
 
     /* initialize hash table of value converters */
     register_value_handler_table(dt_value_handlers);
 
     register_parameter_handler(PyDateTimeAPI->DateType, new_date_param_handler);
+    register_parameter_handler(PyDateTimeAPI->DateTimeType,
+                               new_datetime_param_handler);
     return 0;
 }
