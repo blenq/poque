@@ -1,37 +1,47 @@
 #include "poque_type.h"
 
 
+/* ==== int parameter handler =============================================== */
+
+/* Python ints will be converted to pg int4, int8 or text, depending on size.
+ *
+ * For an array the largest (or smallest) value determine the actual type.
+ */
+
 #define int_handler_single(h) ((h)->num_params == 1)
 
+/* struct for storing the parameter values */
 typedef struct _IntParam {
     union {
-        int int4;
-        long long int8;
-        char *string;
+        int int4;           /* int4 value */
+        long long int8;     /* int8 value */
+        char *string;       /* text value */
     } value;
-    Py_ssize_t size;
-    PyObject *ref;
-    PyObject *s;
+    Py_ssize_t size;        /* size of text value */
+    PyObject *ref;          /* reference to python object */
 } IntParam;
 
 
 typedef struct _IntParamHandler {
-    param_handler handler;
-    int num_params;
-    int examine_pos;
-    int encode_pos;
+    param_handler handler;      /* base handler */
+    int num_params;             /* number of parameters */
+    int examine_pos;            /* where to examine next */
+    int encode_pos;             /* where to encode next */
     /* this union is used to prevent an extra malloc in case of a single
      * value
      */
     union {
         IntParam param;
         IntParam *params;
-    } params;
+    } params;                   /* cache of parameter values */
 } IntParamHandler;
 
 
 static inline IntParam *
 int_get_current_param(IntParamHandler *handler, int *pos) {
+    /* gets the param value to work with and advances the index in case of
+     * multiple value
+     */
     if (int_handler_single(handler)) {
         return &handler->params.param;
     } else {
@@ -42,21 +52,28 @@ int_get_current_param(IntParamHandler *handler, int *pos) {
 
 static int
 int_examine_text(IntParamHandler *handler, PyObject *param) {
+    /* value(s) too large for PG integer, convert to PG text (i.e. char *) */
+
     char *val;
     Py_ssize_t size;
     IntParam *ip;
 
+    /* execute equivalent of "str(param)" */
     param = PyObject_Str(param);
     if (param == NULL) {
         return -1;
     }
+
+    /* get access to raw UTF 8 pointer and size in bytes */
     val = PyUnicode_AsUTF8AndSize(param, &size);
     if (val == NULL) {
         Py_DECREF(param);
         return -1;
     }
+
+    /* set parameter values */
     ip = int_get_current_param(handler, &handler->examine_pos);
-    ip->ref = param; /* keep reference for decrementing refcount later */
+    ip->ref = param;    /* keep reference for decrementing refcount later */
     ip->size = size;
     ip->value.string = val;
     return size;
@@ -67,6 +84,8 @@ static int
 int_encode_text(IntParamHandler *handler, PyObject *param, char **loc) {
     IntParam *ip;
 
+    /* just return the earlier stored pointer to the UTF-8 encoded char buffer
+     */
     ip = int_get_current_param(handler, &handler->encode_pos);
     *loc = ip->value.string;
     return 0;
@@ -78,6 +97,7 @@ int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
     IntParam *ip;
     int size;
 
+    /* copy the earlier retrieved UTF-8 encoded char buffer to location */
     ip = int_get_current_param(handler, &handler->encode_pos);
     size = ip->size;
     memcpy(loc, ip->value.string, size);
@@ -87,7 +107,7 @@ int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
 
 static int
 int_total_size_text(IntParamHandler *handler) {
-    /* calculate total size using previously cached values */
+    /* calculate total size using previously retrieved values */
     int i, ret=0;
 
     for (i = 0; i < handler->examine_pos; i++) {
@@ -102,7 +122,9 @@ int_total_size_text(IntParamHandler *handler) {
 static int
 int_set_examine_text(IntParamHandler *handler, PyObject *param) {
     int i;
+    int examine_pos;
 
+    /* set up handler for text values */
     handler->handler.oid = TEXTOID;
     handler->handler.array_oid = TEXTARRAYOID;
     handler->handler.encode_at = (ph_encode_at)int_encode_at_text;
@@ -122,31 +144,14 @@ int_set_examine_text(IntParamHandler *handler, PyObject *param) {
             handler->handler.total_size = (ph_total_size)int_total_size_text;
 
             /* and then rewrite the cached values */
-            for (i = 0; i < handler->examine_pos; i++) {
+            examine_pos = handler->examine_pos;
+            handler->examine_pos = 0;
+            for (i = 0; i < examine_pos; i++) {
                 IntParam *p;
-                char *val;
-                PyObject *py_str;
-
                 p = &handler->params.params[i];
-
-                /* replace ref with string version */
-                py_str = PyObject_Str(p->ref);
-                if (py_str == NULL) {
-                    /* free uses examine_pos in decref loop */
-                    handler->examine_pos = i;
+                if (int_examine_text(handler, p->ref) < 0) {
                     return -1;
                 }
-                p->ref = py_str;
-
-                /* get char pointer and size and store for later */
-                val = PyUnicode_AsUTF8AndSize(p->ref, &p->size);
-                if (val == NULL) {
-                    Py_DECREF(py_str);
-                    /* free uses examine_pos in decref loop */
-                    handler->examine_pos = i;
-                    return -1;
-                }
-                p->value.string = val;
             }
         }
     }
