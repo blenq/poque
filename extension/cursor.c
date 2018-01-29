@@ -119,7 +119,7 @@ crs_read_double(data_crs *crs, double *value)
 
 
 int
-crs_read_float(data_crs *crs, float *value)
+crs_read_float(data_crs *crs, double *value)
 {
 	char *data;
 

@@ -28,7 +28,7 @@ int crs_read_uint32(data_crs *crs, PY_UINT32_T *value);
 #define crs_read_int32(crs, value) crs_read_uint32(crs, (PY_UINT32_T *) value)
 int crs_read_uint64(data_crs *crs, PY_UINT64_T *value);
 #define crs_read_int64(crs, value) crs_read_uint64(crs, (PY_UINT64_T *) value)
-int crs_read_float(data_crs *crs, float *value);
+int crs_read_float(data_crs *crs, double *value);
 int crs_read_double(data_crs *crs, double *value);
 
 
