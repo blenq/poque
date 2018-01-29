@@ -3,6 +3,8 @@ from ctypes import CDLL, Structure, c_char_p, c_int, POINTER, c_void_p
 from ctypes.util import find_library
 
 pq_path = find_library('pq')
+if not pq_path:
+    pq_path = find_library('libpq')
 pq = CDLL(pq_path)
 
 

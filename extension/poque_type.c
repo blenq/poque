@@ -170,7 +170,7 @@ static int array_examine_list(
 
     if (curr_length == -1) {
         /* never been this deep in list hierarchy so initialize dimension */
-        handler->dims[depth] = list_length;
+        handler->dims[depth] = (int)list_length;
         handler->num_dims++;
     }
     else if (list_length != curr_length) {
@@ -275,7 +275,8 @@ static int array_examine_items(ArrayParamHandler *handler, PyObject *param) {
 
 static int
 array_examine(ArrayParamHandler *handler, PyObject *param) {
-    int size, total_items, i;
+    int size, total_items;
+    unsigned int i;
 
     /* First examine the list */
     if (array_examine_list(handler, param, 0) < 0) {
@@ -303,7 +304,7 @@ array_examine(ArrayParamHandler *handler, PyObject *param) {
     /* Now calculate the total size, 12 for the header, 8 for each dimension,
      * 4 for each item and the size of the non NULL items calculated above */
     total_items = 1;
-    for (i = 0; i < handler->num_dims; i++) {
+    for (i = 0; i < (int)handler->num_dims; i++) {
         total_items *= handler->dims[i];
     }
     handler->handler.oid = handler->el_handler->array_oid;
@@ -363,7 +364,7 @@ array_write_values(ArrayParamHandler *handler, PyObject *param, char **loc) {
 
 static int
 array_encode_at(ArrayParamHandler *handler, PyObject *param, char *loc) {
-    int i;
+    unsigned int i;
 
     /* write array header */
     write_uint32(&loc, handler->num_dims);
@@ -527,7 +528,7 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
 
 PyObject *
 array_binval(data_crs *crs) {
-    int i;
+    unsigned int i;
     PY_UINT32_T dims;
     PY_INT32_T flags, arraydims[7];
     Oid elem_type, sub_elem_type=InvalidOid;

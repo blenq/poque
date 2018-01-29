@@ -76,7 +76,7 @@ int_examine_text(IntParamHandler *handler, PyObject *param) {
     ip->ref = param;    /* keep reference for decrementing refcount later */
     ip->size = size;
     ip->value.string = val;
-    return size;
+    return (int)size;
 }
 
 
@@ -99,7 +99,7 @@ int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
 
     /* copy the earlier retrieved UTF-8 encoded char buffer to location */
     ip = int_get_current_param(handler, &handler->encode_pos);
-    size = ip->size;
+    size = (int)ip->size;
     memcpy(loc, ip->value.string, size);
     return size;
 }
@@ -113,7 +113,7 @@ int_total_size_text(IntParamHandler *handler) {
     for (i = 0; i < handler->examine_pos; i++) {
         IntParam *p;
         p = &handler->params.params[i];
-        ret += p->size;
+        ret += (int)p->size;
     }
     return ret;
 }
@@ -449,7 +449,7 @@ float64_binval(data_crs *crs)
 static PyObject *
 float32_binval(data_crs *crs)
 {
-	float val;
+	double val;
 	if (crs_read_float(crs, &val) < 0)
 		return NULL;
 	return PyFloat_FromDouble(val);

@@ -6,7 +6,7 @@
 static char
 hex_to_char(char hex) {
     char c = -1;
-    static const char const hex_vals[] = {
+    static const char hex_vals[] = {
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -161,7 +161,7 @@ bytea_binval(data_crs* crs)
 
 static int
 bytes_examine(param_handler *handler, PyObject *param) {
-	return PyBytes_GET_SIZE(param);
+	return (int)PyBytes_GET_SIZE(param);
 }
 
 static int
@@ -176,7 +176,7 @@ bytes_encode_at(param_handler *handler, PyObject *param, char *loc) {
 	char *str;
 	int size;
 
-	size = PyBytes_GET_SIZE(param);
+	size = (int)PyBytes_GET_SIZE(param);
 	str = PyBytes_AS_STRING(param);
 	memcpy(loc, str, size);
 
@@ -261,7 +261,7 @@ text_examine(param_handler *handler, PyObject *param) {
 	}
 	tp->size = size;
 	tp->string = string;
-	return size;
+	return (int)size;
 }
 
 
@@ -293,7 +293,7 @@ text_encode_at(param_handler *handler, PyObject *param, char *loc) {
 	TextParam *tp;
 
     tp = text_get_encode_param(handler);
-	size = tp->size;
+	size = (int)tp->size;
 	memcpy(loc, tp->string, size);
 	return size;
 }

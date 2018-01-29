@@ -323,7 +323,7 @@ time_binval(data_crs *crs)
 static PyObject *
 timetz_binval(data_crs *crs)
 {
-    PyObject *tz, *timedelta, *ret, *offset, *timezone;
+    PyObject *tz, *timedelta, *ret, *offset, *tzone;
     PY_INT64_T value;
     int seconds;
 
@@ -345,14 +345,14 @@ timetz_binval(data_crs *crs)
         Py_DECREF(offset);
         return NULL;
     }
-    timezone = PyObject_CallFunctionObjArgs(tz, offset, NULL);
+    tzone = PyObject_CallFunctionObjArgs(tz, offset, NULL);
     Py_DECREF(offset);
     Py_DECREF(tz);
-    if (timezone == NULL)
+    if (tzone == NULL)
         return NULL;
 
-    ret = _time_binval(crs, value, timezone);
-    Py_DECREF(timezone);
+    ret = _time_binval(crs, value, tzone);
+    Py_DECREF(tzone);
     return ret;
 }
 

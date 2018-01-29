@@ -199,7 +199,7 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 	int *param_lengths = NULL, *param_formats = NULL;
 	size_t clean_up_count = 0, handler_count = 0;
 	PyObject *param = NULL;
-	Py_ssize_t i;
+	int i;
 	PGresult *res = NULL;
 
 	param_handlers = PyMem_Malloc(num_params * sizeof(param_handler *));
@@ -277,7 +277,7 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 
 	/* everything set up, send the command with parameters */
 	Py_BEGIN_ALLOW_THREADS
-	res = PQexecParams(conn, sql, num_params, param_types,
+	res = PQexecParams(conn, sql, (int)num_params, param_types,
 					   (const char * const*)param_values, param_lengths,
 					   param_formats, format);
 	Py_END_ALLOW_THREADS
