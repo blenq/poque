@@ -413,13 +413,19 @@ class ResultTestValues():
         self.assertEqual(res.getvalue(0, 0), ['hello', 'hi'])
         self.assertEqual(res.ftype(0), self.poque.NAMEARRAYOID)
 
+    def get_unknown_cmp_type(self):
+        if (self.cn.server_version < 100000):
+            return self.poque.UNKNOWNOID
+        else:
+            return self.poque.TEXTOID
+
     def test_unknown_value_str(self):
         self._test_value_and_type_str("SELECT 'hello'::unknown", 'hello',
-                                      self.poque.TEXTOID)
+                                      self.get_unknown_cmp_type())
 
     def test_unknown_value_bin(self):
         self._test_value_and_type_bin("SELECT 'hello'::unknown", 'hello',
-                                      self.poque.TEXTOID)
+                                      self.get_unknown_cmp_type())
 
     def test_null_value_str(self):
         res = self.cn.execute(command="SELECT NULL", result_format=0)
