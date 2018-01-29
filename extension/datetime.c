@@ -24,10 +24,10 @@ datetime_long_attr(PyObject *mod, const char *attr, long *value) {
 #define POSTGRES_EPOCH_JDATE    2451545
 #define DATE_OFFSET             730120
 
-#define USECS_PER_DAY       86400000000
+#define USECS_PER_DAY       Py_LL(86400000000)
 #define USECS_PER_HOUR      Py_LL(3600000000)
-#define USECS_PER_MINUTE    60000000
-#define USECS_PER_SEC       1000000
+#define USECS_PER_MINUTE    Py_LL(60000000)
+#define USECS_PER_SEC       Py_LL(1000000)
 
 
 /* ======= parameter helper functions ======================================= */
