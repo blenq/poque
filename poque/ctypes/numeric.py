@@ -117,28 +117,31 @@ def _read_numeric_bin(crs):
     elif sign != NUMERIC_POS:
         raise Exception('Bad value')
 
-    # number of digits
-    ndigits = dscale + (weight + 1) * 4
-
     # fill digits
     digits = []
+
     for dg in pg_digits:
         if dg > 9999:
             raise Error("Invalid value")
         # a postgres digit contains 4 decimal digits
-        digits.extend([dg // 1000, (dg // 100) % 10, (dg // 10) % 10, dg % 10])
-
-    len_diff = ndigits - len(digits)
-    if len_diff < 0:
-        # the pg value can have more zeroes than the display scale indicates
-        del digits[len_diff:]
-    else:
-        # add extra zeroes indicated by display scale that are not in the
-        # actual value
-        digits.extend([0] * (len_diff))
+        q, r = divmod(dg, 1000)
+        digits.append(q)
+        q, r = divmod(r, 100)
+        digits.append(q)
+        q, r = divmod(r, 10)
+        digits.append(q)
+        digits.append(r)
 
     # now create the decimal
-    return Decimal((sign, digits, -dscale))
+    exp = (weight + 1 - npg_digits) * 4
+#     if dscale and dscale != (-exp):
+#         diff = dscale + exp
+#         exp -= diff
+#         if diff > 0:
+#             digits.extend([0] * diff)
+#         else:
+#             del digits[diff:]
+    return Decimal((sign, digits, exp))
 
 
 def get_numeric_converters():

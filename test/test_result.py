@@ -286,11 +286,6 @@ class ResultTestValues():
 
     def assertNumericEqual(self, val1, val2):
         self.assertEqual(val1, val2)
-        # comparing tuples makes sure that values are equal including trailing
-        # zeroes behind the comma
-        t1 = val1.as_tuple()
-        t2 = val2.as_tuple()
-        self.assertTrue(t1 == t2 or t1[1][:len(t2[1])] == t2[1])
 
     def _test_numeric_value(self, fmt):
         res = self.cn.execute(
@@ -299,9 +294,10 @@ class ResultTestValues():
                     " '0.000000000000001230'::numeric, "
                     " '-123456789012345678901234567890'::numeric, "
                     " '-0.000000000000001230'::numeric, "
-                    " '9999E+100'::numeric, "
-                    " '9999E-100'::numeric, "
-                    " '0'::numeric;",
+                    " '9990E+99'::numeric, "
+                    " '9990E-98'::numeric, "
+                    " '0'::numeric, "
+                    " '0.00'::numeric;",
             result_format=fmt)
         self.assertNumericEqual(res.getvalue(0, 0), Decimal('123.45600'))
         self.assertTrue(res.getvalue(0, 1).is_nan())
@@ -314,11 +310,13 @@ class ResultTestValues():
         self.assertNumericEqual(
             res.getvalue(0, 5), Decimal('-0.000000000000001230'))
         self.assertNumericEqual(
-            res.getvalue(0, 6), Decimal('9999E+100'))
+            res.getvalue(0, 6), Decimal('9990E+99'))
         self.assertNumericEqual(
-            res.getvalue(0, 7), Decimal('9999E-100'))
+            res.getvalue(0, 7), Decimal('9990E-98'))
         self.assertNumericEqual(
             res.getvalue(0, 8), Decimal('0'))
+        self.assertNumericEqual(
+            res.getvalue(0, 8), Decimal('0.00'))
 
     def test_numeric_value_str(self):
         self._test_numeric_value(0)

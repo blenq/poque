@@ -543,7 +543,7 @@ numeric_binval(data_crs *crs) {
     /* Create a Decimal from a binary value */
     poque_uint16 npg_digits, sign, dscale;
     poque_int16 weight;
-    int ndigits, i, j;
+    int i;
     PyObject *digits, *ret=NULL;
 
     /* Get the field values */
@@ -568,21 +568,18 @@ numeric_binval(data_crs *crs) {
         return NULL;
     }
 
-    /* calculate number of digits of the Python Decimal */
-    ndigits = dscale + (weight + 1) * 4;
-
     /* create a tuple to hold the digits */
-    digits = PyTuple_New(ndigits);
+    digits = PyTuple_New(npg_digits * 4);
     if (digits == NULL) {
     	return NULL;
     }
 
     /* fill the digits */
-    j = 0;
     for (i = 0; i < npg_digits; i++) {
         /* fill from postgres digits. A postgres digit contains 4 decimal
          * digits */
         poque_uint16 pg_digit;
+        int j;
 
         if (crs_read_uint16(crs, &pg_digit) < 0)
             goto end;
@@ -590,39 +587,22 @@ numeric_binval(data_crs *crs) {
             PyErr_SetString(PoqueError, "Invalid numeric value");
             goto end;
         }
-
-        if (j == ndigits)
-        	continue;
-        if (numeric_set_digit(digits, pg_digit / 1000, j++) < 0)
+        j = i * 4;
+        if (numeric_set_digit(digits, pg_digit / 1000, j) < 0)
             goto end;
-
-        if (j == ndigits)
-        	continue;
         pg_digit = pg_digit % 1000;
-        if (numeric_set_digit(digits, pg_digit / 100, j++) < 0)
+        if (numeric_set_digit(digits, pg_digit / 100, j + 1) < 0)
             goto end;
-
-        if (j == ndigits)
-        	continue;
         pg_digit = pg_digit % 100;
-        if (numeric_set_digit(digits, pg_digit / 10, j++) < 0)
+        if (numeric_set_digit(digits, pg_digit / 10, j + 2) < 0)
             goto end;
-
-        if (j == ndigits)
-        	continue;
-        if (numeric_set_digit(digits, pg_digit % 10, j++) < 0)
+        if (numeric_set_digit(digits, pg_digit % 10, j + 3) < 0)
             goto end;
-    }
-    /* add extra zeroes if necessary */
-    for (i = j; i < ndigits; i++) {
-        if (numeric_set_digit(digits, 0, i) < 0) {
-            goto end;
-        }
     }
 
     /* create the Decimal now */
     ret = PyObject_CallFunction(
-    	PyDecimal, "((HOi))", sign, digits, -((int)dscale));
+        PyDecimal, "((HOi))", sign, digits, (weight + 1 - npg_digits) * 4);
 
 end:
 	Py_DECREF(digits);
