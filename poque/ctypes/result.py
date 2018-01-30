@@ -1,4 +1,5 @@
-from ctypes import (c_void_p, c_int, c_char_p, c_uint, string_at)
+from ctypes import (c_void_p, c_int, c_char_p, c_uint, string_at, c_byte)
+import codecs
 
 from .pq import pq, check_string
 from .common import result_converters
@@ -8,8 +9,7 @@ from .numeric import get_numeric_converters
 from .lib import Error, get_property, get_method
 from .text import get_text_converters
 from .various import get_various_converters
-from poque.ctypes.constants import FORMAT_BINARY
-
+from poque.ctypes.constants import FORMAT_TEXT
 
 result_converters.update(get_numeric_converters())
 result_converters.update(get_text_converters())
@@ -59,10 +59,11 @@ class Result(c_void_p):
 
     def pq_getvalue(self, row_number, column_number):
         data = self._pq_getvalue(row_number, column_number)
-        length = self.getlength(row_number, column_number)
-        data = string_at(data, length)
-        return (data if self.fformat(column_number) == FORMAT_BINARY
-                else data.decode())
+        if data is not None:
+            if self.fformat(column_number) == FORMAT_TEXT:
+                return codecs.decode(data, "utf-8")
+            self._views.append(data)
+        return data
 
     def getvalue(self, row_number, column_number):
         # first check for NULL values
@@ -84,8 +85,7 @@ class Result(c_void_p):
             if reader is not None:
                 # create a cursor from the address and length
                 data = self._pq_getvalue(row_number, column_number)
-                length = self.getlength(row_number, column_number)
-                crs = ValueCursor(data, length)
+                crs = ValueCursor(data)
 
                 # convert the data in the cursor
                 value = reader(crs)
@@ -131,8 +131,19 @@ def check_bool(res, func, args):
 pq.PQgetisnull.argtypes = [Result, c_int, c_int]
 pq.PQgetisnull.errcheck = check_bool
 
+
+def check_value(res, func, args):
+    if res is not None:
+        pg_res, row, col = args
+        length = pg_res.getlength(row, col)
+        return memoryview((c_byte * length).from_address(res))
+#         return ValueCursor(data)
+    return res
+
+
 pq.PQgetvalue.argtypes = [Result, c_int, c_int]
 pq.PQgetvalue.restype = c_void_p
+pq.PQgetvalue.errcheck = check_value
 
 pq.PQresultErrorMessage.argtypes = [Result]
 pq.PQresultErrorMessage.restype = c_char_p
@@ -142,6 +153,8 @@ pq.PQresultErrorMessage.errcheck = check_string
 def check_clear(res, func, args):
     result = args[0]
     if result:
+        for v in result._views:
+            v.release()
         result.value = 0
 
 

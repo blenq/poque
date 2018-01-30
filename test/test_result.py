@@ -285,7 +285,12 @@ class ResultTestValues():
             [23, 200], self.poque.VARBITARRAYOID)
 
     def assertNumericEqual(self, val1, val2):
+        if val1.is_nan():
+            self.assertTrue(val2.is_nan())
+            return
         self.assertEqual(val1, val2)
+        # at least as many digits as went in
+        self.assertTrue(len(val1.as_tuple()[1]) >= len(val2.as_tuple()[1]))
 
     def _test_numeric_value(self, fmt):
         res = self.cn.execute(
@@ -297,7 +302,9 @@ class ResultTestValues():
                     " '9990E+99'::numeric, "
                     " '9990E-98'::numeric, "
                     " '0'::numeric, "
-                    " '0.00'::numeric;",
+                    " '0.000000'::numeric, "
+                    " 'NaN'::numeric, "
+                    " '1234567890.0987654321'::numeric;",
             result_format=fmt)
         self.assertNumericEqual(res.getvalue(0, 0), Decimal('123.45600'))
         self.assertTrue(res.getvalue(0, 1).is_nan())
@@ -316,7 +323,11 @@ class ResultTestValues():
         self.assertNumericEqual(
             res.getvalue(0, 8), Decimal('0'))
         self.assertNumericEqual(
-            res.getvalue(0, 8), Decimal('0.00'))
+            res.getvalue(0, 9), Decimal('0.000000'))
+        self.assertNumericEqual(
+            res.getvalue(0, 10), Decimal('NaN'))
+        self.assertNumericEqual(
+            res.getvalue(0, 11), Decimal('1234567890.0987654321'))
 
     def test_numeric_value_str(self):
         self._test_numeric_value(0)

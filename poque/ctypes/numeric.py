@@ -104,12 +104,8 @@ def _read_numeric_str(crs):
 def _read_numeric_bin(crs):
     """ Reads a binary numeric/decimal value """
 
-    # Read field values: number of digits, weight, sign, display scale.
+    # Read field values: number of pg digits, weight, sign, display scale.
     npg_digits, weight, sign, dscale = crs.advance_struct_format("HhHH")
-    if npg_digits:
-        pg_digits = crs.advance_struct_format('{}H'.format(npg_digits))
-    else:
-        pg_digits = []
     if sign == NUMERIC_NAN:
         return Decimal('NaN')
     if sign == NUMERIC_NEG:
@@ -117,10 +113,13 @@ def _read_numeric_bin(crs):
     elif sign != NUMERIC_POS:
         raise Exception('Bad value')
 
+    ndigits = dscale + (weight + 1) * 4
+
     # fill digits
     digits = []
 
-    for dg in pg_digits:
+    for _ in range(npg_digits):
+        dg = crs.advance_single('H')
         if dg > 9999:
             raise Error("Invalid value")
         # a postgres digit contains 4 decimal digits
@@ -132,16 +131,12 @@ def _read_numeric_bin(crs):
         digits.append(q)
         digits.append(r)
 
-    # now create the decimal
-    exp = (weight + 1 - npg_digits) * 4
-#     if dscale and dscale != (-exp):
-#         diff = dscale + exp
-#         exp -= diff
-#         if diff > 0:
-#             digits.extend([0] * diff)
-#         else:
-#             del digits[diff:]
-    return Decimal((sign, digits, exp))
+    l_digits = len(digits)
+    if l_digits < ndigits:
+        digits.extend([0] * (ndigits - len(digits)))
+    elif l_digits > ndigits:
+        del digits[ndigits - l_digits:]
+    return Decimal((sign, digits, -dscale))
 
 
 def get_numeric_converters():
