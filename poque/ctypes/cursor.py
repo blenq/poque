@@ -8,8 +8,8 @@ from .lib import Error
 class ValueCursor():
     """ Cursor object to traverse through postgresql data value """
 
-    def __init__(self, data, length):
-        self.data = memoryview((c_byte * length).from_address(data))
+    def __init__(self, data):
+        self.data = data
         self.idx = 0
 
     def at_end(self):
@@ -59,11 +59,4 @@ class ValueCursor():
 
     def cursor(self, length):
         # create sub cursor
-        return SubCursor(self.advance_view(length))
-
-
-class SubCursor(ValueCursor):
-
-    def __init__(self, data):
-        self.data = data
-        self.idx = 0
+        return ValueCursor(self.advance_view(length))

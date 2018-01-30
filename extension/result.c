@@ -4,33 +4,21 @@ typedef struct poque_Result {
     PyObject_HEAD
     PGresult *result;
     PyObject *wr_list;
+    PyObject *vw_list;
 } poque_Result;
 
-
-static void
-_Result_Init(poque_Result *result, PGresult *res) {
-    if (result) {
-        result->result = res;
-        result->wr_list = NULL;
-    }
-}
-
-static PyObject*
-Result_New(PyTypeObject *type, PyObject *args, PyObject *kwds)
-{
-    poque_Result *self;
-
-    self = (poque_Result *)type->tp_alloc(type, 0);
-    _Result_Init(self, NULL);
-    return (PyObject *)self;
-}
 
 poque_Result *
 PoqueResult_New(PGresult *res) {
     poque_Result *result;
 
     result = PyObject_New(poque_Result, &poque_ResultType);
-    _Result_Init(result, res);
+    if (result == NULL) {
+        return NULL;
+    }
+    result->result = res;
+    result->vw_list = NULL;
+    result->wr_list = NULL;
     return result;
 }
 
@@ -46,6 +34,18 @@ Result_dealloc(poque_Result *self) {
 
 static PyObject *
 Result_clear(poque_Result *self, PyObject *unused) {
+    if (self->vw_list) {
+        Py_ssize_t i, len;
+
+        len = PyList_GET_SIZE(self->vw_list);
+        for (i = 0; i < len; i++) {
+            PyObject *vw;
+            vw = PyList_GET_ITEM(self->vw_list, i);
+            PyObject_CallMethod(vw, "release", NULL);
+        }
+        Py_DECREF(self->vw_list);
+        self->vw_list = NULL;
+    }
     PQclear(self->result);
     self->result = NULL;
     Py_RETURN_NONE;
@@ -184,9 +184,32 @@ Result_getvalue(poque_Result *self, PyObject *args, PyObject *kwds)
         return NULL;
     }
     data = PQgetvalue(self->result, row, column);
+    if (data == NULL) {
+        Py_RETURN_NONE;
+    }
     len = PQgetlength(self->result, row, column);
-    if (PQfformat(self->result, column) == 1)
-        return PyBytes_FromStringAndSize(data, len);
+    if (PQfformat(self->result, column) == 1) {
+        PyObject *vw, *vw_list;
+
+        vw_list = self->vw_list;
+        if (self->vw_list == NULL) {
+            vw_list = PyList_New(0);
+            if (vw_list == NULL) {
+                return NULL;
+            }
+            self->vw_list = vw_list;
+        }
+
+        vw = PyMemoryView_FromMemory(data, len, PyBUF_READ);
+        if (vw == NULL) {
+            return NULL;
+        }
+        if (PyList_Append(vw_list, vw) == -1) {
+            Py_DECREF(vw);
+            return NULL;
+        }
+        return vw;
+    }
     return PyUnicode_FromStringAndSize(data, len);
 }
 
@@ -336,12 +359,5 @@ PyTypeObject poque_ResultType = {
     Result_methods,                             /* tp_methods */
     0,                                          /* tp_members */
     Result_getset,                              /* tp_getset */
-    0,                                          /* tp_base */
-    0,                                          /* tp_dict */
-    0,                                          /* tp_descr_get */
-    0,                                          /* tp_descr_set */
-    0,                                          /* tp_dictoffset */
-    0, /* (initproc)Conn_init,                         tp_init */
-    0,                                          /* tp_alloc */
-    Result_New,                                   /* tp_new */
+    0
 };

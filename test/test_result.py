@@ -157,10 +157,18 @@ class ResultTestValues():
     def test_formats(self):
         res = self.cn.execute(command="SELECT 6::int4", result_format=0)
         self.assertEqual(res.pq_getvalue(0, 0), "6")
-        self.assertEqual(res.pq_getvalue(2, 3), "")
+        self.assertEqual(res.pq_getvalue(2, 3), None)
         res = self.cn.execute(command="SELECT 'hoi'", result_format=1)
         self.assertEqual(res.pq_getvalue(0, 0), b"hoi")
-        self.assertEqual(res.pq_getvalue(2, 3), "")
+        self.assertEqual(res.pq_getvalue(2, 3), None)
+
+    def test_view(self):
+        res = self.cn.execute(command="SELECT 'hoi'", result_format=1)
+        val = res.pq_getvalue(0, 0)
+        self.assertEqual(val, b"hoi")
+        res.clear()
+        with self.assertRaises(ValueError):
+            val[0]
 
     def test_two_queries(self):
         res = self.cn.execute(command="SELECT 1;SELECT 2", result_format=0)
