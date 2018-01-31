@@ -56,7 +56,7 @@ crs_read_uint16(data_crs *crs, poque_uint16 *value)
     if (data == NULL)
         return -1;
 
-    *value = ((poque_uint16)data[0] << 8) + data[1];
+    *value = ((poque_uint16)data[0] << 8) | data[1];
     return 0;
 }
 

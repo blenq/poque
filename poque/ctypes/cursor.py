@@ -1,5 +1,4 @@
 from codecs import decode
-from ctypes import c_byte
 
 from .common import get_struct
 from .lib import Error
