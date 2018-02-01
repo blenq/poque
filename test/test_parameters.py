@@ -228,6 +228,9 @@ class ResultTestParametersCtypes(
         self._test_param_decimal(Decimal('9999E+100'))
         self._test_param_decimal(Decimal('NaN'))
         self._test_param_decimal(Decimal('99E-100'))
+        self._test_param_decimal(Decimal('123000000'))
+        self._test_param_decimal(Decimal('123000000000.0'))
+        self._test_param_decimal(Decimal('12300000000400000000.005'))
         with self.assertRaises(ValueError):
             self._test_param_decimal(Decimal('Inf'))
 

@@ -1,5 +1,6 @@
 from collections import deque
 from decimal import Decimal
+from itertools import repeat, islice
 from struct import calcsize
 
 from .common import (BaseParameterHandler, get_array_bin_reader,
@@ -106,37 +107,38 @@ def _read_numeric_bin(crs):
 
     # Read field values: number of pg digits, weight, sign, display scale.
     npg_digits, weight, sign, dscale = crs.advance_struct_format("HhHH")
+
     if sign == NUMERIC_NAN:
-        return Decimal('NaN')
-    if sign == NUMERIC_NEG:
-        sign = 1
-    elif sign != NUMERIC_POS:
-        raise Exception('Bad value')
+        sign = 0
+        exp = 'n'
+        digits = []
+    else:
+        if sign == NUMERIC_NEG:
+            sign = 1
+        elif sign != NUMERIC_POS:
+            raise Exception('Bad value')
+        exp = -dscale
 
-    ndigits = dscale + (weight + 1) * 4
+        ndigits = dscale + (weight + 1) * 4
 
-    # fill digits
-    digits = []
+        def get_digits():
+            for _ in range(npg_digits):
+                dg = crs.advance_single('H')
+                if dg > 9999:
+                    raise Error("Invalid value")
+                # a postgres digit contains 4 decimal digits
+                q, r = divmod(dg, 1000)
+                yield q
+                q, r = divmod(r, 100)
+                yield q
+                q, r = divmod(r, 10)
+                yield q
+                yield r
+            # yield zeroes until caller is done
+            yield from repeat(0)
 
-    for _ in range(npg_digits):
-        dg = crs.advance_single('H')
-        if dg > 9999:
-            raise Error("Invalid value")
-        # a postgres digit contains 4 decimal digits
-        q, r = divmod(dg, 1000)
-        digits.append(q)
-        q, r = divmod(r, 100)
-        digits.append(q)
-        q, r = divmod(r, 10)
-        digits.append(q)
-        digits.append(r)
-
-    l_digits = len(digits)
-    if l_digits < ndigits:
-        digits.extend([0] * (ndigits - len(digits)))
-    elif l_digits > ndigits:
-        del digits[ndigits - l_digits:]
-    return Decimal((sign, digits, -dscale))
+        digits = [dg for dg in islice(get_digits(), ndigits)]
+    return Decimal((sign, digits, exp))
 
 
 def get_numeric_converters():
@@ -201,36 +203,48 @@ class DecimalParameterHandler(BaseParameterHandler):
     def examine(self, val):
         if val.is_infinite():
             raise ValueError("PostgreSQL does not support decimal infinites")
-        pg_digits = []
         if (val.is_nan()):
-            weight = 0
+            pg_digits = []
+            pg_weight = 0
             pg_sign = NUMERIC_NAN
-            exponent = 0
+            dscale = 0
         else:
-            sign, digits, exponent = val.as_tuple()
+            sign, digits, exp = val.as_tuple()
             pg_sign = NUMERIC_POS if sign == 0 else NUMERIC_NEG
-            if exponent > 0:
-                digits += (0,) * exponent
-                exponent = 0
+            dscale = 0 if exp > 0 else -exp
 
-            quot, i = divmod(len(digits) + exponent, 4)
-            weight = quot + bool(i) - 1  # calculate weight in pg_digits
+            # pg_weight is 10000 based exponent of first pg_digit minus one
+            q, r = divmod(len(digits) + exp, 4)
+            pg_weight = q + bool(r) - 1
 
-            # fill pg_digits
-            if i > 0:
-                # add a pg_digit when we don't start on an exact 4 byte
-                # boundary
-                pg_digits.append(0)
-            for dg in digits:
-                if i == 0:
-                    # add a new pg_digit
-                    pg_digits.append(0)
-                    i = 4
-                i -= 1
-                pg_digits[-1] += dg * 10 ** i
+            def get_pg_digits(i):
+                pg_zeroes = 0
+                pg_digit = 0
+                for dg in digits:
+                    pg_digit *= 10
+                    pg_digit += dg
+                    i += 1
+                    if i == 4:
+                        if pg_digit:
+                            if pg_zeroes:
+                                yield from repeat(0, pg_zeroes)
+                                pg_zeroes = 0
+                            yield pg_digit
+                        else:
+                            pg_zeroes += 1
+                        pg_digit = 0
+                        i = 0
+                if pg_digit:
+                    # add earlier discovered zeroes, which weren't
+                    # trailing after all
+                    if pg_zeroes:
+                        yield from repeat(0, pg_zeroes)
+                    yield pg_digit * 10 ** (4 - i)
+
+            pg_digits = [dg for dg in get_pg_digits((4 - r) % 4)]
 
         npg_digits = len(pg_digits)
-        self.values.append((npg_digits, weight, pg_sign, -exponent) +
+        self.values.append((npg_digits, pg_weight, pg_sign, dscale) +
                            tuple(pg_digits))
         self.size += self.header_size + npg_digits * self.digit_size
 

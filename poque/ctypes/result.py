@@ -1,4 +1,4 @@
-from ctypes import (c_void_p, c_int, c_char_p, c_uint, string_at, c_byte)
+from ctypes import (c_void_p, c_int, c_char_p, c_uint, string_at, c_ubyte)
 import codecs
 
 from .pq import pq, check_string
@@ -136,7 +136,7 @@ def check_value(res, func, args):
     if res is not None:
         pg_res, row, col = args
         length = pg_res.getlength(row, col)
-        return memoryview((c_byte * length).from_address(res))
+        return memoryview((c_ubyte * length).from_address(res))
 #         return ValueCursor(data)
     return res
 

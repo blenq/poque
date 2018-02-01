@@ -7,20 +7,23 @@ from .lib import Error
 class ValueCursor():
     """ Cursor object to traverse through postgresql data value """
 
+    __slots__ = ['data', 'idx', 'length']
+
     def __init__(self, data):
         self.data = data
         self.idx = 0
+        self.length = len(data)
 
     def at_end(self):
-        return self.idx == len(self.data)
+        return self.idx == self.length
 
     def advance(self, length=None):
         ret = self.idx
 
         if length is None:
-            self.idx = len(self.data)
+            self.idx = self.length
         else:
-            if ret + length > len(self.data):
+            if ret + length > self.length:
                 # check
                 raise Error("Item length exceeds data length")
 
@@ -36,10 +39,10 @@ class ValueCursor():
         return stc.unpack_from(self.data, offset=self.advance(stc.size))
 
     def __iter__(self):
-        length = len(self.data)
-        while self.idx < length:
-            yield self.data.obj[self.idx]
+        while self.idx < self.length:
+            idx = self.idx
             self.idx += 1
+            yield self.data.obj[idx]
 
     def advance_view(self, length=None):
         return self.data[self.advance(length):self.idx]
