@@ -156,6 +156,42 @@ class ResultTestParameters():
         self._test_param_val([datetime.datetime.now(
             datetime.timezone(datetime.timedelta(hours=2)))])
 
+    def _test_param_decimal(self, val):
+        res = self.cn.execute("SELECT $1", [val])
+        val_out = res.getvalue(0, 0)
+        if val.is_nan():
+            self.assertTrue(val_out.is_nan())
+            return
+        self.assertEqual(val_out, val)
+        # at least as many digits as went in
+        self.assertTrue(len(val_out.as_tuple()[1]) >= len(val.as_tuple()[1]))
+
+    def test_decimal_param(self):
+        self._test_param_decimal(Decimal('123.45600'))
+        self._test_param_decimal(Decimal('1'))
+        self._test_param_decimal(Decimal('12'))
+        self._test_param_decimal(Decimal('123'))
+        self._test_param_decimal(Decimal('1234'))
+        self._test_param_decimal(Decimal('12.34'))
+        self._test_param_decimal(Decimal('12345'))
+        self._test_param_decimal(Decimal('0'))
+        self._test_param_decimal(Decimal('123456789012345678901234567890'))
+        self._test_param_decimal(Decimal('0.000000000000001230'))
+        self._test_param_decimal(Decimal('-123456789012345678901234567890'))
+        self._test_param_decimal(Decimal('-0.000000000000001230'))
+        self._test_param_decimal(Decimal('9999E+100'))
+        self._test_param_decimal(Decimal('NaN'))
+        self._test_param_decimal(Decimal('99E-100'))
+        self._test_param_decimal(Decimal('123000000'))
+        self._test_param_decimal(Decimal('123000000000.0'))
+        self._test_param_decimal(Decimal('12300000000400000000.005'))
+        with self.assertRaises(ValueError):
+            self._test_param_decimal(Decimal('Inf'))
+
+    def test_decimal_array_param(self):
+        self._test_param_val([
+            Decimal('123.45600'), Decimal('99E-100')])
+
     def test_mixed_array_param(self):
         with self.assertRaises(ValueError):
             self.cn.execute("SELECT $1", ([3, 'hi'],))
@@ -202,38 +238,4 @@ class ResultTestParametersExtension(
 
 class ResultTestParametersCtypes(
         BaseCTypesTest, ResultTestParameters, unittest.TestCase):
-
-    def _test_param_decimal(self, val):
-        res = self.cn.execute("SELECT $1", [val])
-        val_out = res.getvalue(0, 0)
-        if val.is_nan():
-            self.assertTrue(val_out.is_nan())
-            return
-        self.assertEqual(val_out, val)
-        # at least as many digits as went in
-        self.assertTrue(len(val_out.as_tuple()[1]) >= len(val.as_tuple()[1]))
-
-    def test_decimal_param(self):
-        self._test_param_decimal(Decimal('123.45600'))
-        self._test_param_decimal(Decimal('1'))
-        self._test_param_decimal(Decimal('12'))
-        self._test_param_decimal(Decimal('123'))
-        self._test_param_decimal(Decimal('1234'))
-        self._test_param_decimal(Decimal('12345'))
-        self._test_param_decimal(Decimal('0'))
-        self._test_param_decimal(Decimal('123456789012345678901234567890'))
-        self._test_param_decimal(Decimal('0.000000000000001230'))
-        self._test_param_decimal(Decimal('-123456789012345678901234567890'))
-        self._test_param_decimal(Decimal('-0.000000000000001230'))
-        self._test_param_decimal(Decimal('9999E+100'))
-        self._test_param_decimal(Decimal('NaN'))
-        self._test_param_decimal(Decimal('99E-100'))
-        self._test_param_decimal(Decimal('123000000'))
-        self._test_param_decimal(Decimal('123000000000.0'))
-        self._test_param_decimal(Decimal('12300000000400000000.005'))
-        with self.assertRaises(ValueError):
-            self._test_param_decimal(Decimal('Inf'))
-
-    def test_decimal_array_param(self):
-        self._test_param_val([
-            Decimal('123.45600'), Decimal('99E-100')])
+    pass

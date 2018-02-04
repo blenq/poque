@@ -64,8 +64,7 @@ new_param_handler(param_handler *def_handler, size_t handler_size) {
     /* allocate mem */
     handler = PyMem_Malloc(handler_size);
     if (handler == NULL) {
-        PyErr_SetNone(PyExc_MemoryError);
-        return NULL;
+        return (param_handler *)PyErr_NoMemory();
     }
 
     /* initialize new handler with static content */
@@ -80,7 +79,7 @@ typedef struct _param_handler_constructor {
 } param_handler_constructor;
 
 /* param handler table */
-static param_handler_constructor param_handler_constructors[10];
+static param_handler_constructor param_handler_constructors[11];
 static int num_phcons = 0;
 
 
@@ -112,6 +111,18 @@ get_param_handler_constructor(PyTypeObject *typ) {
         }
     }
     return new_text_param_handler;
+}
+
+
+void
+write_uint16(char **p, poque_uint16 val) {
+    unsigned char *q = (unsigned char *)*p;
+
+    *(q + 1) = (unsigned char)(val & 0xff);
+    val >>= 8;
+    *q = (unsigned char)val;
+
+    *p += 2;
 }
 
 

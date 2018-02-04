@@ -19,9 +19,7 @@ class ResultTestBasic():
     @classmethod
     def setUpClass(cls):
         cls.cn = cls.poque.Conn(config.conninfo())
-
-    def setUp(self):
-        self.res = self.cn.execute("SELECT 1 AS yo")
+        cls.res = cls.cn.execute("SELECT 1 AS yo")
 
     @classmethod
     def tearDownClass(cls):
@@ -43,16 +41,18 @@ class ResultTestBasic():
         self.assertEqual(self.res.nparams, 0)
 
     def test_clear(self):
-        self.res.clear()
-        self.assertEqual(self.res.ntuples, 0)
+        res = self.cn.execute("SELECT 1 AS yo")
+        res.clear()
+        self.assertEqual(res.ntuples, 0)
 
     def test_fname(self):
         self.assertEqual(self.res.fname(0), 'yo')
         self.assertEqual(self.res.fname(column_number=0), 'yo')
 
     def test_invalid_fname(self):
-        self.res.clear()
-        self.assertIsNone(self.res.fname(0))
+        res = self.cn.execute("SELECT 1 AS yo")
+        res.clear()
+        self.assertIsNone(res.fname(0))
 
     def test_fnumber(self):
         self.assertEqual(self.res.fnumber('yo'), 0)
@@ -60,8 +60,9 @@ class ResultTestBasic():
         self.assertEqual(self.res.fnumber(column_name='yo'), 0)
 
     def test_invalid_fnumber(self):
-        self.res.clear()
-        self.assertEqual(self.res.fnumber('yo'), -1)
+        res = self.cn.execute("SELECT 1 AS yo")
+        res.clear()
+        self.assertEqual(res.fnumber('yo'), -1)
 
     def test_ftable(self):
         self.assertEqual(self.res.ftable(0), self.poque.INVALID_OID)
@@ -69,26 +70,29 @@ class ResultTestBasic():
             self.res.ftable(column_number=0), self.poque.INVALID_OID)
 
     def test_invalid_ftable(self):
-        self.res.clear()
-        self.assertEqual(self.res.ftable(0), self.poque.INVALID_OID)
+        res = self.cn.execute("SELECT 1 AS yo")
+        res.clear()
+        self.assertEqual(res.ftable(0), self.poque.INVALID_OID)
 
     def test_ftablecol(self):
         self.assertEqual(self.res.ftablecol(0), 0)
         self.assertEqual(self.res.ftablecol(column_number=0), 0)
 
     def test_invalid_ftablecol(self):
-        self.res.clear()
-        self.assertEqual(self.res.ftablecol(0), 0)
+        res = self.cn.execute("SELECT 1 AS yo")
+        res.clear()
+        self.assertEqual(res.ftablecol(0), 0)
 
     def test_fformat(self):
         self.assertEqual(self.res.fformat(0), 1)
         self.assertEqual(self.res.fformat(column_number=0), 1)
 
     def test_invalid_fformat(self):
-        self.res.clear()
-        self.assertEqual(self.res.fformat(4), 0)
+        res = self.cn.execute("SELECT 1 AS yo")
+        res.clear()
+        self.assertEqual(res.fformat(4), 0)
         with self.assertRaises(TypeError):
-            self.res.fformat()
+            res.fformat()
 
     def test_ftype(self):
         self.assertEqual(self.res.ftype(0), self.poque.INT4OID)
@@ -1115,19 +1119,3 @@ class ResultTestValuesExtension(
 class ResultTestValuesCtypes(
         BaseCTypesTest, ResultTestValues, unittest.TestCase):
     pass
-
-
-class ResultTest(unittest.TestCase):
-
-    def setUp(self):
-        cn = poque.Conn(config.conninfo())
-        self.res = cn.execute("SELECT * FROM pg_type")
-
-    def test_ftable(self):
-        self.assertGreater(self.res.ftable(0), 0)
-
-    def test_ftablecol(self):
-        self.assertEqual(self.res.ftablecol(1), 2)
-
-    def test_ftype(self):
-        self.assertEqual(self.res.ftype(1), poque.OIDOID)

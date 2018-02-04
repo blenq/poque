@@ -50,6 +50,7 @@ typedef struct _param_handler {
 ph_new get_param_handler_constructor(PyTypeObject *typ);
 param_handler *new_param_handler(param_handler *def_handler, size_t handler_size);
 
+void write_uint16(char **p, poque_uint16 val);
 void write_uint32(char **p, PY_UINT32_T val);
 void write_uint64(char **p, PY_UINT64_T val);
 

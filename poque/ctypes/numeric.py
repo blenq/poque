@@ -213,35 +213,29 @@ class DecimalParameterHandler(BaseParameterHandler):
             pg_sign = NUMERIC_POS if sign == 0 else NUMERIC_NEG
             dscale = 0 if exp > 0 else -exp
 
+            # "len(digits) + exp", i.e. the number of digits plus the exponent
+            # is the 10 based exponent of the first decimal digit
             # pg_weight is 10000 based exponent of first pg_digit minus one
             q, r = divmod(len(digits) + exp, 4)
             pg_weight = q + bool(r) - 1
 
             def get_pg_digits(i):
-                pg_zeroes = 0
                 pg_digit = 0
                 for dg in digits:
+                    # add decimal digit
                     pg_digit *= 10
                     pg_digit += dg
                     i += 1
+
                     if i == 4:
-                        if pg_digit:
-                            if pg_zeroes:
-                                yield from repeat(0, pg_zeroes)
-                                pg_zeroes = 0
-                            yield pg_digit
-                        else:
-                            pg_zeroes += 1
+                        # we have a pg digit, yield it and reset for the next
+                        yield pg_digit
                         pg_digit = 0
                         i = 0
                 if pg_digit:
-                    # add earlier discovered zeroes, which weren't
-                    # trailing after all
-                    if pg_zeroes:
-                        yield from repeat(0, pg_zeroes)
                     yield pg_digit * 10 ** (4 - i)
 
-            pg_digits = [dg for dg in get_pg_digits((4 - r) % 4)]
+            pg_digits = list(get_pg_digits((4 - r) % 4))
 
         npg_digits = len(pg_digits)
         self.values.append((npg_digits, pg_weight, pg_sign, dscale) +

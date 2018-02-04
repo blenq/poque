@@ -8,7 +8,7 @@
  * For an array the largest (or smallest) value determine the actual type.
  */
 
-#define int_handler_single(h) ((h)->num_params == 1)
+#define handler_single(h) ((h)->num_params == 1)
 
 /* struct for storing the parameter values */
 typedef struct _IntParam {
@@ -42,7 +42,7 @@ int_get_current_param(IntParamHandler *handler, int *pos) {
     /* gets the param value to work with and advances the index in case of
      * multiple value
      */
-    if (int_handler_single(handler)) {
+    if (handler_single(handler)) {
         return &handler->params.param;
     } else {
         return &handler->params.params[(*pos)++];
@@ -129,7 +129,7 @@ int_set_examine_text(IntParamHandler *handler, PyObject *param) {
     handler->handler.array_oid = TEXTARRAYOID;
     handler->handler.encode_at = (ph_encode_at)int_encode_at_text;
 
-    if (int_handler_single(handler)) {
+    if (handler_single(handler)) {
         /* one less malloc and copy */
         handler->handler.encode = (ph_encode)int_encode_text;
     }
@@ -203,7 +203,7 @@ int_set_examine_int8(IntParamHandler *handler, PyObject *param) {
     handler->handler.encode_at = (ph_encode_at)int_encode_at_int8;
 
     /* if this is the only parameter, don't bother about the rest */
-    if (!int_handler_single(handler)) {
+    if (!handler_single(handler)) {
         handler->handler.examine = (ph_examine)int_examine_int8;
         if (handler->examine_pos) {
             /* Other values have been examined earlier. First set up size
@@ -268,7 +268,7 @@ int_handler_free(IntParamHandler *handler)
 {
     int i;
 
-    if (int_handler_single(handler)) {
+    if (handler_single(handler)) {
         if (handler->handler.oid == TEXTOID) {
             /* clean up cached PyUnicode value */
             Py_XDECREF(handler->params.param.ref);
@@ -315,10 +315,10 @@ new_int_param_handler(int num_params) {
 
     /* initialize IntParamHandler specifics */
     handler->num_params = num_params;
-    if (!int_handler_single(handler)) {
+    if (!handler_single(handler)) {
         handler->params.params = PyMem_Calloc(num_params, sizeof(IntParam));
         if (handler->params.params == NULL) {
-            return NULL;
+            return (param_handler *)PyErr_NoMemory();
         }
     }
 
@@ -510,18 +510,245 @@ new_float_param_handler(int num_param) {
 }
 
 
+/* struct for storing the parameter values */
+typedef struct _NumericParam {
+    char *data;       /* encoded value */
+    int size;  /* size of encoded value */
+} NumericParam;
+
+
+typedef struct _NumericParamHandler {
+    param_handler handler;      /* base handler */
+    int num_params;             /* number of parameters */
+    int examine_pos;            /* where to examine next */
+    int encode_pos;             /* where to encode next */
+    /* this union is used to prevent an extra malloc in case of a single
+     * value
+     */
+    union {
+        NumericParam param;
+        NumericParam *params;
+    } params;                   /* cache of parameter values */
+} NumericParamHandler;
+
+
+static inline NumericParam *
+numeric_get_current_param(NumericParamHandler *handler, int *pos) {
+    /* gets the param value to work with and advances the index in case of
+     * multiple value
+     */
+    if (handler_single(handler)) {
+        return &handler->params.param;
+    } else {
+        return &handler->params.params[(*pos)++];
+    }
+}
+
+
 static int
-numeric_set_digit(PyObject *digit_tuple, int val, Py_ssize_t idx) {
-    PyObject *digit;
+numeric_examine(NumericParamHandler *handler, PyObject *param)
+{
+    PyObject *py_obj, *val = NULL;
+    NumericParam *np;
+    int i, j, ndigits, size=-1, isnan;
+    char *data, *pos;
+    poque_uint16 npg_digits, sign, dscale, pg_digit;
+    poque_int16 pg_weight;
 
-    /* create the digit */
-    digit = PyLong_FromLong(val);
-    if (digit == NULL)
+    /* Check if it is an infinite Decimal. PostgreSQL does not support
+     * infinite.
+     */
+    py_obj = PyObject_CallMethod(param, "is_infinite", NULL);
+    if (py_obj == NULL) {
         return -1;
+    }
+    if (PyObject_IsTrue(py_obj)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "PostgreSQL does not support decimal infinites");
+        Py_DECREF(py_obj);
+        return -1;
+    }
+    Py_DECREF(py_obj);
 
-    /* Add it to the tuple */
-    PyTuple_SET_ITEM(digit_tuple, idx, digit);
+    /* First check if it is a NaN */
+    py_obj = PyObject_CallMethod(param, "is_nan", NULL);
+    if (py_obj == NULL) {
+        return -1;
+    }
+    isnan = PyObject_IsTrue(py_obj);
+    Py_DECREF(py_obj);
+
+    if (isnan) {
+        /* it is a NaN */
+        pg_weight = 0;
+        sign = NUMERIC_NAN;
+        dscale = 0;
+        npg_digits = 0;
+        ndigits = 0;
+    }
+    else {
+        /* normal decimal */
+        long exp;
+        int dec_weight, q, r;
+
+        /* get sign, digits and exponent */
+        val = PyObject_CallMethod(param, "as_tuple", NULL);
+        if (val == NULL) {
+            return -1;
+        }
+
+        /* get pg sign */
+        py_obj = PyTuple_GET_ITEM(val, 0);
+        sign = PyLong_AsLong(py_obj) ? NUMERIC_NEG : NUMERIC_POS;
+
+        /* get pg dscale */
+        py_obj = PyTuple_GET_ITEM(val, 2);
+        exp = PyLong_AsLong(py_obj);
+        dscale = exp > 0 ? 0 : -exp;
+
+        /* now get the pg digits */
+        py_obj = PyTuple_GET_ITEM(val, 1);
+        ndigits = PyTuple_GET_SIZE(py_obj);
+
+        dec_weight = ndigits + exp;
+        q = dec_weight / 4;
+        r = dec_weight % 4;
+        pg_weight = q + (r > 0) - 1;
+
+        npg_digits = ndigits / 4 + 2;
+        j = (4 - r) % 4;
+    }
+
+    /* we know the number of digits, now we know the memory size */
+    data = PyMem_Malloc(8 + npg_digits * 2);
+    if (data == NULL) {
+        Py_XDECREF(val);
+        PyErr_NoMemory();
+        return -1;
+    }
+
+    /* write the pg digits */
+    pos = data + 8;     /* position past header */
+    pg_digit = 0;
+    npg_digits = 0;
+    for (i = 0; i < ndigits; i++) {
+        int digit;
+
+        digit = PyLong_AsLong(PyTuple_GET_ITEM(py_obj, i));
+        pg_digit *= 10;
+        pg_digit += digit;
+        if (++j == 4) {
+            write_uint16(&pos, pg_digit);
+            npg_digits += 1;
+            pg_digit = 0;
+            j = 0;
+        }
+    }
+    if (pg_digit) {
+        for (i = 0; i < (4 - j); i++) {
+            pg_digit *= 10;
+        }
+        write_uint16(&pos, pg_digit);
+        npg_digits += 1;
+    }
+    Py_XDECREF(val);
+
+    /* write header */
+    pos = data;
+    write_uint16(&pos, npg_digits);
+    write_uint16(&pos, pg_weight);
+    write_uint16(&pos, sign);
+    write_uint16(&pos, dscale);
+
+    /* set parameter values */
+    np = numeric_get_current_param(handler, &handler->examine_pos);
+    np->data = data;
+    size = 8 + npg_digits * 2;
+    np->size = size;
+    return size;
+}
+
+
+static int
+numeric_encode(NumericParamHandler *handler, PyObject *param, char **loc)
+{
+    NumericParam *np;
+
+    /* copy the earlier retrieved encoded buffer to location */
+    np = numeric_get_current_param(handler, &handler->encode_pos);
+    *loc = np->data;
     return 0;
+}
+
+
+static int
+numeric_encode_at(NumericParamHandler *handler, PyObject *param, char *loc) {
+    NumericParam *np;
+    int size;
+
+    /* copy the earlier retrieved encoded buffer to location */
+    np = numeric_get_current_param(handler, &handler->encode_pos);
+    size = np->size;
+    memcpy(loc, np->data, size);
+    return size;
+}
+
+
+static void
+numeric_handler_free(NumericParamHandler *handler)
+{
+    int i;
+
+    if (handler_single(handler)) {
+        PyMem_Free(handler->params.param.data);
+    }
+    else {
+        /* clean up cached values */
+        for (i = 0; i < handler->examine_pos; i++) {
+            PyMem_Free(handler->params.params[i].data);
+        }
+        /* deallocate param array */
+        PyMem_Free(handler->params.params);
+    }
+
+    /* and free ourselves */
+    PyMem_Free(handler);
+}
+
+
+param_handler *
+new_numeric_param_handler(int num_params) {
+    static NumericParamHandler def_handler = {
+        {
+            (ph_examine)numeric_examine,        /* examine */
+            NULL,                               /* total_size */
+            (ph_encode)numeric_encode,          /* encode */
+            (ph_encode_at)numeric_encode_at,    /* encode_at */
+            (ph_free)numeric_handler_free,      /* free */
+            NUMERICOID,                         /* oid */
+            NUMERICARRAYOID,                    /* array_oid */
+        },
+        0
+    }; /* static initialized handler */
+    NumericParamHandler *handler;
+
+    /* create new handler identical to static one */
+    handler = (NumericParamHandler *)new_param_handler(
+        (param_handler *)&def_handler, sizeof(NumericParamHandler));
+    if (handler == NULL) {
+        return NULL;
+    }
+
+    /* initialize NumericParamHandler specifics */
+    handler->num_params = num_params;
+    if (!handler_single(handler)) {
+        handler->params.params = PyMem_Calloc(num_params, sizeof(NumericParam));
+        if (handler->params.params == NULL) {
+            return (param_handler *)PyErr_NoMemory();
+        }
+    }
+
+    return (param_handler *)handler;
 }
 
 
@@ -535,6 +762,21 @@ numeric_strval(data_crs *crs) {
 
     data = crs_advance_end(crs);
     return PyObject_CallFunction(PyDecimal, "s#", data, crs_len(crs));
+}
+
+
+static int
+numeric_set_digit(PyObject *digit_tuple, int val, Py_ssize_t idx) {
+    PyObject *digit;
+
+    /* create the digit */
+    digit = PyLong_FromLong(val);
+    if (digit == NULL)
+        return -1;
+
+    /* Add it to the tuple */
+    PyTuple_SET_ITEM(digit_tuple, idx, digit);
+    return 0;
 }
 
 
@@ -615,6 +857,7 @@ numeric_binval(data_crs *crs) {
         }
     }
 
+    /* add trailing zeroes */
     zero = PyLong_FromLong(0);
     if (zero == NULL) {
         goto end;
@@ -675,6 +918,7 @@ init_numeric(void) {
     register_parameter_handler(&PyLong_Type, new_int_param_handler);
     register_parameter_handler(&PyFloat_Type, new_float_param_handler);
     register_parameter_handler(&PyBool_Type, new_bool_param_handler);
+    register_parameter_handler((PyTypeObject *)PyDecimal, new_numeric_param_handler);
 
     return 0;
 }
