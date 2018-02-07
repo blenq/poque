@@ -485,7 +485,7 @@ float_strval(data_crs *crs)
 
 static int
 float_examine(param_handler *handler, PyObject *param) {
-	return sizeof(double);
+	return SIZEOF_DOUBLE;
 }
 
 static int
@@ -493,11 +493,11 @@ float_encode_at(
 		param_handler *handler, PyObject *param, char *loc) {
 	double v;
 
-	v = PyFloat_AsDouble(param);
+	v = PyFloat_AS_DOUBLE(param);
 	if (_PyFloat_Pack8(v, (unsigned char *)loc, 0) < 0) {
 		return -1;
 	}
-	return sizeof(double);
+	return SIZEOF_DOUBLE;
 }
 
 
@@ -586,6 +586,9 @@ decimal_check_nan(PyObject *decimal) {
 }
 
 
+#define MAX_PG_WEIGHT 0x7FFF
+#define MAX_DEC_WEIGHT ((MAX_PG_WEIGHT + 1) * 4)
+
 static int
 decimal_examine(DecimalParamHandler *handler, PyObject *param)
 {
@@ -593,7 +596,7 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
     DecimalParam *np;
     int i, j, size=-1, isnan;
     char *data, *pos;
-    poque_uint16 sign, dscale, pg_digit;
+    poque_uint16 pg_sign, dscale, pg_digit;
     Py_ssize_t npg_digits, ndigits;
     poque_int16 pg_weight;
 
@@ -613,15 +616,16 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
     if (isnan) {
         /* it is a NaN */
         pg_weight = 0;
-        sign = NUMERIC_NAN;
+        pg_sign = NUMERIC_NAN;
         dscale = 0;
         npg_digits = 0;
         ndigits = 0;
+        j = 0;
     }
     else {
         /* normal decimal */
-        long exp;
-        int dec_weight, q, r, overflow;
+        Py_ssize_t exp;
+        int dec_weight, q, r;
 
         /* get sign, digits and exponent */
         val = PyObject_CallMethod(param, "as_tuple", NULL);
@@ -631,15 +635,15 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
 
         /* get pg sign */
         py_obj = PyTuple_GET_ITEM(val, 0);
-        sign = PyLong_AsLong(py_obj) ? NUMERIC_NEG : NUMERIC_POS;
+        pg_sign = PyLong_AsLong(py_obj) ? NUMERIC_NEG : NUMERIC_POS;
 
         /* get pg dscale */
         py_obj = PyTuple_GET_ITEM(val, 2);
-        exp = PyLong_AsLongAndOverflow(py_obj, &overflow);
-        if (overflow || exp < -0x3fff) {
+        exp = PyLong_AsSsize_t(py_obj);
+        if ((exp == -1 && PyErr_Occurred()) || exp < -0x3fff) {
             Py_DECREF(val);
             PyErr_SetString(PyExc_ValueError,
-                            "Display scale out of PostgreSQL range");
+                            "Exponent out of PostgreSQL range");
             return -1;
         }
         dscale = exp > 0 ? 0 : -exp;
@@ -649,12 +653,46 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
         ndigits = PyTuple_GET_SIZE(py_obj);
 
         /* calculate pg_weight */
+        if (exp - MAX_DEC_WEIGHT > -ndigits) {
+            /* overflow safe version of
+             *
+             * if (ndigits + exp > MAX_DEC_WEIGHT)
+             *
+             * isn't it?
+             * ndigits will be equal to or greater than zero
+             * exp will not be less than -0x3fff (-16383)
+             */
+            Py_DECREF(val);
+            PyErr_SetString(PyExc_ValueError,
+                            "Decimal out of PostgreSQL range");
+            return -1;
+        }
         dec_weight = ndigits + exp;
         q = dec_weight / 4;
         r = dec_weight % 4;
+        if (r < 0) {
+            /* correct for negative values */
+            r += 4;
+            q--;
+        }
         pg_weight = q + (r > 0) - 1;
 
-        /* TODO: check for npg_digits too large */
+        /* Calculate number of pg digits
+         * Decimal digits are grouped with four of them in one pg_digit. The
+         * decimal digits are aligned around the decimal point.
+         *
+         * For example the value 12.34 will be stored in two pg digits
+         * (0012 3400) because of alignment.
+         *
+         * Calculation works as follows. First divide (integral) the number of
+         * decimal digits by 4. This is the base. Because of alignment, the
+         * first pg digit might consist of 'r' decimal digits if any. If 'r' is
+         * non zero, we'll need an extra pg_digit.
+         * If there are more decimal digits left, i.e. the remainder of the
+         * earlier division has more decimal digits than are present in the
+         * 'r' digit, we'll need yet an extra pg_digit. For example 12345.67
+         * needs 3 digits: 0001 2345 6700
+         */
         npg_digits = ndigits / 4 + (r > 0) + (r < ndigits % 4);
 
         j = (4 - r) % 4;                /* set up for loop */
@@ -683,7 +721,7 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
             j = 0;
         }
     }
-    if (pg_digit) {
+    if (j) {
         for (i = 0; i < (4 - j); i++) {
             pg_digit *= 10;
         }
@@ -695,7 +733,7 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
     pos = data;
     write_uint16(&pos, (poque_uint16)npg_digits);
     write_uint16(&pos, pg_weight);
-    write_uint16(&pos, sign);
+    write_uint16(&pos, pg_sign);
     write_uint16(&pos, dscale);
 
     /* set parameter values */
