@@ -8,7 +8,6 @@
  * For an array the largest (or smallest) value determine the actual type.
  */
 
-#define handler_single(h) ((h)->num_params == 1)
 
 /* struct for storing the parameter values */
 typedef struct _IntParam {
@@ -70,6 +69,15 @@ int_examine_text(IntParamHandler *handler, PyObject *param) {
         Py_DECREF(param);
         return -1;
     }
+
+#if SIZEOF_SIZE_T > SIZEOF_INT
+    if (size > INT32_MAX) {
+        Py_DECREF(param);
+        PyErr_SetString(PyExc_ValueError,
+                        "String too long for postgresql");
+        return -1;
+    }
+#endif
 
     /* set parameter values */
     ip = int_get_current_param(handler, &handler->examine_pos);
@@ -511,13 +519,13 @@ new_float_param_handler(int num_param) {
 
 
 /* struct for storing the parameter values */
-typedef struct _NumericParam {
+typedef struct _DecimalParam {
     char *data;       /* encoded value */
     int size;  /* size of encoded value */
-} NumericParam;
+} DecimalParam;
 
 
-typedef struct _NumericParamHandler {
+typedef struct _DecimalParamHandler {
     param_handler handler;      /* base handler */
     int num_params;             /* number of parameters */
     int examine_pos;            /* where to examine next */
@@ -526,14 +534,14 @@ typedef struct _NumericParamHandler {
      * value
      */
     union {
-        NumericParam param;
-        NumericParam *params;
+        DecimalParam param;
+        DecimalParam *params;
     } params;                   /* cache of parameter values */
-} NumericParamHandler;
+} DecimalParamHandler;
 
 
-static inline NumericParam *
-numeric_get_current_param(NumericParamHandler *handler, int *pos) {
+static inline DecimalParam *
+decimal_get_current_param(DecimalParamHandler *handler, int *pos) {
     /* gets the param value to work with and advances the index in case of
      * multiple value
      */
@@ -545,38 +553,62 @@ numeric_get_current_param(NumericParamHandler *handler, int *pos) {
 }
 
 
-static int
-numeric_examine(NumericParamHandler *handler, PyObject *param)
-{
-    PyObject *py_obj, *val = NULL;
-    NumericParam *np;
-    int i, j, ndigits, size=-1, isnan;
-    char *data, *pos;
-    poque_uint16 npg_digits, sign, dscale, pg_digit;
-    poque_int16 pg_weight;
+static inline int
+decimal_check_infinite(PyObject *decimal) {
+    PyObject *py_obj;
+    int ret = 0;
 
-    /* Check if it is an infinite Decimal. PostgreSQL does not support
-     * infinite.
-     */
-    py_obj = PyObject_CallMethod(param, "is_infinite", NULL);
+    py_obj = PyObject_CallMethod(decimal, "is_infinite", NULL);
     if (py_obj == NULL) {
         return -1;
     }
     if (PyObject_IsTrue(py_obj)) {
         PyErr_SetString(PyExc_ValueError,
                         "PostgreSQL does not support decimal infinites");
-        Py_DECREF(py_obj);
-        return -1;
+        ret = -1;
     }
     Py_DECREF(py_obj);
+    return ret;
+}
 
-    /* First check if it is a NaN */
-    py_obj = PyObject_CallMethod(param, "is_nan", NULL);
+static inline int
+decimal_check_nan(PyObject *decimal) {
+    PyObject *py_obj;
+    int ret = 0;
+
+    py_obj = PyObject_CallMethod(decimal, "is_nan", NULL);
     if (py_obj == NULL) {
         return -1;
     }
-    isnan = PyObject_IsTrue(py_obj);
+    ret = PyObject_IsTrue(py_obj);
     Py_DECREF(py_obj);
+    return ret;
+}
+
+
+static int
+decimal_examine(DecimalParamHandler *handler, PyObject *param)
+{
+    PyObject *py_obj, *val = NULL;
+    DecimalParam *np;
+    int i, j, size=-1, isnan;
+    char *data, *pos;
+    poque_uint16 sign, dscale, pg_digit;
+    Py_ssize_t npg_digits, ndigits;
+    poque_int16 pg_weight;
+
+    /* Check if it is an infinite Decimal. PostgreSQL does not support
+     * infinite.
+     */
+    if (decimal_check_infinite(param) == -1) {
+        return -1;
+    }
+
+    /*  Check if it is a NaN */
+    isnan = decimal_check_nan(param);
+    if (isnan == -1) {
+        return -1;
+    }
 
     if (isnan) {
         /* it is a NaN */
@@ -589,7 +621,7 @@ numeric_examine(NumericParamHandler *handler, PyObject *param)
     else {
         /* normal decimal */
         long exp;
-        int dec_weight, q, r;
+        int dec_weight, q, r, overflow;
 
         /* get sign, digits and exponent */
         val = PyObject_CallMethod(param, "as_tuple", NULL);
@@ -603,24 +635,33 @@ numeric_examine(NumericParamHandler *handler, PyObject *param)
 
         /* get pg dscale */
         py_obj = PyTuple_GET_ITEM(val, 2);
-        exp = PyLong_AsLong(py_obj);
+        exp = PyLong_AsLongAndOverflow(py_obj, &overflow);
+        if (overflow || exp < -0x3fff) {
+            Py_DECREF(val);
+            PyErr_SetString(PyExc_ValueError,
+                            "Display scale out of PostgreSQL range");
+            return -1;
+        }
         dscale = exp > 0 ? 0 : -exp;
 
         /* now get the pg digits */
         py_obj = PyTuple_GET_ITEM(val, 1);
         ndigits = PyTuple_GET_SIZE(py_obj);
 
+        /* calculate pg_weight */
         dec_weight = ndigits + exp;
         q = dec_weight / 4;
         r = dec_weight % 4;
         pg_weight = q + (r > 0) - 1;
 
-        npg_digits = ndigits / 4 + 2;
-        j = (4 - r) % 4;
+        /* TODO: check for npg_digits too large */
+        npg_digits = ndigits / 4 + (r > 0) + (r < ndigits % 4);
+
+        j = (4 - r) % 4;                /* set up for loop */
     }
 
     /* we know the number of digits, now we know the memory size */
-    data = PyMem_Malloc(8 + npg_digits * 2);
+    data = PyMem_Calloc(1, 8 + npg_digits * 2);
     if (data == NULL) {
         Py_XDECREF(val);
         PyErr_NoMemory();
@@ -630,7 +671,6 @@ numeric_examine(NumericParamHandler *handler, PyObject *param)
     /* write the pg digits */
     pos = data + 8;     /* position past header */
     pg_digit = 0;
-    npg_digits = 0;
     for (i = 0; i < ndigits; i++) {
         int digit;
 
@@ -639,7 +679,6 @@ numeric_examine(NumericParamHandler *handler, PyObject *param)
         pg_digit += digit;
         if (++j == 4) {
             write_uint16(&pos, pg_digit);
-            npg_digits += 1;
             pg_digit = 0;
             j = 0;
         }
@@ -649,19 +688,18 @@ numeric_examine(NumericParamHandler *handler, PyObject *param)
             pg_digit *= 10;
         }
         write_uint16(&pos, pg_digit);
-        npg_digits += 1;
     }
     Py_XDECREF(val);
 
     /* write header */
     pos = data;
-    write_uint16(&pos, npg_digits);
+    write_uint16(&pos, (poque_uint16)npg_digits);
     write_uint16(&pos, pg_weight);
     write_uint16(&pos, sign);
     write_uint16(&pos, dscale);
 
     /* set parameter values */
-    np = numeric_get_current_param(handler, &handler->examine_pos);
+    np = decimal_get_current_param(handler, &handler->examine_pos);
     np->data = data;
     size = 8 + npg_digits * 2;
     np->size = size;
@@ -670,24 +708,24 @@ numeric_examine(NumericParamHandler *handler, PyObject *param)
 
 
 static int
-numeric_encode(NumericParamHandler *handler, PyObject *param, char **loc)
+decimal_encode(DecimalParamHandler *handler, PyObject *param, char **loc)
 {
-    NumericParam *np;
+    DecimalParam *np;
 
-    /* copy the earlier retrieved encoded buffer to location */
-    np = numeric_get_current_param(handler, &handler->encode_pos);
+    /* return the earlier encoded buffer */
+    np = decimal_get_current_param(handler, &handler->encode_pos);
     *loc = np->data;
     return 0;
 }
 
 
 static int
-numeric_encode_at(NumericParamHandler *handler, PyObject *param, char *loc) {
-    NumericParam *np;
+decimal_encode_at(DecimalParamHandler *handler, PyObject *param, char *loc) {
+    DecimalParam *np;
     int size;
 
-    /* copy the earlier retrieved encoded buffer to location */
-    np = numeric_get_current_param(handler, &handler->encode_pos);
+    /* copy the earlier encoded buffer to location */
+    np = decimal_get_current_param(handler, &handler->encode_pos);
     size = np->size;
     memcpy(loc, np->data, size);
     return size;
@@ -695,7 +733,7 @@ numeric_encode_at(NumericParamHandler *handler, PyObject *param, char *loc) {
 
 
 static void
-numeric_handler_free(NumericParamHandler *handler)
+decimal_handler_free(DecimalParamHandler *handler)
 {
     int i;
 
@@ -717,32 +755,32 @@ numeric_handler_free(NumericParamHandler *handler)
 
 
 param_handler *
-new_numeric_param_handler(int num_params) {
-    static NumericParamHandler def_handler = {
+new_decimal_param_handler(int num_params) {
+    static DecimalParamHandler def_handler = {
         {
-            (ph_examine)numeric_examine,        /* examine */
+            (ph_examine)decimal_examine,        /* examine */
             NULL,                               /* total_size */
-            (ph_encode)numeric_encode,          /* encode */
-            (ph_encode_at)numeric_encode_at,    /* encode_at */
-            (ph_free)numeric_handler_free,      /* free */
+            (ph_encode)decimal_encode,          /* encode */
+            (ph_encode_at)decimal_encode_at,    /* encode_at */
+            (ph_free)decimal_handler_free,      /* free */
             NUMERICOID,                         /* oid */
             NUMERICARRAYOID,                    /* array_oid */
         },
         0
     }; /* static initialized handler */
-    NumericParamHandler *handler;
+    DecimalParamHandler *handler;
 
     /* create new handler identical to static one */
-    handler = (NumericParamHandler *)new_param_handler(
-        (param_handler *)&def_handler, sizeof(NumericParamHandler));
+    handler = (DecimalParamHandler *)new_param_handler(
+        (param_handler *)&def_handler, sizeof(DecimalParamHandler));
     if (handler == NULL) {
         return NULL;
     }
 
-    /* initialize NumericParamHandler specifics */
+    /* initialize DecimalParamHandler specifics */
     handler->num_params = num_params;
     if (!handler_single(handler)) {
-        handler->params.params = PyMem_Calloc(num_params, sizeof(NumericParam));
+        handler->params.params = PyMem_Calloc(num_params, sizeof(DecimalParam));
         if (handler->params.params == NULL) {
             return (param_handler *)PyErr_NoMemory();
         }
@@ -918,7 +956,7 @@ init_numeric(void) {
     register_parameter_handler(&PyLong_Type, new_int_param_handler);
     register_parameter_handler(&PyFloat_Type, new_float_param_handler);
     register_parameter_handler(&PyBool_Type, new_bool_param_handler);
-    register_parameter_handler((PyTypeObject *)PyDecimal, new_numeric_param_handler);
+    register_parameter_handler((PyTypeObject *)PyDecimal, new_decimal_param_handler);
 
     return 0;
 }

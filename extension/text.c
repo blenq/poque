@@ -233,17 +233,15 @@ typedef struct _TextParamHandler {
 
 
 static int
-text_examine(param_handler *handler, PyObject *param) {
-	TextParamHandler *self;
+text_examine(TextParamHandler *handler, PyObject *param) {
 	char *string;
 	Py_ssize_t size;
 	TextParam *tp;
 
-	self = (TextParamHandler *)handler;
-	if (self->num_params == 1) {
-	    tp = &self->params.param;
+	if (handler_single(handler)) {
+	    tp = &handler->params.param;
 	} else {
-	    tp = &self->params.params[self->examine_pos++];
+	    tp = &handler->params.params[handler->examine_pos++];
 	}
 	if (!PyUnicode_Check(param)) {
 		/* If the object is not a string, execute str(obj) and use the outcome.
@@ -259,6 +257,13 @@ text_examine(param_handler *handler, PyObject *param) {
 	if (string == NULL) {
 		return -1;
 	}
+#if SIZEOF_SIZE_T > SIZEOF_INT
+	if (size > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError,
+                        "String too long for postgresql");
+	    return -1;
+	}
+#endif
 	tp->size = size;
 	tp->string = string;
 	return (int)size;
@@ -300,24 +305,22 @@ text_encode_at(param_handler *handler, PyObject *param, char *loc) {
 
 
 static void
-text_handler_free(param_handler *handler) {
-	TextParamHandler *self;
+text_handler_free(TextParamHandler *handler) {
 	int i;
 	TextParam *tp;
 
-	self = (TextParamHandler *)handler;
-	if (self->num_params == 1) {
-	    tp = &self->params.param;
+	if (handler_single(handler)) {
+	    tp = &handler->params.param;
 	    Py_XDECREF(tp->ref);
 	}
 	else {
-	    for (i = 0; i < self->examine_pos; i++) {
-	        tp = &self->params.params[i];
+	    for (i = 0; i < handler->examine_pos; i++) {
+	        tp = &handler->params.params[i];
 	        Py_XDECREF(tp->ref);
 	    }
-	    PyMem_Free(self->params.params);
+	    PyMem_Free(handler->params.params);
 	}
-	PyMem_Free(self);
+	PyMem_Free(handler);
 }
 
 
@@ -325,13 +328,13 @@ param_handler *
 new_text_param_handler(int num_params) {
 	static TextParamHandler def_handler = {
 		{
-			text_examine,		/* examine */
-			NULL,               /* total_size */
-			text_encode,		/* encode */
-			text_encode_at,		/* encode_at */
-			text_handler_free,	/* free */
-			TEXTOID,			/* oid */
-			TEXTARRAYOID,		/* array_oid */
+			(ph_examine)text_examine,		/* examine */
+			NULL,                           /* total_size */
+			text_encode,		            /* encode */
+			text_encode_at,		            /* encode_at */
+			(ph_free)text_handler_free,	    /* free */
+			TEXTOID,		            	/* oid */
+			TEXTARRAYOID,		            /* array_oid */
 		},
 		0
 	}; /* static initialized handler */
@@ -349,7 +352,7 @@ new_text_param_handler(int num_params) {
 	if (num_params != 1) {
 	    handler->params.params = PyMem_Calloc(num_params, sizeof(TextParam));
 	    if (handler->params.params == NULL) {
-	        return NULL;
+	        return (param_handler *)PyErr_NoMemory();
 	    }
 	}
 

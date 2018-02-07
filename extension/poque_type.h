@@ -47,6 +47,8 @@ typedef struct _param_handler {
 #define PH_HasFree(ph) ((ph)->free != NULL)
 #define PH_Free(ph) (ph)->free(ph)
 
+#define handler_single(h) ((h)->num_params == 1)
+
 ph_new get_param_handler_constructor(PyTypeObject *typ);
 param_handler *new_param_handler(param_handler *def_handler, size_t handler_size);
 

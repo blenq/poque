@@ -193,12 +193,12 @@ Conn_fileno(poque_Conn *self, PyObject *unused)
 static PGresult *
 Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_params, int format)
 {
-    param_handler **param_handlers = NULL;
-	Oid *param_types = NULL;
-	char **param_values = NULL, **clean_up = NULL;
-	int *param_lengths = NULL, *param_formats = NULL;
+    param_handler **param_handlers;
+	Oid *param_types;
+	char **param_values, **clean_up;
+	int *param_lengths, *param_formats;
 	size_t clean_up_count = 0, handler_count = 0;
-	PyObject *param = NULL;
+	PyObject *param;
 	int i;
 	PGresult *res = NULL;
 
@@ -230,6 +230,9 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 
 			/* get the parameter handler based on type */
 			handler = get_param_handler_constructor(Py_TYPE(param))(1);
+			if (handler == NULL) {
+			    goto end;
+			}
 			if (PH_HasFree(handler)) {
 			    param_handlers[handler_count++] = handler;
 			}
@@ -267,8 +270,7 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 				clean_up[clean_up_count++] = param_value;
 
 				/* write char * value into pointer */
-				if (PH_EncodeValueAt(
-						handler, param, param_value) < 0) {
+				if (PH_EncodeValueAt(handler, param, param_value) < 0) {
 					goto end;
 				}
 			}

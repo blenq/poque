@@ -710,47 +710,59 @@ jsonb_bin_val(data_crs *crs)
 
 
 
+static PyObject *
+inplace_op(PyObject *(*op)(PyObject *, PyObject *),
+           PyObject *val, PyObject *arg)
+{
+    /* Helper function for in place operations. Steals a reference to val.
+     * Returns a new reference
+     */
+    PyObject *new_val;
+
+    new_val = op(val, arg);
+    Py_DECREF(val);
+    return new_val;
+}
 
 
 static PyObject *
 bit_strval(data_crs *crs) {
-    PyObject *val, *one;
+    PyObject *val, *one=NULL;
 
     /* initialize return value */
     val = PyLong_FromLong(0);
-    if (val == NULL)
+    if (val == NULL) {
         return NULL;
+    }
 
     /* initialize Python integer with value 1 */
     one = PyLong_FromLong(1);
     if (one == NULL) {
-        goto error_2;
+        goto error;
     }
 
     /* interpret characters as bits */
     while (!crs_at_end(crs)) {
         char byte;
-        PyObject *new_val;
 
         /* new bit, shift the return value one bit to make space */
-        new_val = PyNumber_InPlaceLshift(val, one);
-        if (new_val == NULL)
+        val = inplace_op(PyNumber_InPlaceLshift, val, one);
+        if (val == NULL) {
             goto error;
-        Py_DECREF(val);
-        val = new_val;
+        }
 
         /* Get the new bit as character */
-        if (crs_read_char(crs, &byte) < 0)
+        if (crs_read_char(crs, &byte) < 0) {
             goto error;
+        }
 
         /* interpret bit */
         if (byte == '1') {
             /* add the bit to the return value */
-            new_val = PyNumber_InPlaceOr(val, one);
-            if (new_val == NULL)
+            val = inplace_op(PyNumber_InPlaceOr, val, one);
+            if (val == NULL) {
                 goto error;
-            Py_DECREF(val);
-            val = new_val;
+            }
         }
         else if (byte != '0') {
             PyErr_SetString(PoqueError, "Invalid character in bit string");
@@ -761,9 +773,8 @@ bit_strval(data_crs *crs) {
     return val;
 
 error:
-    Py_DECREF(one);
-error_2:
-    Py_DECREF(val);
+    Py_XDECREF(one);
+    Py_XDECREF(val);
     return NULL;
 }
 
@@ -778,7 +789,7 @@ bit_binval(data_crs *crs) {
 
     */
     int bit_len, quot, rest, byte_len, i;
-    PyObject *val, *eight, *new_val;
+    PyObject *val, *eight;
 
     /* first get the number of bits in the bit string */
     if (crs_read_int32(crs, &bit_len) < 0)
@@ -803,7 +814,7 @@ bit_binval(data_crs *crs) {
 
     quot = bit_len / 8;  /* number of bytes completely filled */
     rest = bit_len % 8;  /* number of bits in remaining byte */
-    byte_len = quot + (rest ? 1: 0); /* total number of data bytes */
+    byte_len = quot + (rest > 0); /* total number of data bytes */
 
     /* add the value byte by byte, python ints have no upper limit, so this
      * works even for bitstrings longer than 64 bits */
@@ -813,50 +824,50 @@ bit_binval(data_crs *crs) {
 
         /* new byte, first shift the return value one byte to the left, to make
          * space */
-        new_val = PyNumber_InPlaceLshift(val, eight);
-        if (new_val == NULL)
+        val = inplace_op(PyNumber_InPlaceLshift, val, eight);
+        if (val == NULL) {
             goto error;
-        Py_DECREF(val);
-        val = new_val;
+        }
 
         /* read the new byte */
-        if (crs_read_uchar(crs, &byte) < 0)
+        if (crs_read_uchar(crs, &byte) < 0) {
             goto error;
+        }
         byte_val = PyLong_FromLong(byte);
-        if (byte_val == NULL)
+        if (byte_val == NULL) {
             goto error;
+        }
 
         /* add the new byte to the return value */
-        new_val = PyNumber_InPlaceOr(val, byte_val);
+        val = inplace_op(PyNumber_InPlaceOr, val, byte_val);
         Py_DECREF(byte_val);
-        if (new_val == NULL)
+        if (val == NULL) {
             goto error;
-        Py_DECREF(val);
-        val = new_val;
+        }
     }
     if (rest) {
-        /* correct for the fact that the bitstring is left aligned */
+        /* correct for the fact that the pg bitstring is left aligned */
         PyObject *shift_val;
 
         /* get the number of bits to shift the entire value */
         shift_val = PyLong_FromLong(8 - rest);
-        if (shift_val == NULL)
+        if (shift_val == NULL) {
             goto error;
+        }
 
         /* shift the value */
-        new_val = PyNumber_InPlaceRshift(val, shift_val);
+        val = inplace_op(PyNumber_InPlaceRshift, val, shift_val);
         Py_DECREF(shift_val);
-        if (new_val == NULL)
+        if (val == NULL) {
             goto error;
-        Py_DECREF(val);
-        val = new_val;
+        }
     }
     Py_DECREF(eight);
     return val;
 
 error:
     Py_DECREF(eight);
-    Py_DECREF(val);
+    Py_XDECREF(val);
     return NULL;
 }
 
