@@ -640,7 +640,6 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
              *
              * if (ndigits + exp > MAX_DEC_WEIGHT)
              *
-             * isn't it?
              * ndigits will be equal to or greater than zero
              * exp will not be less than -0x3fff (-16383)
              */
@@ -649,6 +648,7 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
                             "Decimal out of PostgreSQL range");
             return -1;
         }
+
         dec_weight = ndigits + exp;
         q = dec_weight / 4;
         r = dec_weight % 4;

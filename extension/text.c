@@ -334,7 +334,7 @@ new_text_param_handler(int num_params) {
 
     /* initialize TextParamHandler specifics */
 	handler->num_params = num_params;
-	if (num_params != 1) {
+	if (!handler_single(handler)) {
 	    handler->params.params = PyMem_Calloc(num_params, sizeof(TextParam));
 	    if (handler->params.params == NULL) {
 	        return (param_handler *)PyErr_NoMemory();

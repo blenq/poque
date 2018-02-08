@@ -738,7 +738,8 @@ bit_strval(data_crs *crs) {
     /* initialize Python integer with value 1 */
     one = PyLong_FromLong(1);
     if (one == NULL) {
-        goto error;
+        Py_DECREF(val);
+        return NULL;
     }
 
     /* interpret characters as bits */
@@ -773,7 +774,7 @@ bit_strval(data_crs *crs) {
     return val;
 
 error:
-    Py_XDECREF(one);
+    Py_DECREF(one);
     Py_XDECREF(val);
     return NULL;
 }
@@ -906,6 +907,7 @@ register_value_handler(PoqueTypeEntry *entry)
         type_map[idx] = entry;
     }
     else {
+        /* append to linked list */
         while (prev->next) {
             prev = prev->next;
         }

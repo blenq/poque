@@ -185,6 +185,12 @@ class ResultTestParameters():
         self._test_param_decimal(Decimal('123000000'))
         self._test_param_decimal(Decimal('123000000000.0'))
         self._test_param_decimal(Decimal('12300000000400000000.005'))
+        self._test_param_decimal(Decimal('1E-16383'))
+        with self.assertRaises(ValueError):
+            self._test_param_decimal(Decimal('1E-16384'))
+        self._test_param_decimal(Decimal('1E131071'))
+        with self.assertRaises(ValueError):
+            self._test_param_decimal(Decimal('1E131072'))
         with self.assertRaises(ValueError):
             self._test_param_decimal(Decimal('Inf'))
 

@@ -211,6 +211,8 @@ class DecimalParameterHandler(BaseParameterHandler):
         else:
             sign, digits, exp = val.as_tuple()
             pg_sign = NUMERIC_POS if sign == 0 else NUMERIC_NEG
+            if exp < -0x3FFF:
+                raise ValueError("Exponent out of PostgreSQL range")
             dscale = 0 if exp > 0 else -exp
 
             # "len(digits) + exp", i.e. the number of digits plus the exponent
@@ -218,6 +220,8 @@ class DecimalParameterHandler(BaseParameterHandler):
             # pg_weight is 10000 based exponent of first pg_digit minus one
             q, r = divmod(len(digits) + exp, 4)
             pg_weight = q + bool(r) - 1
+            if pg_weight > 0x7FFF:
+                raise ValueError("Decimal out of PostgreSQL range")
 
             def get_pg_digits(i):
                 pg_digit = 0
