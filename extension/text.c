@@ -238,12 +238,9 @@ text_examine(TextParamHandler *handler, PyObject *param) {
 	Py_ssize_t size;
 	TextParam *tp;
 
-	if (handler_single(handler)) {
-	    tp = &handler->params.param;
-	} else {
-	    tp = &handler->params.params[handler->examine_pos++];
-	}
-	if (!PyUnicode_Check(param)) {
+    tp = get_current_param(handler, &handler->examine_pos);
+
+    if (!PyUnicode_Check(param)) {
 		/* If the object is not a string, execute str(obj) and use the outcome.
 		 * Keep a reference for cleanup
 		 */
@@ -270,34 +267,22 @@ text_examine(TextParamHandler *handler, PyObject *param) {
 }
 
 
-static TextParam *
-text_get_encode_param(param_handler *handler) {
-    TextParamHandler *self;
-
-    self = (TextParamHandler *)handler;
-    if (self->num_params == 1) {
-        return &self->params.param;
-    }
-    return &self->params.params[self->encode_pos++];
-}
-
-
 static int
-text_encode(param_handler *handler, PyObject *param, char **loc) {
+text_encode(TextParamHandler *handler, PyObject *param, char **loc) {
 	TextParam *tp;
 
-	tp = text_get_encode_param(handler);
+	tp = get_current_param(handler, &handler->encode_pos);
 	*loc = tp->string;
 	return 0;
 }
 
 
 static int
-text_encode_at(param_handler *handler, PyObject *param, char *loc) {
+text_encode_at(TextParamHandler *handler, PyObject *param, char *loc) {
 	int size;
 	TextParam *tp;
 
-    tp = text_get_encode_param(handler);
+    tp = get_current_param(handler, &handler->encode_pos);
 	size = (int)tp->size;
 	memcpy(loc, tp->string, size);
 	return size;
@@ -330,8 +315,8 @@ new_text_param_handler(int num_params) {
 		{
 			(ph_examine)text_examine,		/* examine */
 			NULL,                           /* total_size */
-			text_encode,		            /* encode */
-			text_encode_at,		            /* encode_at */
+			(ph_encode)text_encode,		    /* encode */
+			(ph_encode_at)text_encode_at,   /* encode_at */
 			(ph_free)text_handler_free,	    /* free */
 			TEXTOID,		            	/* oid */
 			TEXTARRAYOID,		            /* array_oid */

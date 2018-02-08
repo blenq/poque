@@ -36,19 +36,6 @@ typedef struct _IntParamHandler {
 } IntParamHandler;
 
 
-static inline IntParam *
-int_get_current_param(IntParamHandler *handler, int *pos) {
-    /* gets the param value to work with and advances the index in case of
-     * multiple value
-     */
-    if (handler_single(handler)) {
-        return &handler->params.param;
-    } else {
-        return &handler->params.params[(*pos)++];
-    }
-}
-
-
 static int
 int_examine_text(IntParamHandler *handler, PyObject *param) {
     /* value(s) too large for PG integer, convert to PG text (i.e. char *) */
@@ -80,7 +67,7 @@ int_examine_text(IntParamHandler *handler, PyObject *param) {
 #endif
 
     /* set parameter values */
-    ip = int_get_current_param(handler, &handler->examine_pos);
+    ip = get_current_param(handler, &handler->examine_pos);
     ip->ref = param;    /* keep reference for decrementing refcount later */
     ip->size = size;
     ip->value.string = val;
@@ -94,7 +81,7 @@ int_encode_text(IntParamHandler *handler, PyObject *param, char **loc) {
 
     /* just return the earlier stored pointer to the UTF-8 encoded char buffer
      */
-    ip = int_get_current_param(handler, &handler->encode_pos);
+    ip = get_current_param(handler, &handler->encode_pos);
     *loc = ip->value.string;
     return 0;
 }
@@ -106,7 +93,7 @@ int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
     int size;
 
     /* copy the earlier retrieved UTF-8 encoded char buffer to location */
-    ip = int_get_current_param(handler, &handler->encode_pos);
+    ip = get_current_param(handler, &handler->encode_pos);
     size = (int)ip->size;
     memcpy(loc, ip->value.string, size);
     return size;
@@ -177,7 +164,7 @@ int_examine_int8(IntParamHandler *handler, PyObject *param) {
         /* value does not fit into 64 bits integer, use text */
         return int_set_examine_text(handler, param);
     }
-    ip = int_get_current_param(handler, &handler->examine_pos);
+    ip = get_current_param(handler, &handler->examine_pos);
     ip->ref = param;
     ip->value.int8 = val;
     return 8;
@@ -188,7 +175,7 @@ static int
 int_encode_at_int8(IntParamHandler *handler, PyObject *param, char *loc) {
     IntParam *ip;
 
-    ip = int_get_current_param(handler, &handler->encode_pos);
+    ip = get_current_param(handler, &handler->encode_pos);
     write_uint64(&loc, ip->value.int8);
     return 8;
 }
@@ -253,7 +240,7 @@ int_examine(IntParamHandler *handler, PyObject *param) {
     }
 #endif
     /* value fits in 32 bits, set up parameter */
-    ip = int_get_current_param(handler, &handler->examine_pos);
+    ip = get_current_param(handler, &handler->examine_pos);
     ip->ref = param;
     ip->value.int4 = val;
     return 4;
@@ -265,7 +252,7 @@ int_encode_at(IntParamHandler *handler, PyObject *param, char *loc)
 {
     IntParam *ip;
 
-    ip = int_get_current_param(handler, &handler->encode_pos);
+    ip = get_current_param(handler, &handler->encode_pos);
     write_uint32(&loc, ip->value.int4);
     return 4;
 }
@@ -540,19 +527,6 @@ typedef struct _DecimalParamHandler {
 } DecimalParamHandler;
 
 
-static inline DecimalParam *
-decimal_get_current_param(DecimalParamHandler *handler, int *pos) {
-    /* gets the param value to work with and advances the index in case of
-     * multiple value
-     */
-    if (handler_single(handler)) {
-        return &handler->params.param;
-    } else {
-        return &handler->params.params[(*pos)++];
-    }
-}
-
-
 static inline int
 decimal_check_infinite(PyObject *decimal) {
     PyObject *py_obj;
@@ -640,7 +614,15 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
         /* get pg dscale */
         py_obj = PyTuple_GET_ITEM(val, 2);
         exp = PyLong_AsSsize_t(py_obj);
-        if ((exp == -1 && PyErr_Occurred()) || exp < -0x3fff) {
+        if ((exp == -1 && PyErr_Occurred()) || exp < -0x3FFF) {
+            /* In case of positive overflow the exponent is too large too
+             * translate to a PG exponent (pg_weight, see later)
+             *
+             * negative exponent is the same as the positive pg dscale
+             * Maximum value for dscale is 0x3FFF.
+             *
+             *
+             */
             Py_DECREF(val);
             PyErr_SetString(PyExc_ValueError,
                             "Exponent out of PostgreSQL range");
@@ -737,7 +719,7 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
     write_uint16(&pos, dscale);
 
     /* set parameter values */
-    np = decimal_get_current_param(handler, &handler->examine_pos);
+    np = get_current_param(handler, &handler->examine_pos);
     np->data = data;
     size = 8 + npg_digits * 2;
     np->size = size;
@@ -751,7 +733,7 @@ decimal_encode(DecimalParamHandler *handler, PyObject *param, char **loc)
     DecimalParam *np;
 
     /* return the earlier encoded buffer */
-    np = decimal_get_current_param(handler, &handler->encode_pos);
+    np = get_current_param(handler, &handler->encode_pos);
     *loc = np->data;
     return 0;
 }
@@ -763,7 +745,7 @@ decimal_encode_at(DecimalParamHandler *handler, PyObject *param, char *loc) {
     int size;
 
     /* copy the earlier encoded buffer to location */
-    np = decimal_get_current_param(handler, &handler->encode_pos);
+    np = get_current_param(handler, &handler->encode_pos);
     size = np->size;
     memcpy(loc, np->data, size);
     return size;
@@ -858,7 +840,26 @@ numeric_set_digit(PyObject *digit_tuple, int val, Py_ssize_t idx) {
 
 static PyObject *
 numeric_binval(data_crs *crs) {
-    /* Create a Decimal from a binary value */
+    /* Create a Decimal from a pg numeric binary value
+     *
+     * PG numerics are not entirely the same as Python decimals, but they are
+     * close enough. Major difference is the precision.
+     * In Python the precision is determined from the number of significant
+     * digits. For example, the literal '9.9E6' has a precision of 2.
+     * PostgreSQL numerics have a precision that is number of digits before the
+     * decimal point plus the optionally available number of digits after the
+     * decimal point. The literal '9.9E6' will therefore have a precision of
+     * 7 and will be rendered in text mode as '9900000'. Execute the following
+     * in psql for a demonstration: SELECT '9.9E6'::numeric;
+     *
+     * On the wire, trailing zeroes are not present, but can be deduced from the
+     * weight, which is like the decimal exponent, but than with a 10000 base
+     * instead of 10.
+     *
+     * This conversion function will add the zeroes, so the precision of both
+     * the binary as the text conversion deliver the same result
+     *
+     */
     poque_uint16 npg_digits, sign, dscale;
     poque_int16 weight;
     PyObject *digits, *ret=NULL, *zero=NULL;
@@ -889,7 +890,6 @@ numeric_binval(data_crs *crs) {
     }
 
     /* create a tuple to hold the digits */
-
     ndigits = dscale + (weight + 1) * 4;
     digits = PyTuple_New(ndigits);
     if (digits == NULL) {
@@ -933,16 +933,18 @@ numeric_binval(data_crs *crs) {
         }
     }
 
-    /* add trailing zeroes */
-    zero = PyLong_FromLong(0);
-    if (zero == NULL) {
-        goto end;
+    if (j < ndigits) {
+        /* add trailing zeroes */
+        zero = PyLong_FromLong(0);
+        if (zero == NULL) {
+            goto end;
+        }
+        for (; j < ndigits; j++) {
+            Py_INCREF(zero);
+            PyTuple_SET_ITEM(digits, j, zero);
+        }
+        Py_DECREF(zero);
     }
-    for (; j < ndigits; j++) {
-        Py_INCREF(zero);
-        PyTuple_SET_ITEM(digits, j, zero);
-    }
-    Py_DECREF(zero);
 
     /* create the Decimal now */
     ret = PyObject_CallFunction(
@@ -994,7 +996,8 @@ init_numeric(void) {
     register_parameter_handler(&PyLong_Type, new_int_param_handler);
     register_parameter_handler(&PyFloat_Type, new_float_param_handler);
     register_parameter_handler(&PyBool_Type, new_bool_param_handler);
-    register_parameter_handler((PyTypeObject *)PyDecimal, new_decimal_param_handler);
+    register_parameter_handler((PyTypeObject *)PyDecimal,
+                               new_decimal_param_handler);
 
     return 0;
 }
