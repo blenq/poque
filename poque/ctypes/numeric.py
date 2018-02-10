@@ -99,12 +99,12 @@ NUMERIC_POS = 0x0000
 NUMERIC_NEG = 0x4000
 
 
-def _read_numeric_str(crs):
+def read_numeric_str(crs):
     value = crs.advance_text()
     return Decimal(value)
 
 
-def _read_numeric_bin(crs):
+def read_numeric_bin(crs):
     """ Reads a binary numeric/decimal value """
 
     # Read field values: number of pg digits, weight, sign, display scale.
@@ -144,48 +144,23 @@ def _read_numeric_bin(crs):
 
 
 def get_numeric_converters():
-    return {
-        BOOLOID: (read_bool_text, get_single_reader("?")),
-        BOOLARRAYOID: (
-            None, get_array_bin_reader(BOOLOID)),
-        NUMERICOID: (_read_numeric_str, _read_numeric_bin),
-        NUMERICARRAYOID: (
-            None, get_array_bin_reader(NUMERICOID)),
-        FLOAT4OID: (_read_float_text, get_single_reader("f")),
-        FLOAT4ARRAYOID: (
-            None, get_array_bin_reader(FLOAT4OID)),
-        FLOAT8OID: (_read_float_text, get_single_reader("d")),
-        FLOAT8ARRAYOID: (
-            None, get_array_bin_reader(FLOAT8OID)),
-        INT2OID: (read_int_text, get_single_reader("h")),
-        INT2ARRAYOID: (
-            None, get_array_bin_reader(INT2OID)),
-        INT2VECTOROID: (
-            None, get_array_bin_reader(INT2OID)),
-        INT2VECTORARRAYOID: (
-            None, get_array_bin_reader(INT2VECTOROID)),
-        INT4OID: (read_int_text, get_single_reader("i")),
-        INT4ARRAYOID: (
-            None, get_array_bin_reader(INT4OID)),
-        INT8OID: (read_int_text, get_single_reader("q")),
-        INT8ARRAYOID: (
-            None, get_array_bin_reader(INT8OID)),
-        XIDOID: (read_int_text, get_single_reader("I")),
-        XIDARRAYOID: (None, get_array_bin_reader(XIDOID)),
-        CIDOID: (read_int_text, get_single_reader("I")),
-        CIDARRAYOID: (None, get_array_bin_reader(CIDOID)),
-        OIDOID: (read_int_text, get_single_reader("I")),
-        OIDARRAYOID: (None, get_array_bin_reader(OIDOID)),
-        OIDVECTOROID: (None, get_array_bin_reader(OIDOID)),
-        OIDVECTORARRAYOID: (
-            None, get_array_bin_reader(OIDVECTOROID)),
-        REGPROCOID: (None, get_single_reader("I")),
-        REGPROCARRAYOID: (
-            None, get_array_bin_reader(REGPROCOID)),
-        CASHOID: (None, get_single_reader("q")),
-        CASHARRAYOID: (
-            None, get_array_bin_reader(CASHOID)),
-    }
+    return [
+        (BOOLOID, BOOLARRAYOID, read_bool_text, get_single_reader("?")),
+        (NUMERICOID, NUMERICARRAYOID, read_numeric_str, read_numeric_bin),
+        (FLOAT4OID, FLOAT4ARRAYOID, _read_float_text, get_single_reader("f")),
+        (FLOAT8OID, FLOAT8ARRAYOID, _read_float_text, get_single_reader("d")),
+        (INT2OID, INT2ARRAYOID, read_int_text, get_single_reader("h")),
+        (INT2VECTOROID, INT2VECTORARRAYOID, None,
+         get_array_bin_reader(INT2OID)),
+        (INT4OID, INT4ARRAYOID, read_int_text, get_single_reader("i")),
+        (INT8OID, INT8ARRAYOID, read_int_text, get_single_reader("q")),
+        (XIDOID, XIDARRAYOID, read_int_text, get_single_reader("I")),
+        (CIDOID, CIDARRAYOID, read_int_text, get_single_reader("I")),
+        (OIDOID, OIDARRAYOID, read_int_text, get_single_reader("I")),
+        (OIDVECTOROID, OIDVECTORARRAYOID, None, get_array_bin_reader(OIDOID)),
+        (REGPROCOID, REGPROCARRAYOID, None, get_single_reader("I")),
+        (CASHOID, CASHARRAYOID, None, get_single_reader("q")),
+    ]
 
 
 class DecimalParameterHandler(BaseParameterHandler):

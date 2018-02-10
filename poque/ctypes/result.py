@@ -2,7 +2,7 @@ from ctypes import (c_void_p, c_int, c_char_p, c_uint, string_at, c_ubyte)
 import codecs
 
 from .pq import pq, check_string
-from .common import result_converters
+from .common import result_converters, register_result_converters
 from .cursor import ValueCursor
 from .dt import get_date_time_converters
 from .numeric import get_numeric_converters
@@ -11,7 +11,7 @@ from .text import get_text_converters
 from .various import get_various_converters
 from poque.ctypes.constants import FORMAT_TEXT
 
-result_converters.update(get_numeric_converters())
+register_result_converters(get_numeric_converters())
 result_converters.update(get_text_converters())
 result_converters.update(get_date_time_converters())
 result_converters.update(get_various_converters())

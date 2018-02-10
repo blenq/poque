@@ -69,6 +69,12 @@ class BaseParameterHandler(object, metaclass=BaseParameterHandlerMeta):
 result_converters = {}
 
 
+def register_result_converters(converters):
+    for oid, array_oid, reader_text, reader_bin in converters:
+        result_converters[oid] = (reader_text, reader_bin)
+        result_converters[array_oid] = (None, get_array_bin_reader(oid))
+
+
 def _get_array_value(crs, array_dims, reader):
     if array_dims:
         # get an array of (nested) values
