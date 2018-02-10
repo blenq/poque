@@ -28,28 +28,23 @@ def new_connstring(connstring, blocking=True):
     return [connstring], blocking
 
 
-class ArrayParameter(object):
+class ArrayParameterHandler(object):
 
     has_null = False
     type = None
     max_depth = 0
     converter = None
 
-    def __init__(self, val):
-        self.val = val
-        self.dims = []
-
-    def walk_list(self, val, depth=0):
+    def walk_list(self, val, dims, depth=0):
         # A nested list is not the same as a multidimensional array. Therefore
         # some checks to make sure all lists of a certain dimension have the
         # correct length
 
         # get length of current dimension
         try:
-            dim_length = self.dims[depth]
+            dim_length = dims[depth]
         except IndexError:
-            dim_length = len(val)
-            self.dims.append(dim_length)
+            dims.append(len(val))
         else:
             # compare dimension length with current list length
             if len(val) != dim_length:
@@ -66,11 +61,11 @@ class ArrayParameter(object):
                     raise ValueError("Invalid nesting")
 
                 # postgres supports up to 6 dimensions
-                if len(self.dims) == 6:
+                if len(dims) == 6:
                     raise ValueError("Too deep nested")
 
                 # repeat ourselves for the child list
-                self.walk_list(item, depth)
+                self.walk_list(item, dims, depth)
             else:
                 # non list item
 
@@ -101,13 +96,9 @@ class ArrayParameter(object):
                 # give the converter the opportunity to examine the value
                 self.converter.examine(item)
 
-    def _write(self, stc, *args):
-        stc.pack_into(self.buf, self.pos, *args)
-        self.pos += stc.size
-
     def write(self, fmt, *args):
-        stc = get_struct(fmt)
-        self._write(stc, *args)
+        self.fmt.append(fmt)
+        self.vals.extend(args)
 
     def write_values(self, val):
         # walk the list again to write the values
@@ -121,42 +112,40 @@ class ArrayParameter(object):
                 values = self.converter.encode_value(item)
                 stc = get_struct(values[0])
                 self.write("i", stc.size)
-                self._write(stc, *values[1:])
+                self.write(values[0], *values[1:])
 
-    def get_value(self):
+    def examine(self, val):
         # walk the list to set up structure and converter
-        self.walk_list(self.val)
-
-        dim_len = len(self.dims)
+        dims = []
+        self.walk_list(val, dims)
+        dim_len = len(dims)
 
         # calculate length: 12 bytes header, 8 bytes per dimension and
         # 4 bytes (length) per value
-        length = 12 + dim_len * 8 + reduce(operator.mul, self.dims, 1) * 4
+        length = 12 + dim_len * 8 + reduce(operator.mul, dims, 1) * 4
         if self.converter:
             length += self.converter.get_size()  # add length of values
             elem_type = self.converter.oid
-            array_oid = self.converter.array_oid
+            self.oid = self.converter.array_oid
         else:
             elem_type = TEXTOID
-            array_oid = TEXTARRAYOID
-        self.buf = (c_char * length)()
+            self.oid = TEXTARRAYOID
 
-        # initialize writer
-        self.pos = 0
-
-        # write header
-        self.write("IiI", dim_len, self.has_null, elem_type)
-
-        # Write for each dimension the length and the lower bound (1). Python
-        # does not have a lower bound for lists other than zero, so we choose
-        # the default lower bound for PostgreSQL, which is one.
-        for dim in self.dims:
+        self.fmt = ["IiI"]
+        self.vals = [dim_len, self.has_null, elem_type]
+        for dim in dims:
             self.write("ii", dim, 1)
-
         # actually write the values
-        self.write_values(self.val)
+        self.write_values(val)
+        return length
 
-        return array_oid, cast(self.buf, c_char_p), length
+    def encode_value(self, val):
+
+        def encoded():
+            yield ''.join(self.fmt)
+            yield from self.vals
+
+        return tuple(encoded())
 
 
 class Conn(c_void_p):
@@ -256,6 +245,7 @@ class Conn(c_void_p):
         time: TimeParameterHandler,
         datetime: DateTimeParameterHandler,
         Decimal: DecimalParameterHandler,
+        list: ArrayParameterHandler,
         IPv4Interface: InterfaceParameterHandler,
         IPv6Interface: InterfaceParameterHandler,
         IPv4Network: NetworkParameterHandler,
@@ -278,10 +268,6 @@ class Conn(c_void_p):
             if param is None:
                 oids[i], values[i], lengths[i] = (
                     TEXTOID, 0, 0)
-                continue
-            if type(param) == list:
-                oids[i], values[i], lengths[i] = (
-                    ArrayParameter(param).get_value())
                 continue
             handler = self._param_handlers.get(type(param),
                                                TextParameterHandler)()

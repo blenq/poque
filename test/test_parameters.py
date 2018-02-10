@@ -82,10 +82,12 @@ class ResultTestParameters():
 
     def test_str_param(self):
         self._test_param_val('hi')
+        self._test_param_val('')
 
     def test_str_array_param(self):
         self._test_param_val(['hi', None, 'hello'])
         self._test_param_val(['hi', 'hello'])
+        self._test_param_val(['', 'hello'])
 
     def test_float_param(self):
         self._test_param_val(3.24)
@@ -95,9 +97,11 @@ class ResultTestParameters():
 
     def test_bytes_param(self):
         self._test_param_val(b'hoi')
+        self._test_param_val(b'')
 
     def test_bytes_array_param(self):
         self._test_param_val([b'hoi', b'ha\0llo'])
+        self._test_param_val([b'', b'hoi'])
 
     def test_bool_param(self):
         res = self.cn.execute(
