@@ -40,41 +40,43 @@ class IntParameterHandler(BaseParameterHandler):
 
     def __init__(self):
         self.values = []
+        super().__init__()
 
     def examine(self, val):
-        self.values.append(val)
-        self.examine_item(val)
+        return self.examine_item(val)
 
     def examine_int4(self, val):
         if -0x80000000 <= val <= 0x7FFFFFFF:
-            return
+            self.values.append(val)
+            return super().examine(val)
         self.oid = INT8OID
         self.array_oid = INT8ARRAYOID
         self.item_size = self.int8size
         self.fmt = self.int8fmt
+        self.size = len(self.values) * self.item_size
         self.examine_item = self.examine_int8
-        self.examine_item(val)
+        return self.examine_item(val)
 
     examine_item = examine_int4
 
     def examine_int8(self, val):
         if -0x8000000000000000 <= val <= 0x7FFFFFFFFFFFFFFF:
-            return
+            self.values.append(val)
+            return super().examine(val)
         self.oid = TEXTOID
         self.array_oid = TEXTARRAYOID
         self.encode_value = self.encode_text_value
-        self.get_size = self.get_text_size
+        self.values = deque(str(v).encode() for v in self.values)
+        self.size = sum(len(v) for v in self.values)
         self.examine_item = self.examine_text
+        return self.examine_item(val)
 
     def examine_text(self, val):
-        pass
-
-    def get_size(self):
-        return len(self.values) * self.item_size
-
-    def get_text_size(self):
-        self.values = deque(str(v).encode() for v in self.values)
-        return sum(len(v) for v in self.values)
+        val = str(val).encode()
+        self.values.append(val)
+        size = len(val)
+        self.size += size
+        return size
 
     def encode_text_value(self, val):
         val = self.values.popleft()
@@ -244,7 +246,9 @@ class DecimalParameterHandler(BaseParameterHandler):
         npg_digits = len(pg_digits)
         self.values.append((npg_digits, pg_weight, pg_sign, dscale) +
                            tuple(pg_digits))
-        self.size += self.header_size + npg_digits * self.digit_size
+        size = self.header_size + npg_digits * self.digit_size
+        self.size += size
+        return size
 
     def encode_value(self, val):
         val = self.values.popleft()

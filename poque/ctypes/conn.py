@@ -285,9 +285,7 @@ class Conn(c_void_p):
                 continue
             handler = self._param_handlers.get(type(param),
                                                TextParameterHandler)()
-            handler.examine(param)
-            length = handler.get_size()
-
+            length = handler.examine(param)
             value = (c_char * length)()
             param_vals = handler.encode_value(param)
             stc = get_struct(param_vals[0])

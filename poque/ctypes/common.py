@@ -43,7 +43,9 @@ class BaseParameterHandler(object, metaclass=BaseParameterHandlerMeta):
         return self.item_size
 
     def examine(self, val):
-        self.size += self.get_item_size(val)
+        size = self.get_item_size(val)
+        self.size += size
+        return size
 
     def get_size(self):
         return self.size

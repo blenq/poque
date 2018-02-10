@@ -102,10 +102,13 @@ class TextParameterHandler(BaseParameterHandler):
         super(TextParameterHandler, self).__init__()
         self.values = deque()
 
+    def get_item_size(self, val):
+        return len(self.values[-1])
+
     def examine(self, val):
         val = str(val).encode()
         self.values.append(val)
-        self.size += len(val)
+        return super().examine(val)
 
     def encode_value(self, val):
         val = self.values.popleft()

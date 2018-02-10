@@ -244,7 +244,7 @@ class ResultTestValues():
                                       260, self.poque.BITOID)
         self._test_value_and_type_bin("SELECT 260::BIT(16)",
                                       260, self.poque.BITOID)
-        self._test_value_and_type_bin("SELECT 260::BIT(16)",
+        self._test_value_and_type_bin("SELECT 260::BIT(17)",
                                       260, self.poque.BITOID)
         val = '1' * 65
         self._test_value_and_type_bin("SELECT B'{0}'::BIT(65)".format(val),

@@ -219,7 +219,7 @@ class DateTimeParameterHandler(BaseParameterHandler):
                 self.binary_value = self.binary_value_tz
         elif self.has_tz != has_tz:
             raise ValueError("Can not mix naive and aware datetimes")
-        super(DateTimeParameterHandler, self).examine(val)
+        return super(DateTimeParameterHandler, self).examine(val)
 
     def binary_value(self, val):
         return date_ordinal(val) * USECS_PER_DAY + time_ordinal(val)
