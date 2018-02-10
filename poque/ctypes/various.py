@@ -1,5 +1,6 @@
-import ipaddress
+from ipaddress import IPv4Interface, IPv6Interface, IPv4Network, IPv6Network
 import json
+from struct import calcsize
 from uuid import UUID
 
 from . import constants
@@ -71,16 +72,16 @@ def _read_inet_bin(crs):
     if family == PGSQL_AF_INET:
         correct_size = 4
         if is_cidr:
-            cls = ipaddress.IPv4Network
+            cls = IPv4Network
         else:
-            cls = ipaddress.IPv4Interface
+            cls = IPv4Interface
         addr_data = crs.advance_single("I")
     elif family == PGSQL_AF_INET6:
         correct_size = 16
         if is_cidr:
-            cls = ipaddress.IPv6Network
+            cls = IPv6Network
         else:
-            cls = ipaddress.IPv6Interface
+            cls = IPv6Interface
         addr_data = crs.advance_bytes(16)
     else:
         raise Error("Invalid address family")
@@ -215,3 +216,52 @@ class UuidParameterHandler(BaseParameterHandler):
 
     def binary_value(self, val):
         return val.bytes
+
+
+class BaseIPParameterHandler(BaseParameterHandler):
+
+    ip4_fmt = "4B4s"
+    ip6_fmt = "4B16s"
+    ip4_size = calcsize(ip4_fmt)
+    ip6_size = calcsize(ip6_fmt)
+
+    def get_item_size(self, val):
+        return self.ip4_size if val.version == 4 else self.ip6_size
+
+    def get_format(self, val):
+        return self.ip4_fmt if val.version == 4 else self.ip6_fmt
+
+    def binary_values(self, val):
+        packed = self.get_packed(val)
+        return (PGSQL_AF_INET if val.version == 4 else PGSQL_AF_INET6,
+                self.get_prefixlen(val),
+                self.oid == constants.CIDROID,
+                len(packed),
+                self.get_packed(val))
+
+    def type_allowed(self, typ):
+        return typ in self.allowed_types
+
+
+class InterfaceParameterHandler(BaseIPParameterHandler):
+    oid = constants.INETOID
+    array_oid = constants.INETARRAYOID
+    allowed_types = (IPv4Interface, IPv6Interface)
+
+    def get_packed(self, val):
+        return val.packed
+
+    def get_prefixlen(self, val):
+        return val.network.prefixlen
+
+
+class NetworkParameterHandler(BaseIPParameterHandler):
+    oid = constants.CIDROID
+    array_oid = constants.CIDRARRAYOID
+    allowed_types = (IPv4Network, IPv6Network)
+
+    def get_packed(self, val):
+        return val.network_address.packed
+
+    def get_prefixlen(self, val):
+        return val.prefixlen

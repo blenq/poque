@@ -1,5 +1,6 @@
 import datetime
 from decimal import Decimal
+from ipaddress import IPv4Interface, IPv6Interface, IPv4Network, IPv6Network
 import unittest
 import uuid
 
@@ -197,6 +198,37 @@ class ResultTestParameters():
     def test_decimal_array_param(self):
         self._test_param_val([
             Decimal('123.45600'), Decimal('99E-100')])
+
+    def test_ipinterface_param(self):
+        self._test_param_val(IPv4Interface('192.168.0.1'))
+        self._test_param_val(IPv4Interface('192.168.0.1/24'))
+        self._test_param_val(IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334'))
+        self._test_param_val(
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334/64'))
+
+    def test_ipinterface_array_param(self):
+        self._test_param_val([
+            IPv4Interface('192.168.0.1'),
+            IPv4Interface('192.168.0.1/24'),
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334'),
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334/64')
+        ])
+        self._test_param_val([
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334'),
+            IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334/64'),
+            IPv4Interface('192.168.0.1'),
+            IPv4Interface('192.168.0.1/24'),
+        ])
+
+    def test_ipnetwork_param(self):
+        self._test_param_val(IPv4Network('192.168.0.0/24'))
+        self._test_param_val(IPv6Network('2001:db8:85a3:0:0:8a2e:0:0/96'))
+
+    def test_ipnetwork_array_param(self):
+        self._test_param_val([IPv4Network('192.168.0.0/24'),
+                              IPv6Network('2001:db8:85a3:0:0:8a2e:0:0/96')])
+        self._test_param_val([IPv6Network('2001:db8:85a3:0:0:8a2e:0:0/96'),
+                              IPv4Network('192.168.0.0/24')])
 
     def test_mixed_array_param(self):
         with self.assertRaises(ValueError):

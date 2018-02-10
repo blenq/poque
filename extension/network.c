@@ -25,10 +25,10 @@ mac8_binval(data_crs *crs)
     return PyLong_FromUnsignedLongLong(val);
 }
 
-static PyObject *IPv4Network;
-static PyObject *IPv4Interface;
-static PyObject *IPv6Network;
-static PyObject *IPv6Interface;
+static PyTypeObject *IPv4Network;
+static PyTypeObject *IPv4Interface;
+static PyTypeObject *IPv6Network;
+static PyTypeObject *IPv6Interface;
 
 /* These constants are a bit weird. PGSQL_AF_INET has the value of whatever
  * AF_INET is on the server. PGSQL_AF_INET6 is that value plus one.
@@ -41,7 +41,7 @@ static PyObject *IPv6Interface;
 static PyObject *
 inet_binval(data_crs *crs)
 {
-    PyObject *cls;
+    PyTypeObject *cls;
     unsigned char *cr;
     int mask, size, is_cidr, family;
 
@@ -74,7 +74,8 @@ inet_binval(data_crs *crs)
         cls = is_cidr ? IPv4Network : IPv4Interface;
 
         /* instantiate class */
-        return PyObject_CallFunction(cls, "((Ii))", addr_data, mask);
+        return PyObject_CallFunction(
+                (PyObject *)cls, "((Ii))", addr_data, mask);
     }
     else if (family == PGSQL_AF_INET6) {
         char *addr_data;
@@ -94,12 +95,136 @@ inet_binval(data_crs *crs)
         cls = is_cidr ? IPv6Network : IPv6Interface;
 
         /* instantiate class */
-        return PyObject_CallFunction(cls, "((y#i))", addr_data, 16, mask);
+        return PyObject_CallFunction(
+                (PyObject *)cls, "((y#i))", addr_data, 16, mask);
     }
     else {
         PyErr_SetString(PoqueError, "Unknown network family");
         return NULL;
     }
+}
+
+
+#define ip_examine(p, t) (Py_TYPE(p) == t ? 8 : 20)
+
+static int
+ip_interface_examine(param_handler *handler, PyObject *param) {
+    return ip_examine(param, IPv4Interface);
+}
+
+
+static int
+ip_encode_at(int family, int prefixlen, int is_cidr, PyObject *packed,
+        char *loc) {
+    Py_ssize_t size;
+    unsigned char *data;
+
+    size = PyBytes_GET_SIZE(packed);
+
+    data = (unsigned char *)loc;
+    data[0] = family;
+    data[1] = prefixlen;
+    data[2] = is_cidr;
+    data[3] = size;
+    memcpy(loc + 4, PyBytes_AS_STRING(packed), size);
+    return 4 + size;
+}
+
+#define get_family(p, t) (Py_TYPE(p) == t ? PGSQL_AF_INET : PGSQL_AF_INET6)
+
+static int
+ip_interface_encode_at(param_handler *handler, PyObject *param,
+        char *loc) {
+
+    int family, ret;
+    long prefixlen;
+    PyObject *py_obj;
+
+    family = get_family(param, IPv4Interface);
+    py_obj = PyObject_GetAttrString(param, "network");
+    if (py_obj == NULL) {
+        return -1;
+    }
+    if (pyobj_long_attr(py_obj, "prefixlen", &prefixlen) == -1) {
+        return -1;
+    }
+    Py_DECREF(py_obj);
+    py_obj = PyObject_GetAttrString(param, "packed");
+    if (py_obj== NULL) {
+        return -1;
+    }
+
+    ret = ip_encode_at(family, prefixlen, 0, py_obj, loc);
+    Py_DECREF(py_obj);
+    return ret;
+}
+
+
+static param_handler ip_interface_handler = {
+    ip_interface_examine,       /* examine */
+    NULL,                       /* total_size */
+    NULL,                       /* encode */
+    ip_interface_encode_at,     /* encode_at */
+    NULL,                       /* free */
+    INETOID,                    /* oid */
+    INETARRAYOID                /* array_oid */
+}; /* static initialized handler */
+
+
+static param_handler *
+new_ip_interface_param_handler(int num_param) {
+    return &ip_interface_handler;
+}
+
+
+static int
+ip_network_examine(param_handler *handler, PyObject *param) {
+    return ip_examine(param, IPv4Network);
+}
+
+
+static int
+ip_network_encode_at(param_handler *handler, PyObject *param,
+        char *loc) {
+
+    int family, ret;
+    long prefixlen;
+    PyObject *py_obj, *py_packed;
+
+    family = get_family(param, IPv4Network);
+    if (pyobj_long_attr(param, "prefixlen", &prefixlen) == -1) {
+        return -1;
+    }
+
+    py_obj = PyObject_GetAttrString(param, "network_address");
+    if (py_obj == NULL) {
+        return -1;
+    }
+    py_packed = PyObject_GetAttrString(py_obj, "packed");
+    Py_DECREF(py_obj);
+    if (py_packed == NULL) {
+        return -1;
+    }
+    ret = ip_encode_at(family, prefixlen, 1, py_packed, loc);
+    Py_DECREF(py_packed);
+    return ret;
+}
+
+
+static param_handler ip_network_handler = {
+    ip_network_examine,         /* examine */
+    NULL,                       /* total_size */
+    NULL,                       /* encode */
+    ip_network_encode_at,       /* encode_at */
+    NULL,                       /* free */
+    CIDROID,                    /* oid */
+    CIDRARRAYOID                /* array_oid */
+}; /* static initialized handler */
+
+
+static param_handler *
+new_ip_network_param_handler(int num_param) {
+    return &ip_network_handler;
 }
 
 /* ======== initialization ================================================== */
@@ -118,14 +243,21 @@ static PoqueTypeEntry network_value_handlers[] = {
     {InvalidOid}
 };
 
+
 int
 init_network(void)
 {
-    IPv4Network = load_python_object("ipaddress", "IPv4Network");
-    IPv4Interface = load_python_object("ipaddress", "IPv4Interface");
-    IPv6Network = load_python_object("ipaddress", "IPv6Network");
-    IPv6Interface = load_python_object("ipaddress", "IPv6Interface");
+    IPv4Network = load_python_type("ipaddress", "IPv4Network");
+    IPv4Interface = load_python_type("ipaddress", "IPv4Interface");
+    IPv6Network = load_python_type("ipaddress", "IPv6Network");
+    IPv6Interface = load_python_type("ipaddress", "IPv6Interface");
 
     register_value_handler_table(network_value_handlers);
+    register_parameter_handler(IPv4Interface, new_ip_interface_param_handler);
+    register_parameter_handler(IPv6Interface, new_ip_interface_param_handler);
+    register_parameter_handler(IPv4Network, new_ip_network_param_handler);
+    register_parameter_handler(IPv6Network, new_ip_network_param_handler);
+    register_compatible_param(IPv4Interface, IPv6Interface);
+    register_compatible_param(IPv4Network, IPv6Network);
     return 0;
 };

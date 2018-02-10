@@ -79,7 +79,7 @@ typedef struct _param_handler_constructor {
 } param_handler_constructor;
 
 /* param handler table */
-static param_handler_constructor param_handler_constructors[11];
+static param_handler_constructor param_handler_constructors[15];
 static int num_phcons = 0;
 
 
@@ -111,6 +111,42 @@ get_param_handler_constructor(PyTypeObject *typ) {
         }
     }
     return new_text_param_handler;
+}
+
+
+/* compatible param type record */
+typedef struct _compatible_type {
+    PyTypeObject *typ1;
+    PyTypeObject *typ2;
+} compatible_type;
+
+/* compatible param type table */
+static compatible_type compatible_types[2];
+static int comp_types = 0;
+
+
+void
+register_compatible_param(PyTypeObject *typ1, PyTypeObject *typ2) {
+    compatible_type *ct;
+
+    ct = compatible_types + comp_types++;
+    ct->typ1 = typ1;
+    ct->typ2 = typ2;
+}
+
+int
+is_compatible(PyTypeObject *typ1, PyTypeObject *typ2) {
+    int i;
+    compatible_type *ct;
+
+    for (i = 0; i < comp_types; i++) {
+        ct = compatible_types + i;
+        if (ct->typ1 == typ1 && ct->typ2 == typ2)
+            return 1;
+        if (ct->typ2 == typ1 && ct->typ1 == typ2)
+            return 1;
+    }
+    return 0;
 }
 
 
@@ -238,7 +274,8 @@ static int array_examine_list(
                 }
                 else {
                     /* check the Python type */
-                    if (handler->el_type != item_type) {
+                    if (handler->el_type != item_type &&
+                            !is_compatible(handler->el_type, item_type)) {
                         /* all items must be of the same type or None */
                         PyErr_SetString(PyExc_ValueError, "Can not mix types");
                         return -1;
@@ -294,7 +331,8 @@ array_examine(ArrayParamHandler *handler, PyObject *param) {
         return -1;
     }
 
-    /* Python type is known. Now we can set the element parameter handler */
+    /* Python type and number of items is known. Now we can set the element
+     * parameter handler */
     handler->el_handler = get_param_handler_constructor(handler->el_type)(
                               handler->num_items);
 
@@ -447,6 +485,23 @@ load_python_object(const char *module_name, const char *obj_name) {
     obj = PyObject_GetAttrString(module, obj_name);
     Py_DECREF(module);
     return obj;
+}
+
+
+int
+pyobj_long_attr(PyObject *mod, const char *attr, long *value) {
+    PyObject *py_value;
+
+    py_value = PyObject_GetAttrString(mod, attr);
+    if (py_value == NULL) {
+        return -1;
+    }
+    *value = PyLong_AsLong(py_value);
+    Py_DECREF(py_value);
+    if (*value == -1 && PyErr_Occurred()) {
+        return -1;
+    }
+    return 0;
 }
 
 

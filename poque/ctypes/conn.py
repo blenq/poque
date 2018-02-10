@@ -3,6 +3,7 @@ from ctypes import (c_void_p, c_char_p, POINTER, c_int, c_uint, c_size_t,
 from datetime import date, time, datetime
 from decimal import Decimal
 from functools import reduce
+from ipaddress import IPv4Interface, IPv6Interface, IPv4Network, IPv6Network
 import operator
 from uuid import UUID
 
@@ -19,7 +20,8 @@ from .numeric import (
 from .lib import Error, get_property, get_method, InterfaceError
 from .result import Result
 from .text import TextParameterHandler, BytesParameterHandler
-from .various import UuidParameterHandler
+from .various import (
+    UuidParameterHandler, InterfaceParameterHandler, NetworkParameterHandler)
 
 
 def new_connstring(connstring, blocking=True):
@@ -91,7 +93,8 @@ class ArrayParameter(object):
                     self.type = item_type
                     self.converter = Conn._param_handlers.get(
                         item_type, TextParameterHandler)()
-                elif item_type != self.type:
+                elif (item_type != self.type and
+                      not self.converter.type_allowed(item_type)):
                     # all non-list items must be of the same type
                     raise ValueError("Can not mix types")
 
@@ -253,6 +256,10 @@ class Conn(c_void_p):
         time: TimeParameterHandler,
         datetime: DateTimeParameterHandler,
         Decimal: DecimalParameterHandler,
+        IPv4Interface: InterfaceParameterHandler,
+        IPv6Interface: InterfaceParameterHandler,
+        IPv4Network: NetworkParameterHandler,
+        IPv6Network: NetworkParameterHandler,
     }
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):

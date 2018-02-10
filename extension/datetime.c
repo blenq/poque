@@ -7,20 +7,6 @@ static long max_year;
 static PyObject *utc;
 
 
-static int
-datetime_long_attr(PyObject *mod, const char *attr, long *value) {
-    PyObject *py_value;
-
-    py_value = PyObject_GetAttrString(mod, attr);
-    if (py_value == NULL) {
-        return -1;
-    }
-    *value = PyLong_AsLong(py_value);
-    Py_DECREF(py_value);
-    return 0;
-}
-
-
 #define POSTGRES_EPOCH_JDATE    2451545
 #define DATE_OFFSET             730120
 
@@ -536,8 +522,8 @@ init_datetime(void)
         return -1;
 
     /* get min and max year */
-    if ((datetime_long_attr(datetime_module, "MINYEAR", &min_year) != 0) ||
-            (datetime_long_attr(datetime_module, "MAXYEAR", &max_year) != 0)) {
+    if ((pyobj_long_attr(datetime_module, "MINYEAR", &min_year) != 0) ||
+            (pyobj_long_attr(datetime_module, "MAXYEAR", &max_year) != 0)) {
         Py_DECREF(datetime_module);
         return -1;
     }

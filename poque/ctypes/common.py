@@ -54,9 +54,14 @@ class BaseParameterHandler(object, metaclass=BaseParameterHandlerMeta):
     def binary_value(self, val):
         return val
 
+    def binary_values(self, val):
+        return (self.binary_value(val),)
+
     def encode_value(self, val):
-        val = self.binary_value(val)
-        return self.get_format(val), val
+        return (self.get_format(val),) + self.binary_values(val)
+
+    def type_allowed(self, typ):
+        return False
 
 
 result_converters = {}

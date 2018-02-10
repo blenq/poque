@@ -61,5 +61,6 @@ void write_uint64(char **p, PY_UINT64_T val);
 
 void register_value_handler_table(PoqueTypeEntry *table);
 void register_parameter_handler(PyTypeObject *typ, ph_new constructor);
+void register_compatible_param(PyTypeObject *typ1, PyTypeObject *typ2);
 
 #endif

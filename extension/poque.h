@@ -182,5 +182,7 @@ int init_type_map(void);
 #define NUMERIC_NEG         0x4000
 
 PyObject *load_python_object(const char *module_name, const char *obj_name);
+#define load_python_type(m, o) ((PyTypeObject *)load_python_object(m, o))
+int pyobj_long_attr(PyObject *mod, const char *attr, long *value);
 
 #endif
