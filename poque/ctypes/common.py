@@ -60,7 +60,7 @@ class BaseParameterHandler(object, metaclass=BaseParameterHandlerMeta):
         return (self.binary_value(val),)
 
     def encode_value(self, val):
-        return (self.get_format(val),) + self.binary_values(val)
+        return self.get_format(val), self.binary_values(val)
 
     def type_allowed(self, typ):
         return False

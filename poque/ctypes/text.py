@@ -110,6 +110,8 @@ class TextParameterHandler(BaseParameterHandler):
         self.values.append(val)
         return super().examine(val)
 
-    def encode_value(self, val):
-        val = self.values.popleft()
-        return "{0}s".format(len(val)), val
+    def get_format(self, val):
+        return "{0}s".format(len(self.values[0]))
+
+    def binary_value(self, val):
+        return self.values.popleft()

@@ -109,10 +109,10 @@ class ArrayParameterHandler(object):
                 # NULLs are represented by a length of -1
                 self.write("i", -1)
             else:
-                values = self.converter.encode_value(item)
-                stc = get_struct(values[0])
+                fmt, values = self.converter.encode_value(item)
+                stc = get_struct(fmt)
                 self.write("i", stc.size)
-                self.write(values[0], *values[1:])
+                self.write(fmt, *values)
 
     def examine(self, val):
         # walk the list to set up structure and converter
@@ -140,12 +140,7 @@ class ArrayParameterHandler(object):
         return length
 
     def encode_value(self, val):
-
-        def encoded():
-            yield ''.join(self.fmt)
-            yield from self.vals
-
-        return tuple(encoded())
+        return ''.join(self.fmt), self.vals
 
 
 class Conn(c_void_p):
@@ -273,9 +268,9 @@ class Conn(c_void_p):
                                                TextParameterHandler)()
             length = handler.examine(param)
             value = (c_char * length)()
-            param_vals = handler.encode_value(param)
-            stc = get_struct(param_vals[0])
-            stc.pack_into(value, 0, *param_vals[1:])
+            fmt, param_vals = handler.encode_value(param)
+            stc = get_struct(fmt)
+            stc.pack_into(value, 0, *param_vals)
             oids[i] = handler.oid
             values[i] = cast(value, c_char_p)
             lengths[i] = length

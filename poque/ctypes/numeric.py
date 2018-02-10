@@ -80,7 +80,7 @@ class IntParameterHandler(BaseParameterHandler):
 
     def encode_text_value(self, val):
         val = self.values.popleft()
-        return "{0}s".format(len(val)), val
+        return "{0}s".format(len(val)), (val,)
 
 
 def _read_float_text(crs):
@@ -252,4 +252,4 @@ class DecimalParameterHandler(BaseParameterHandler):
 
     def encode_value(self, val):
         val = self.values.popleft()
-        return (self.header_fmt + self.digit_fmt * val[0],) + val
+        return self.header_fmt + self.digit_fmt * val[0], val
