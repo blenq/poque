@@ -12,8 +12,8 @@ from .various import get_various_converters
 from poque.ctypes.constants import FORMAT_TEXT
 
 register_result_converters(get_numeric_converters())
-result_converters.update(get_text_converters())
-result_converters.update(get_date_time_converters())
+register_result_converters(get_text_converters())
+register_result_converters(get_date_time_converters())
 result_converters.update(get_various_converters())
 
 

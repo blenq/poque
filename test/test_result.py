@@ -1094,6 +1094,13 @@ class ResultTestValues():
                 datetime.timedelta(hours=-4))),
             self.poque.TIMETZOID)
 
+    def test_timetz_array_value_bin(self):
+        self._test_value_and_type_bin(
+            "SELECT ARRAY[NULL, '14:12+00:30'::timetz]",
+            [None, datetime.time(14, 12, tzinfo=datetime.timezone(
+                datetime.timedelta(seconds=1800)))],
+            self.poque.TIMETZARRAYOID)
+
     def test_timestamptz_value_bin(self):
         self._test_value_and_type_bin(
             "SELECT '2013-04-02 13:09:25.123 +3'::timestamptz",

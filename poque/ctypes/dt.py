@@ -3,7 +3,7 @@ from datetime import (
 
 from .lib import Error
 from .common import BaseParameterHandler, get_array_bin_reader
-from . import constants
+from .constants import *  # noqa
 
 INVALID_ABSTIME = 0x7FFFFFFE
 
@@ -144,33 +144,17 @@ def read_interval_bin(crs):
 
 
 def get_date_time_converters():
-    return {
-        constants.ABSTIMEOID: (None, read_abstime_bin),
-        constants.TINTERVALOID: (None, read_tinterval_bin),
-        constants.RELTIMEOID: (None, read_reltime_bin),
-        constants.DATEOID: (None, read_date_bin),
-        constants.TIMEOID: (None, read_time_bin),
-        constants.TIMETZOID: (None, read_timetz_bin),
-        constants.TIMESTAMPOID: (None, read_timestamp_bin),
-        constants.TIMESTAMPTZOID: (None, read_timestamptz_bin),
-        constants.INTERVALOID: (None, read_interval_bin),
-        constants.ABSTIMEARRAYOID: (
-            None, get_array_bin_reader(constants.ABSTIMEOID)),
-        constants.TINTERVALARRAYOID: (
-            None, get_array_bin_reader(constants.TINTERVALOID)),
-        constants.RELTIMEARRAYOID: (
-            None, get_array_bin_reader(constants.RELTIMEOID)),
-        constants.DATEARRAYOID: (
-            None, get_array_bin_reader(constants.DATEOID)),
-        constants.TIMEARRAYOID: (
-            None, get_array_bin_reader(constants.TIMEOID)),
-        constants.TIMESTAMPARRAYOID: (
-            None, get_array_bin_reader(constants.TIMESTAMPOID)),
-        constants.TIMESTAMPTZARRAYOID: (
-            None, get_array_bin_reader(constants.TIMESTAMPTZOID)),
-        constants.INTERVALARRAYOID: (
-            None, get_array_bin_reader(constants.INTERVALOID)),
-    }
+    return [
+        (ABSTIMEOID, ABSTIMEARRAYOID, None, read_abstime_bin),
+        (TINTERVALOID, TINTERVALARRAYOID, None, read_tinterval_bin),
+        (RELTIMEOID, RELTIMEARRAYOID, None, read_reltime_bin),
+        (DATEOID, DATEARRAYOID, None, read_date_bin),
+        (TIMEOID, TIMEARRAYOID, None, read_time_bin),
+        (TIMETZOID, TIMETZARRAYOID, None, read_timetz_bin),
+        (TIMESTAMPOID, TIMESTAMPARRAYOID, None, read_timestamp_bin),
+        (TIMESTAMPTZOID, TIMESTAMPTZARRAYOID, None, read_timestamptz_bin),
+        (INTERVALOID, INTERVALARRAYOID, None, read_interval_bin),
+    ]
 
 
 def date_ordinal(val):
@@ -179,8 +163,8 @@ def date_ordinal(val):
 
 class DateParameterHandler(BaseParameterHandler):
 
-    oid = constants.DATEOID
-    array_oid = constants.DATEARRAYOID
+    oid = DATEOID
+    array_oid = DATEARRAYOID
     fmt = "i"
 
     def binary_value(self, val):
@@ -194,8 +178,8 @@ def time_ordinal(val):
 
 class TimeParameterHandler(BaseParameterHandler):
 
-    oid = constants.TIMEOID
-    array_oid = constants.TIMEARRAYOID
+    oid = TIMEOID
+    array_oid = TIMEARRAYOID
     fmt = "q"
 
     def binary_value(self, val):
@@ -204,8 +188,8 @@ class TimeParameterHandler(BaseParameterHandler):
 
 class DateTimeParameterHandler(BaseParameterHandler):
 
-    oid = constants.TIMESTAMPOID
-    array_oid = constants.TIMESTAMPARRAYOID
+    oid = TIMESTAMPOID
+    array_oid = TIMESTAMPARRAYOID
     fmt = "q"
     has_tz = None
 
@@ -214,8 +198,8 @@ class DateTimeParameterHandler(BaseParameterHandler):
         if self.has_tz is None:
             self.has_tz = has_tz
             if has_tz:
-                self.oid = constants.TIMESTAMPTZOID
-                self.array_oid = constants.TIMESTAMPTZARRAYOID
+                self.oid = TIMESTAMPTZOID
+                self.array_oid = TIMESTAMPTZARRAYOID
                 self.binary_value = self.binary_value_tz
         elif self.has_tz != has_tz:
             raise ValueError("Can not mix naive and aware datetimes")

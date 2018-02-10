@@ -494,6 +494,7 @@ static PoqueTypeEntry dt_value_handlers[] = {
     {TIMESTAMPARRAYOID, array_binval, NULL, TIMESTAMPOID, NULL},
     {TIMESTAMPTZARRAYOID, array_binval, NULL, TIMESTAMPTZOID, NULL},
     {TIMEARRAYOID, array_binval, NULL, TIMEOID, NULL},
+    {TIMETZARRAYOID, array_binval, NULL, TIMETZOID, NULL},
     {INTERVALOID, interval_binval, NULL, InvalidOid, NULL},
     {INTERVALARRAYOID, array_binval, NULL, INTERVALOID, NULL},
     {ABSTIMEOID, abstime_binval, NULL, InvalidOid, NULL},

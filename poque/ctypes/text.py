@@ -56,29 +56,16 @@ def read_bytea_text(crs):
 
 
 def get_text_converters():
-    return {
-        constants.BPCHAROID: (None, read_text),
-        constants.BPCHARARRAYOID: (
-            None, get_array_bin_reader(constants.BPCHAROID)),
-        constants.VARCHAROID: (None, read_text),
-        constants.VARCHARARRAYOID: (
-            None, get_array_bin_reader(constants.VARCHAROID)),
-        constants.TEXTOID: (None, read_text),
-        constants.TEXTARRAYOID: (
-            None, get_array_bin_reader(constants.TEXTOID)),
-        constants.NAMEOID: (None, read_text),
-        constants.NAMEARRAYOID: (
-            None, get_array_bin_reader(constants.NAMEOID)),
-        constants.CSTRINGOID: (None, read_text),
-        constants.CSTRINGARRAYOID: (
-            None, get_array_bin_reader(constants.CSTRINGOID)),
-        constants.CHAROID: (read_bytes, read_bytes),
-        constants.CHARARRAYOID: (
-            None, get_array_bin_reader(constants.CHAROID)),
-        constants.BYTEAOID: (read_bytea_text, read_bytes),
-        constants.BYTEAARRAYOID: (
-            None, get_array_bin_reader(constants.BYTEAOID)),
-    }
+    return [
+        (constants.BPCHAROID, constants.BPCHARARRAYOID, None, read_text),
+        (constants.VARCHAROID, constants.VARCHARARRAYOID, None, read_text),
+        (constants.TEXTOID, constants.TEXTARRAYOID, None, read_text),
+        (constants.NAMEOID, constants.NAMEARRAYOID, None, read_text),
+        (constants.CSTRINGOID, constants.CSTRINGARRAYOID, None, read_text),
+        (constants.CHAROID, constants.CHARARRAYOID, read_bytes, read_bytes),
+        (constants.BYTEAOID, constants.BYTEAARRAYOID, read_bytea_text,
+         read_bytes),
+    ]
 
 
 class BytesParameterHandler(BaseParameterHandler):

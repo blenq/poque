@@ -139,7 +139,6 @@ PyObject *Poque_value(Oid oid, int format, char *data, int len);
 #define TINTERVALARRAYOID   1025
 #define DATEOID             1082
 #define TIMEOID             1083
-#define TIMETZOID           1266
 #define TIMESTAMPOID        1114
 #define TIMESTAMPARRAYOID   1115
 #define DATEARRAYOID        1182
@@ -148,6 +147,8 @@ PyObject *Poque_value(Oid oid, int format, char *data, int len);
 #define TIMESTAMPTZARRAYOID 1185
 #define INTERVALOID         1186
 #define INTERVALARRAYOID    1187
+#define TIMETZOID           1266
+#define TIMETZARRAYOID      1270
 
 /* misc */
 #define UNKNOWNOID          705
