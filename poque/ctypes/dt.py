@@ -2,7 +2,7 @@ from datetime import (
     datetime, date, time, timedelta, timezone, MAXYEAR, MINYEAR)
 
 from .lib import Error
-from .common import BaseParameterHandler, get_array_bin_reader
+from .common import BaseParameterHandler
 from .constants import *  # noqa
 
 INVALID_ABSTIME = 0x7FFFFFFE
@@ -16,11 +16,7 @@ def read_abstime_bin(crs):
 def read_tinterval_bin(crs):
 
     status, dt1, dt2 = crs.advance_struct_format("3i")
-    if dt1 == INVALID_ABSTIME or dt2 == INVALID_ABSTIME:
-        st = 0
-    else:
-        st = 1
-    if st != status:
+    if status != (dt1 != INVALID_ABSTIME and dt2 != INVALID_ABSTIME):
         raise Error("Invalid value")
     return (datetime.fromtimestamp(dt1),
             datetime.fromtimestamp(dt2))

@@ -7,7 +7,6 @@ from .constants import *  # noqa
 from .common import BaseParameterHandler, get_single_reader
 from .lib import Error
 from .text import read_text
-from poque.ctypes.common import result_converters
 from poque.ctypes.lib import InterfaceError
 
 
