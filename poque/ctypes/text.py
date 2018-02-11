@@ -1,8 +1,8 @@
 from codecs import getdecoder
 from collections import deque
 
-from .common import BaseParameterHandler, get_array_bin_reader
-from . import constants
+from .common import BaseParameterHandler
+from .constants import *  # noqa
 
 
 def read_text(crs):
@@ -57,21 +57,21 @@ def read_bytea_text(crs):
 
 def get_text_converters():
     return [
-        (constants.BPCHAROID, constants.BPCHARARRAYOID, None, read_text),
-        (constants.VARCHAROID, constants.VARCHARARRAYOID, None, read_text),
-        (constants.TEXTOID, constants.TEXTARRAYOID, None, read_text),
-        (constants.NAMEOID, constants.NAMEARRAYOID, None, read_text),
-        (constants.CSTRINGOID, constants.CSTRINGARRAYOID, None, read_text),
-        (constants.CHAROID, constants.CHARARRAYOID, read_bytes, read_bytes),
-        (constants.BYTEAOID, constants.BYTEAARRAYOID, read_bytea_text,
+        (BPCHAROID, BPCHARARRAYOID, None, read_text),
+        (VARCHAROID, VARCHARARRAYOID, None, read_text),
+        (TEXTOID, TEXTARRAYOID, None, read_text),
+        (NAMEOID, NAMEARRAYOID, None, read_text),
+        (CSTRINGOID, CSTRINGARRAYOID, None, read_text),
+        (CHAROID, CHARARRAYOID, read_bytes, read_bytes),
+        (BYTEAOID, BYTEAARRAYOID, read_bytea_text,
          read_bytes),
     ]
 
 
 class BytesParameterHandler(BaseParameterHandler):
 
-    oid = constants.BYTEAOID
-    array_oid = constants.BYTEAARRAYOID
+    oid = BYTEAOID
+    array_oid = BYTEAARRAYOID
 
     def get_item_size(self, val):
         return len(val)
@@ -82,8 +82,8 @@ class BytesParameterHandler(BaseParameterHandler):
 
 class TextParameterHandler(BaseParameterHandler):
 
-    oid = constants.TEXTOID
-    array_oid = constants.TEXTARRAYOID
+    oid = TEXTOID
+    array_oid = TEXTARRAYOID
 
     def __init__(self):
         super(TextParameterHandler, self).__init__()
