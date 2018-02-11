@@ -8,9 +8,7 @@ import operator
 from uuid import UUID
 
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
-from .constants import (
-    CONNECTION_BAD, BAD_RESPONSE, FATAL_ERROR, TEXTOID, FORMAT_BINARY,
-    TEXTARRAYOID, FORMAT_TEXT)
+from .constants import *  # noqa
 from .common import get_struct
 from .dt import (
     DateParameterHandler, TimeParameterHandler, DateTimeParameterHandler)
