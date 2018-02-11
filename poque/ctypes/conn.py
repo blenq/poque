@@ -114,7 +114,10 @@ class ArrayParameterHandler(object):
                 self.write("i", stc.size)
                 self.write(fmt, *values)
 
-    def examine(self, val):
+    def encode(self, val):
+        self.fmt = []
+        self.vals = []
+
         # walk the list to set up structure and converter
         dims = []
         self.walk_list(val, dims)
@@ -124,22 +127,19 @@ class ArrayParameterHandler(object):
         # 4 bytes (length) per value
         length = 12 + dim_len * 8 + reduce(operator.mul, dims, 1) * 4
         if self.converter:
-            length += self.converter.get_size()  # add length of values
-            elem_type = self.converter.oid
-            self.oid = self.converter.array_oid
+            cv = self.converter
+            length += cv.get_size()  # add length of values
+            elem_oid = cv.oid
+            self.oid = cv.array_oid
         else:
-            elem_type = TEXTOID
+            elem_oid = TEXTOID
             self.oid = TEXTARRAYOID
 
-        self.fmt = ["IiI"]
-        self.vals = [dim_len, self.has_null, elem_type]
+        self.write("IiI", dim_len, self.has_null, elem_oid)
         for dim in dims:
             self.write("ii", dim, 1)
         # actually write the values
         self.write_values(val)
-        return length
-
-    def encode_value(self, val):
         return ''.join(self.fmt), self.vals
 
 
@@ -248,10 +248,11 @@ class Conn(c_void_p):
     }
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
+        command = command.encode()
         if not parameters:
             if result_format == FORMAT_TEXT:
-                return pq.PQexec(self, command.encode())
-            return pq.PQexecParams(self, command.encode(), 0, None, None, None,
+                return pq.PQexec(self, command)
+            return pq.PQexecParams(self, command, 0, None, None, None,
                                    None, result_format)
         num_params = len(parameters)
         oids = (c_uint * num_params)()
@@ -261,23 +262,24 @@ class Conn(c_void_p):
         for i, param in enumerate(parameters):
             formats[i] = FORMAT_BINARY
             if param is None:
+                # Bind None as SQL NULL
                 oids[i], values[i], lengths[i] = (
                     TEXTOID, 0, 0)
                 continue
+
             handler = self._param_handlers.get(type(param),
                                                TextParameterHandler)()
-            length = handler.examine(param)
-            value = (c_char * length)()
-            fmt, param_vals = handler.encode_value(param)
+            fmt, param_vals = handler.encode(param)
             stc = get_struct(fmt)
+            length = stc.size
+            value = (c_char * length)()
             stc.pack_into(value, 0, *param_vals)
-            oids[i] = handler.oid
             values[i] = cast(value, c_char_p)
+            oids[i] = handler.oid
             lengths[i] = length
 
-        return pq.PQexecParams(
-            self, command.encode(), num_params, oids, values, lengths,
-            formats, result_format)
+        return pq.PQexecParams(self, command, num_params, oids, values,
+                               lengths, formats, result_format)
 
 
 def check_connect(conn, func, args):

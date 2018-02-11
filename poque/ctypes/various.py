@@ -3,11 +3,12 @@ import json
 from struct import calcsize
 from uuid import UUID
 
-from . import constants
-from .common import (get_array_bin_reader, BaseParameterHandler,
-                     get_single_reader)
+from .constants import *  # noqa
+from .common import BaseParameterHandler, get_single_reader
 from .lib import Error
 from .text import read_text
+from poque.ctypes.common import result_converters
+from poque.ctypes.lib import InterfaceError
 
 
 def _read_tid_text(crs):
@@ -66,28 +67,36 @@ PGSQL_AF_INET = 2
 PGSQL_AF_INET6 = PGSQL_AF_INET + 1
 
 
-def _read_inet_bin(crs):
+def check_address_size(size, correct_size):
+    if size != correct_size:
+        raise InterfaceError("Invalid address size")
+
+
+def read_ip_bin(crs, cidr, v4_cls, v6_cls):
     family, mask, is_cidr, size = crs.advance_struct_format("4B")
 
+    if is_cidr != cidr:
+        raise InterfaceError("Wrong value for cidr flag")
+
     if family == PGSQL_AF_INET:
-        correct_size = 4
-        if is_cidr:
-            cls = IPv4Network
-        else:
-            cls = IPv4Interface
+        check_address_size(size, 4)
+        cls = v4_cls
         addr_data = crs.advance_single("I")
     elif family == PGSQL_AF_INET6:
-        correct_size = 16
-        if is_cidr:
-            cls = IPv6Network
-        else:
-            cls = IPv6Interface
+        check_address_size(size, 16)
+        cls = v6_cls
         addr_data = crs.advance_bytes(16)
     else:
-        raise Error("Invalid address family")
-    if size != correct_size:
-        raise Error("Invalid address size")
+        raise InterfaceError("Invalid address family")
     return cls((addr_data, mask))
+
+
+def read_inet_bin(crs):
+    return read_ip_bin(crs, 0, IPv4Interface, IPv6Interface)
+
+
+def read_cidr_bin(crs):
+    return read_ip_bin(crs, 1, IPv4Network, IPv6Network)
 
 
 def _read_mac_bin(crs):
@@ -143,7 +152,8 @@ def _read_bit_bin(crs):
     # works even for bitstrings longer than 64 bits
     val = 0
     for char in crs.advance_bytes(byte_len):
-        val = (val << 8) | char
+        val *= 256
+        val += char
 
     if rest:
         # correct for the fact that the bitstring is left aligned
@@ -153,65 +163,32 @@ def _read_bit_bin(crs):
 
 
 def get_various_converters():
-    return {
-        constants.XMLOID: (None, read_text),
-        constants.XMLARRAYOID: (None, get_array_bin_reader(constants.XMLOID)),
-        constants.UNKNOWNOID: (None, read_text),
-        constants.UUIDOID: (_read_uuid_text, _read_uuid_bin),
-        constants.UUIDARRAYOID: (
-            None, get_array_bin_reader(constants.UUIDOID)),
-        constants.TIDOID: (_read_tid_text, _read_tid_bin),
-        constants.TIDARRAYOID: (None, get_array_bin_reader(constants.TIDOID)),
-        constants.POINTOID: (None, _read_point_bin),
-        constants.POINTARRAYOID: (
-            None, get_array_bin_reader(constants.POINTOID)),
-        constants.BOXOID: (None, _read_lseg_bin),
-        constants.BOXARRAYOID: (None, get_array_bin_reader(constants.BOXOID)),
-        constants.LSEGOID: (None, _read_lseg_bin),
-        constants.LSEGARRAYOID: (
-            None, get_array_bin_reader(constants.LSEGOID)),
-        constants.POLYGONOID: (None, _read_polygon_bin),
-        constants.POLYGONARRAYOID: (
-            None, get_array_bin_reader(constants.POLYGONOID)),
-        constants.PATHOID: (None, _read_path_bin),
-        constants.PATHARRAYOID: (
-            None, get_array_bin_reader(constants.PATHOID)),
-        constants.CIRCLEOID: (None, _read_circle_bin),
-        constants.CIRCLEARRAYOID: (
-            None, get_array_bin_reader(constants.CIRCLEOID)),
-        constants.CIDROID: (None, _read_inet_bin),
-        constants.CIDRARRAYOID: (
-            None, get_array_bin_reader(constants.CIDROID)),
-        constants.INETOID: (None, _read_inet_bin),
-        constants.INETARRAYOID: (
-            None, get_array_bin_reader(constants.INETOID)),
-        constants.MACADDROID: (None, _read_mac_bin),
-        constants.MACADDRARRAYOID: (
-            None, get_array_bin_reader(constants.MACADDROID)),
-        constants.MACADDR8OID: (None, get_single_reader("Q")),
-        constants.MACADDR8ARRAYOID: (
-            None, get_array_bin_reader(constants.MACADDR8OID)),
-        constants.JSONOID: (_read_json_bin, _read_json_bin),
-        constants.JSONARRAYOID: (
-            None, get_array_bin_reader(constants.JSONOID)),
-        constants.JSONBOID: (_read_json_bin, _read_jsonb_bin),
-        constants.JSONBARRAYOID: (
-            None, get_array_bin_reader(constants.JSONBOID)),
-        constants.LINEOID: (None, _read_line_bin),
-        constants.LINEARRAYOID: (
-            None, get_array_bin_reader(constants.LINEOID)),
-        constants.BITOID: (_read_bit_text, _read_bit_bin),
-        constants.BITARRAYOID: (None, get_array_bin_reader(constants.BITOID)),
-        constants.VARBITOID: (_read_bit_text, _read_bit_bin),
-        constants.VARBITARRAYOID: (
-            None, get_array_bin_reader(constants.VARBITOID)),
-    }
+    return [
+        (XMLOID, XMLARRAYOID, None, read_text),
+        (UUIDOID, UUIDARRAYOID, _read_uuid_text, _read_uuid_bin),
+        (TIDOID, TIDARRAYOID, _read_tid_text, _read_tid_bin),
+        (POINTOID, POINTARRAYOID, None, _read_point_bin),
+        (BOXOID, BOXARRAYOID, None, _read_lseg_bin),
+        (LSEGOID, LSEGARRAYOID, None, _read_lseg_bin),
+        (POLYGONOID, POLYGONARRAYOID, None, _read_polygon_bin),
+        (PATHOID, PATHARRAYOID, None, _read_path_bin),
+        (CIRCLEOID, CIRCLEARRAYOID, None, _read_circle_bin),
+        (CIDROID, CIDRARRAYOID, None, read_cidr_bin),
+        (INETOID, INETARRAYOID, None, read_inet_bin),
+        (MACADDROID, MACADDRARRAYOID, None, _read_mac_bin),
+        (MACADDR8OID, MACADDR8ARRAYOID, None, get_single_reader("Q")),
+        (JSONOID, JSONARRAYOID, _read_json_bin, _read_json_bin),
+        (JSONBOID, JSONBARRAYOID, _read_json_bin, _read_jsonb_bin),
+        (LINEOID, LINEARRAYOID, None, _read_line_bin),
+        (BITOID, BITARRAYOID, _read_bit_text, _read_bit_bin),
+        (VARBITOID, VARBITARRAYOID, _read_bit_text, _read_bit_bin),
+    ]
 
 
 class UuidParameterHandler(BaseParameterHandler):
 
-    oid = constants.UUIDOID
-    array_oid = constants.UUIDARRAYOID
+    oid = UUIDOID
+    array_oid = UUIDARRAYOID
     fmt = "16s"
 
     def binary_value(self, val):
@@ -235,17 +212,17 @@ class BaseIPParameterHandler(BaseParameterHandler):
         packed = self.get_packed(val)
         return (PGSQL_AF_INET if val.version == 4 else PGSQL_AF_INET6,
                 self.get_prefixlen(val),
-                self.oid == constants.CIDROID,
+                self.oid == CIDROID,
                 len(packed),
-                self.get_packed(val))
+                packed)
 
     def type_allowed(self, typ):
         return typ in self.allowed_types
 
 
 class InterfaceParameterHandler(BaseIPParameterHandler):
-    oid = constants.INETOID
-    array_oid = constants.INETARRAYOID
+    oid = INETOID
+    array_oid = INETARRAYOID
     allowed_types = (IPv4Interface, IPv6Interface)
 
     def get_packed(self, val):
@@ -256,8 +233,8 @@ class InterfaceParameterHandler(BaseIPParameterHandler):
 
 
 class NetworkParameterHandler(BaseIPParameterHandler):
-    oid = constants.CIDROID
-    array_oid = constants.CIDRARRAYOID
+    oid = CIDROID
+    array_oid = CIDRARRAYOID
     allowed_types = (IPv4Network, IPv6Network)
 
     def get_packed(self, val):

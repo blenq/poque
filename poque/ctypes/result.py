@@ -14,7 +14,7 @@ from poque.ctypes.constants import FORMAT_TEXT
 register_result_converters(get_numeric_converters())
 register_result_converters(get_text_converters())
 register_result_converters(get_date_time_converters())
-result_converters.update(get_various_converters())
+register_result_converters(get_various_converters())
 
 
 def _get_result_column_method(res_func):
