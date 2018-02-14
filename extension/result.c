@@ -1,12 +1,5 @@
 #include "poque.h"
 
-typedef struct poque_Result {
-    PyObject_HEAD
-    PGresult *result;
-    PyObject *wr_list;
-    PyObject *vw_list;
-} poque_Result;
-
 
 poque_Result *
 PoqueResult_New(PGresult *res) {
@@ -233,7 +226,8 @@ Result_value(poque_Result *self, PyObject *args, PyObject *kwds)
     }
     if (PQgetisnull(self->result, row, column))
         Py_RETURN_NONE;
-    return Poque_value(PQftype(self->result, column),
+    return Poque_value(self,
+                       PQftype(self->result, column),
                        PQfformat(self->result, column),
                        PQgetvalue(self->result, row, column),
                        PQgetlength(self->result, row, column));

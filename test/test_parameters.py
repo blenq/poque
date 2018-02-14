@@ -23,11 +23,11 @@ class ResultTestParameters():
     def tearDown(self):
         self.cn.execute("ROLLBACK")
 
-    def _test_param_val(self, val):
+    def _test_param_val(self, val, typ=None):
         res = self.cn.execute("SELECT $1", [val])
         out_val = res.getvalue(0, 0)
         self.assertEqual(out_val, val)
-        self.assertEqual(type(out_val), type(val))
+        self.assertEqual(type(out_val), typ or type(val))
 
     def test_empty_params(self):
         res = self.cn.execute("SELECT 1", [])
@@ -96,8 +96,8 @@ class ResultTestParameters():
         self._test_param_val([3.24, None, 234.765])
 
     def test_bytes_param(self):
-        self._test_param_val(b'hoi')
-        self._test_param_val(b'')
+        self._test_param_val(b'hoi', memoryview)
+        self._test_param_val(b'', memoryview)
 
     def test_bytes_array_param(self):
         self._test_param_val([b'hoi', b'ha\0llo'])

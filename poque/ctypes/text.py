@@ -10,7 +10,7 @@ def read_text(crs):
 
 
 def read_bytes(crs):
-    return crs.advance_bytes()
+    return crs.advance_view()
 
 
 hexdecoder = getdecoder('hex')

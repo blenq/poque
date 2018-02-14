@@ -8,6 +8,7 @@ typedef struct {
     int len;
     int idx;
     Oid el_oid;
+    poque_Result *result;
 } data_crs;
 
 
@@ -17,7 +18,8 @@ typedef struct {
 #define crs_remaining(crs) (crs)->len - (crs)->idx
 #define crs_el_oid(crs) (crs)->el_oid
 
-void crs_init(data_crs *crs, char *data, int len, Oid el_oid);
+void crs_init(data_crs *crs, char *data, int len, Oid el_oid,
+              poque_Result *result);
 char * crs_advance(data_crs *crs, int len);
 char * crs_advance_end(data_crs *crs);
 int crs_read_char(data_crs *crs, char *value);

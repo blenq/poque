@@ -510,11 +510,13 @@ get_read_func(Oid oid, int format, Oid *el_oid);
 
 
 static PyObject *
-read_value(char *data, int len, pq_read read_func, Oid el_oid) {
+read_value(char *data, int len, pq_read read_func, Oid el_oid,
+           poque_Result *result)
+{
     data_crs crs;
     PyObject *val;
 
-    crs_init(&crs, data, len, el_oid);
+    crs_init(&crs, data, len, el_oid, result);
     val = read_func(&crs);
     if (val == NULL)
         return NULL;
@@ -564,7 +566,7 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
             return NULL;
 
         /* read the item, this will use its own cursor */
-        return read_value(data, item_len, read_func, el_oid);
+        return read_value(data, item_len, read_func, el_oid, crs->result);
     }
     else {
         /* At a container level, create a list and fill with items
@@ -1038,7 +1040,7 @@ get_read_func(Oid oid, int format, Oid *el_oid) {
 
 
 PyObject *
-Poque_value(Oid oid, int format, char *data, int len) {
+Poque_value(poque_Result *result, Oid oid, int format, char *data, int len) {
     pq_read read_func;
     Oid el_oid = InvalidOid;
 
@@ -1052,5 +1054,5 @@ Poque_value(Oid oid, int format, char *data, int len) {
         return NULL;
     }
 
-    return read_value(data, len, read_func, el_oid);
+    return read_value(data, len, read_func, el_oid, result);
 }

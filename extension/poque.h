@@ -6,6 +6,14 @@
 #include <structmember.h>
 
 
+typedef struct poque_Result {
+    PyObject_HEAD
+    PGresult *result;
+    PyObject *wr_list;
+    PyObject *vw_list;
+} poque_Result;
+
+
 #ifdef __GNUC__
 #pragma GCC visibility push(hidden)
 #endif
@@ -44,7 +52,8 @@ extern PyTypeObject poque_ResultType;
 poque_Result *PoqueResult_New(PGresult *res);
 
 PyObject *Poque_info_options(PQconninfoOption *options);
-PyObject *Poque_value(Oid oid, int format, char *data, int len);
+PyObject *Poque_value(poque_Result *result, Oid oid, int format, char *data,
+                      int len);
 
 
 #define FORMAT_TEXT         0

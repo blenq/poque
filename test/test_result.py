@@ -392,6 +392,8 @@ class ResultTestValues():
     def test_bytea_value_bin(self):
         self._test_value_and_type_bin("SELECT 'hi'::bytea", b'hi',
                                       self.poque.BYTEAOID)
+        res = self.cn.execute("SELECT 'hi'::bytea")
+        self.assertIsInstance(res.getvalue(0, 0), memoryview)
         self._test_value_and_type_bin(
             "SELECT ''::bytea", b'', self.poque.BYTEAOID)
         self._test_value_and_type_bin("SELECT convert_to('\t \\', 'utf8')",

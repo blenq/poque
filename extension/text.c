@@ -153,9 +153,30 @@ PyObject *
 bytea_binval(data_crs* crs)
 {
     char *data;
+    PyObject *vw, *vw_list;
+    int len;
 
+    len = crs_remaining(crs);
     data = crs_advance_end(crs);
-    return PyBytes_FromStringAndSize(data, crs_len(crs));
+
+    vw_list = crs->result->vw_list;
+    if (vw_list == NULL) {
+        vw_list = PyList_New(0);
+        if (vw_list == NULL) {
+            return NULL;
+        }
+        crs->result->vw_list = vw_list;
+    }
+
+    vw = PyMemoryView_FromMemory(data, len, PyBUF_READ);
+    if (vw == NULL) {
+        return NULL;
+    }
+    if (PyList_Append(vw_list, vw) == -1) {
+        Py_DECREF(vw);
+        return NULL;
+    }
+    return vw;
 }
 
 

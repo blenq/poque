@@ -1,11 +1,13 @@
 #include "cursor.h"
 
-void crs_init(data_crs *crs, char *data, int len, Oid el_oid)
+void
+crs_init(data_crs *crs, char *data, int len, Oid el_oid, poque_Result *result)
 {
     crs->data = data;
     crs->len = len;
     crs->idx = 0;
     crs->el_oid = el_oid;
+    crs->result = result;
 }
 
 

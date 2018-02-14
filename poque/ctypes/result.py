@@ -153,9 +153,14 @@ pq.PQresultErrorMessage.errcheck = check_string
 def check_clear(res, func, args):
     result = args[0]
     if result:
-        for v in result._views:
-            v.release()
         result.value = 0
+        try:
+            views = result._views
+        except AttributeError:
+            pass
+        else:
+            for v in views:
+                v.release()
 
 
 pq.PQclear.argtypes = [Result]
