@@ -1,11 +1,6 @@
 #include "poque.h"
 #include "poque_type.h"
 
-typedef struct {
-    PyObject_HEAD
-    PGconn *conn;
-    PyObject *wr_list;
-} poque_Conn;
 
 static void Conn_set_error(PGconn *conn) {
     if (conn == NULL) {
@@ -24,6 +19,7 @@ Conn_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     if (self) {
         self->conn = NULL;
         self->wr_list = NULL;
+        self->warning_msg = NULL;
     }
     return (PyObject *)self;
 }
@@ -98,6 +94,20 @@ Conn_init_kwds(PyObject *kwds, char **names, char **values,
 }
 
 
+static void
+Conn_notice_receiver(poque_Conn *self, const PGresult *res)
+{
+    char *sql_state;
+
+
+    sql_state = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+    if (sql_state == NULL || sql_state[0] == '\0' ||
+            strncmp(sql_state, "01", 2) == 0 ) {
+        self->warning_msg = PQresultErrorMessage(res);
+    }
+}
+
+
 static int
 Conn_init(poque_Conn *self, PyObject *args, PyObject *kwds)
 {
@@ -160,8 +170,9 @@ Conn_init(poque_Conn *self, PyObject *args, PyObject *kwds)
         PQfinish(conn);
         return -1;
     }
-
     self->conn = conn;
+
+    PQsetNoticeReceiver(conn, (PQnoticeReceiver)Conn_notice_receiver, self);
 
     return 0;
 }
@@ -346,14 +357,12 @@ Conn_execute(poque_Conn *self, PyObject *args, PyObject *kwds) {
         }
     }
 
-
-
     res_status = PQresultStatus(res);
     if (res_status == PGRES_BAD_RESPONSE || res_status == PGRES_FATAL_ERROR) {
         PyErr_SetString(PoqueError, PQresultErrorMessage(res));
         return NULL;
     }
-    return (PyObject *)PoqueResult_New(res);
+    return (PyObject *)PoqueResult_New(res, self);
 }
 
 

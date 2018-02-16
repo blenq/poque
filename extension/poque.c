@@ -3,6 +3,7 @@
 
 PyObject *PoqueError;
 PyObject *PoqueInterfaceError;
+PyObject *PoqueWarning;
 
 static PyTypeObject InfoOption;
 
@@ -214,6 +215,10 @@ PyInit__poque(void)
         return NULL;
 
     /* add error to module */
+    PoqueWarning = PyErr_NewException("poque.Warning", PyExc_UserWarning, NULL);
+    Py_INCREF(PoqueWarning);
+    PyModule_AddObject(m, "Warning", PoqueWarning);
+
     PoqueError = PyErr_NewException("poque.Error", NULL, NULL);
     Py_INCREF(PoqueError);
     PyModule_AddObject(m, "Error", PoqueError);

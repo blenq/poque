@@ -35,6 +35,26 @@ SINGLE_TUPLE = 9
 FORMAT_TEXT = 0
 FORMAT_BINARY = 1
 
+# error field codes
+SEVERITY = ord('S')
+SEVERITY_NONLOCALIZED = ord('V')
+SQLSTATE = ord('C')
+MESSAGE_PRIMARY = ord('M')
+MESSAGE_DETAIL = ord('D')
+MESSAGE_HINT = ord('H')
+STATEMENT_POSITION = ord('P')
+INTERNAL_POSITION = ord('p')
+INTERNAL_QUERY = ord('q')
+CONTEXT = ord('W')
+SCHEMA_NAME = ord('s')
+TABLE_NAME = ord('t')
+COLUMN_NAME = ord('c')
+DATATYPE_NAME = ord('d')
+CONSTRAINT_NAME = ord('n')
+SOURCE_FILE = ord('F')
+SOURCE_LINE = ord('L')
+SOURCE_FUNCTION = ord('R')
+
 INVALID_OID = 0
 
 # boolean types

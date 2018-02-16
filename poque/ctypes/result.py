@@ -1,15 +1,16 @@
 from ctypes import (c_void_p, c_int, c_char_p, c_uint, string_at, c_ubyte)
 import codecs
+from warnings import warn
 
 from .pq import pq, check_string
 from .common import result_converters, register_result_converters
 from .cursor import ValueCursor
 from .dt import get_date_time_converters
 from .numeric import get_numeric_converters
-from .lib import Error, get_property, get_method
+from .lib import Warning, Error, get_property, get_method
 from .text import get_text_converters
 from .various import get_various_converters
-from poque.ctypes.constants import FORMAT_TEXT
+from .constants import *  # noqa
 
 register_result_converters(get_numeric_converters())
 register_result_converters(get_text_converters())
@@ -19,13 +20,14 @@ register_result_converters(get_various_converters())
 
 def _get_result_column_method(res_func):
     def result_method(self, column_number):
-        return res_func(self, column_number)
+        return self._check_warnings(res_func(self, column_number))
+
     return result_method
 
 
 def _get_result_row_column_method(res_func):
     def result_method(self, row_number, column_number):
-        return res_func(self, row_number, column_number)
+        return self._check_warnings(res_func(self, row_number, column_number))
     return result_method
 
 
@@ -45,9 +47,43 @@ class Result(c_void_p):
     ftablecol = _get_result_column_method(pq.PQftablecol)
     ftype = _get_result_column_method(pq.PQftype)
 
-    def fnumber(self, column_name):
-        return pq.PQfnumber(self, column_name.encode())
+    def _check_warnings(self, ret):
+        warning_msg = self._conn._warning_msg
+        if warning_msg:
+            self._conn._warning_msg = None
+            warn(warning_msg, Warning, stacklevel=3)
+        return ret
 
+    def fnumber(self, column_name):
+        return self._check_warnings(pq.PQfnumber(self, column_name.encode()))
+
+    def error_field(self, fieldcode):
+        return pq.PQresultErrorField(self, fieldcode)
+
+    def exception(self):
+        severity = self.error_field(SEVERITY)
+        print(severity)
+        severity = self.error_field(SEVERITY_NONLOCALIZED)
+        print(severity)
+        severity = self.error_field(SQLSTATE)
+        print(severity)
+        severity = self.error_field(MESSAGE_PRIMARY)
+        print(severity)
+        severity = self.error_field(MESSAGE_DETAIL)
+        print(severity)
+        severity = self.error_field(MESSAGE_HINT)
+        print(severity)
+#         sql_state = self.error_field(SQLSTATE)
+#         if severity is None:
+#             return None
+#         severity_non_localized = self.error_field(SEVERITY_NONLOCALIZED)
+#         error_severities = ('ERROR', 'FATAL', 'PANIC')
+#         if (severity_non_localized and severity_non_localized
+#                 not in error_severities):
+#             cls = Warning
+#         else:
+#             pass
+        
     getlength = _get_result_row_column_method(pq.PQgetlength)
     getisnull = _get_result_row_column_method(pq.PQgetisnull)
     _pq_getvalue = _get_result_row_column_method(pq.PQgetvalue)
@@ -64,6 +100,9 @@ class Result(c_void_p):
                 return codecs.decode(data, "utf-8")
             self._views.append(data)
         return data
+
+    def _exception(self):
+        pass
 
     def getvalue(self, row_number, column_number):
         # first check for NULL values
@@ -148,6 +187,10 @@ pq.PQgetvalue.errcheck = check_value
 pq.PQresultErrorMessage.argtypes = [Result]
 pq.PQresultErrorMessage.restype = c_char_p
 pq.PQresultErrorMessage.errcheck = check_string
+
+pq.PQresultErrorField.argtypes = [Result, c_int]
+pq.PQresultErrorField.restype = c_char_p
+pq.PQresultErrorField.errcheck = check_string
 
 
 def check_clear(res, func, args):

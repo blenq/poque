@@ -2,7 +2,7 @@
 
 
 poque_Result *
-PoqueResult_New(PGresult *res) {
+PoqueResult_New(PGresult *res, poque_Conn *conn) {
     poque_Result *result;
 
     result = PyObject_New(poque_Result, &poque_ResultType);
@@ -12,21 +12,17 @@ PoqueResult_New(PGresult *res) {
     result->result = res;
     result->vw_list = NULL;
     result->wr_list = NULL;
+    Py_INCREF(conn);
+    result->conn = conn;
     return result;
 }
 
 
 static void
-Result_dealloc(poque_Result *self) {
-    PQclear(self->result);
-    if (self->wr_list != NULL)
-        PyObject_ClearWeakRefs((PyObject *) self);
-    Py_TYPE(self)->tp_free((PyObject*)self);
-}
-
-
-static PyObject *
-Result_clear(poque_Result *self, PyObject *unused) {
+_Result_clear(poque_Result *self) {
+    if (self->result == NULL) {
+        return;
+    }
     if (self->vw_list) {
         Py_ssize_t i, len;
 
@@ -41,7 +37,24 @@ Result_clear(poque_Result *self, PyObject *unused) {
     }
     PQclear(self->result);
     self->result = NULL;
+    Py_DECREF(self->conn);
+    self->conn = NULL;
+}
+
+
+static PyObject *
+Result_clear(poque_Result *self, PyObject *unused) {
+    _Result_clear(self);
     Py_RETURN_NONE;
+}
+
+
+static void
+Result_dealloc(poque_Result *self) {
+    _Result_clear(self);
+    if (self->wr_list != NULL)
+        PyObject_ClearWeakRefs((PyObject *) self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 
@@ -88,6 +101,24 @@ Result_fnumber(poque_Result *self, PyObject *args, PyObject *keywds)
 
 
 static PyObject *
+_check_warnings(poque_Result *self, PyObject *obj) {
+    char *warning_msg;
+    if (self->conn == NULL || obj == NULL) {
+        return obj;
+    }
+    warning_msg = self->conn->warning_msg;
+    if (warning_msg != NULL) {
+        self->conn->warning_msg = NULL;
+        if (PyErr_WarnEx(PoqueWarning, warning_msg, 1) == -1) {
+            Py_DECREF(obj);
+            return NULL;
+        }
+    }
+    return obj;
+}
+
+
+static PyObject *
 Result_column_oidproperty(
     poque_Result *self, PyObject *args, PyObject *keywds,
     Oid (*func)(const PGresult *, int))
@@ -97,7 +128,8 @@ Result_column_oidproperty(
     if (parse_column_number(args, keywds, &column) == -1)
         return NULL;
 
-    return PyLong_FromUnsignedLong(func(self->result, column));
+    return _check_warnings(
+        self, PyLong_FromUnsignedLong(func(self->result, column)));
 }
 
 
@@ -177,6 +209,17 @@ Result_getvalue(poque_Result *self, PyObject *args, PyObject *kwds)
         return NULL;
     }
     data = PQgetvalue(self->result, row, column);
+    if (self->conn != NULL) {
+        char *warning_msg;
+        warning_msg = self->conn->warning_msg;
+        if (warning_msg != NULL) {
+            self->conn->warning_msg = NULL;
+            if (PyErr_WarnEx(PoqueWarning, warning_msg, 1) == -1) {
+                return NULL;
+            }
+        }
+    }
+
     if (data == NULL) {
         Py_RETURN_NONE;
     }
@@ -213,7 +256,8 @@ Result_getlength(poque_Result *self, PyObject *args, PyObject *kwds) {
     if (Result_colrow_args(args, kwds, &row, &column) == -1) {
         return NULL;
     }
-    return PyLong_FromLong(PQgetlength(self->result, row, column));
+    return _check_warnings(
+        self, PyLong_FromLong(PQgetlength(self->result, row, column)));
 }
 
 static PyObject *

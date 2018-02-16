@@ -3,7 +3,7 @@ import ssl
 from .conn import Conn
 from .constants import *
 from .lib import (
-    Error, InterfaceError, conn_defaults, conninfo_parse, lib_version,
+    Warning, Error, InterfaceError, conn_defaults, conninfo_parse, lib_version,
     encrypt_password)
 
 

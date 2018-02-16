@@ -1,5 +1,5 @@
 from ctypes import (c_void_p, c_char_p, POINTER, c_int, c_uint, c_size_t,
-                    c_char, cast)
+                    c_char, cast, CFUNCTYPE)
 from datetime import date, time, datetime
 from decimal import Decimal
 from functools import reduce
@@ -141,6 +141,9 @@ class ArrayParameterHandler(object):
         return ''.join(self.fmt), self.vals
 
 
+PQnoticeReceiver = CFUNCTYPE(None, c_void_p, Result)
+
+
 class Conn(c_void_p):
 
     def __new__(cls, *args, **kwargs):
@@ -216,6 +219,18 @@ class Conn(c_void_p):
         identifier = identifier.encode()
         return pq.PQescapeIdentifier(self, identifier, len(identifier))
 
+    _warning_msg = None
+
+    def _notice_proc(self, p, result):
+        try:
+            sql_state = result.error_field(SQLSTATE)
+            if not sql_state or sql_state.startswith("01"):
+                self._warning_msg = result.error_message
+        finally:
+            # Result will be cleared by libpq. Set pointer to zero to prevent
+            # a preliminary PQClear by the Result destructor
+            result.value = 0
+
     def finish(self):
         self._finish()
         self.value = 0
@@ -249,9 +264,13 @@ class Conn(c_void_p):
         command = command.encode()
         if not parameters:
             if result_format == FORMAT_TEXT:
-                return pq.PQexec(self, command)
-            return pq.PQexecParams(self, command, 0, None, None, None,
-                                   None, result_format)
+                res = pq.PQexec(self, command)
+            else:
+                res = pq.PQexecParams(self, command, 0, None, None, None,
+                                      None, result_format)
+            res.conn = self
+            return res
+
         num_params = len(parameters)
         oids = (c_uint * num_params)()
         values = (c_char_p * num_params)()
@@ -276,8 +295,10 @@ class Conn(c_void_p):
             oids[i] = handler.oid
             lengths[i] = length
 
-        return pq.PQexecParams(self, command, num_params, oids, values,
+        res = pq.PQexecParams(self, command, num_params, oids, values,
                                lengths, formats, result_format)
+        res.conn = self
+        return res
 
 
 def check_connect(conn, func, args):
@@ -285,6 +306,8 @@ def check_connect(conn, func, args):
         raise MemoryError()
     if conn.status == CONNECTION_BAD:
         conn._raise_error()
+    conn._notice_proc = PQnoticeReceiver(conn._notice_proc)
+    pq.PQsetNoticeReceiver(conn, conn._notice_proc, conn)
     return conn
 
 
@@ -297,6 +320,9 @@ pq.PQconnectStartParams.restype = Conn
 pq.PQconnectStartParams.argtypes = [
     POINTER(c_char_p), POINTER(c_char_p), c_int]
 pq.PQconnectStartParams.errcheck = check_connect
+
+pq.PQsetNoticeReceiver.restype = PQnoticeReceiver
+pq.PQsetNoticeReceiver.argtypes = [Conn, PQnoticeReceiver, c_void_p]
 
 
 def check_async(res, func, args):
@@ -399,11 +425,12 @@ pq.PQparameterStatus.errcheck = check_string
 
 
 def check_exec(res, func, args):
+    conn = args[0]
     if not res:
         # no result returned. Use connection to raise Exception
-        conn = args[0]
         conn._raise_error()
     res._views = []
+    res._conn = conn
     if res.status in [BAD_RESPONSE, FATAL_ERROR]:
         raise Error(res.error_message)
     return res

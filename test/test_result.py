@@ -94,7 +94,8 @@ class ResultTestBasic():
 
     def test_ftype(self):
         self.assertEqual(self.res.ftype(0), self.poque.INT4OID)
-        self.assertEqual(self.res.ftype(column_number=3), 0)
+        with self.assertWarns(self.poque.Warning):
+            self.assertEqual(self.res.ftype(column_number=3), 0)
 
     def test_fmod(self):
         self.assertEqual(self.res.fmod(0), -1)
@@ -106,7 +107,8 @@ class ResultTestBasic():
         self.assertEqual(self.res.getlength(0, 0), 4)
 
     def test_invalid_getlength(self):
-        self.assertEqual(self.res.getlength(0, 1), 0)
+        with self.assertWarns(self.poque.Warning):
+            self.assertEqual(self.res.getlength(0, 1), 0)
 
 
 class ResultTestBasicExtension(
@@ -159,10 +161,12 @@ class ResultTestValues():
     def test_formats(self):
         res = self.cn.execute(command="SELECT 6::int4", result_format=0)
         self.assertEqual(res.pq_getvalue(0, 0), "6")
-        self.assertEqual(res.pq_getvalue(2, 3), None)
+        with self.assertWarns(self.poque.Warning):
+            self.assertEqual(res.pq_getvalue(2, 3), None)
         res = self.cn.execute(command="SELECT 'hoi'", result_format=1)
         self.assertEqual(res.pq_getvalue(0, 0), b"hoi")
-        self.assertEqual(res.pq_getvalue(2, 3), None)
+        with self.assertWarns(self.poque.Warning):
+            self.assertEqual(res.pq_getvalue(2, 3), None)
 
     def test_view(self):
         res = self.cn.execute(command="SELECT 'hoi'", result_format=1)

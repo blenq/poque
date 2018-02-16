@@ -5,18 +5,27 @@
 #include <libpq-fe.h>
 #include <structmember.h>
 
+#ifdef __GNUC__
+#pragma GCC visibility push(hidden)
+#endif
+
+
+typedef struct {
+    PyObject_HEAD
+    PGconn *conn;
+    PyObject *wr_list;
+    char *warning_msg;
+} poque_Conn;
+
 
 typedef struct poque_Result {
     PyObject_HEAD
     PGresult *result;
     PyObject *wr_list;
     PyObject *vw_list;
+    poque_Conn *conn;
 } poque_Result;
 
-
-#ifdef __GNUC__
-#pragma GCC visibility push(hidden)
-#endif
 
 #if SIZEOF_SHORT != 2
 #error no type for int16
@@ -46,10 +55,11 @@ typedef struct poque_Result poque_Result;
 
 extern PyObject *PoqueError;
 extern PyObject *PoqueInterfaceError;
+extern PyObject *PoqueWarning;
 extern PyTypeObject poque_ConnType;
 extern PyTypeObject poque_ResultType;
 
-poque_Result *PoqueResult_New(PGresult *res);
+poque_Result *PoqueResult_New(PGresult *res, poque_Conn *conn);
 
 PyObject *Poque_info_options(PQconninfoOption *options);
 PyObject *Poque_value(poque_Result *result, Oid oid, int format, char *data,
