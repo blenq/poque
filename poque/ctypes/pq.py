@@ -25,9 +25,7 @@ pq.PQconninfoFree.argtypes = [PQconninfoOptions]
 
 
 def check_string(char, *args):
-    if char is None:
-        return None
-    return char.decode()
+    return None if char is None else char.decode()
 
 
 InfoOption = namedtuple(

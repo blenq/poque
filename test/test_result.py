@@ -8,8 +8,6 @@ from test import config
 from test.config import BaseExtensionTest, BaseCTypesTest
 
 from uuid import uuid4, UUID
-from poque.ctypes.constants import (
-    LINEOID, LINEARRAYOID, FORMAT_BINARY, FORMAT_TEXT)
 
 
 class ResultTestBasic():
@@ -149,10 +147,12 @@ class ResultTestValues():
         self.assertEqual(res.ftype(0), type_oid)
 
     def _test_value_and_type_bin(self, command, value, type_oid):
-        self._test_value_and_type(command, value, type_oid, FORMAT_BINARY)
+        self._test_value_and_type(command, value, type_oid,
+                                  self.poque.FORMAT_BINARY)
 
     def _test_value_and_type_str(self, command, value, type_oid):
-        self._test_value_and_type(command, value, type_oid, FORMAT_TEXT)
+        self._test_value_and_type(command, value, type_oid,
+                                  self.poque.FORMAT_TEXT)
 
     def test_format(self):
         res = self.cn.execute(command="SELECT 1", result_format=0)
@@ -742,12 +742,12 @@ class ResultTestValues():
 
     def test_line_value_bin(self):
         self._test_value_and_type_bin(
-            "SELECT '{1.2, 3.0, 4}'::line;", (1.2, 3.0, 4), LINEOID)
+            "SELECT '{1.2, 3.0, 4}'::line;", (1.2, 3.0, 4), self.poque.LINEOID)
 
     def test_linearray_value_bin(self):
         self._test_value_and_type_bin(
             "SELECT ARRAY['{1.2, 3.0, 4}', '{1.2, 3.0, 5}']::line[];",
-            [(1.2, 3.0, 4), (1.2, 3.0, 5)], LINEARRAYOID)
+            [(1.2, 3.0, 4), (1.2, 3.0, 5)], self.poque.LINEARRAYOID)
 
     def assert_lseg(self, val, lseg):
         self.assert_tuple(val)

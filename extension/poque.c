@@ -251,6 +251,8 @@ PyInit__poque(void)
             m, "Conn", (PyObject *)&poque_ResultType) == -1) {
         return NULL;
     } */
+    if (PyModule_AddIntMacro(m, FORMAT_BINARY) == -1) return NULL;
+    if (PyModule_AddIntMacro(m, FORMAT_TEXT) == -1) return NULL;
 
     if (PyModule_AddIntMacro(m, CONNECTION_OK) == -1) return NULL;
     if (PyModule_AddIntMacro(m, CONNECTION_BAD) == -1) return NULL;
@@ -382,6 +384,9 @@ PyInit__poque(void)
     if (PyModule_AddIntConstant(m, "TRANS_UNKNOWN", PQTRANS_UNKNOWN) == -1)
         return NULL;
 
+    if (PyModule_AddIntConstant(
+            m, "POLLING_FAILED", PGRES_POLLING_FAILED) == -1)
+        return NULL;
     if (PyModule_AddIntConstant(
             m, "POLLING_READING", PGRES_POLLING_READING) == -1)
         return NULL;
