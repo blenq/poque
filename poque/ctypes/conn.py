@@ -429,7 +429,6 @@ def check_exec(res, func, args):
     if not res:
         # no result returned. Use connection to raise Exception
         conn._raise_error()
-    res._views = []
     res._conn = conn
     if res.status in [BAD_RESPONSE, FATAL_ERROR]:
         raise Error(res.error_message)

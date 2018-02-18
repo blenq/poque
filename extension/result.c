@@ -68,6 +68,21 @@ parse_column_number(PyObject *args, PyObject *keywds, int *column)
 }
 
 
+static int
+Result_check_warnings(poque_Result *self) {
+    char *warning_msg;
+    if (self->conn == NULL) {
+        return 0;
+    }
+    warning_msg = self->conn->warning_msg;
+    if (warning_msg != NULL) {
+        self->conn->warning_msg = NULL;
+        return PyErr_WarnEx(PoqueWarning, warning_msg, 1);
+    }
+    return 0;
+}
+
+
 static PyObject *
 Result_fname(poque_Result *self, PyObject *args, PyObject *keywds)
 {
@@ -78,6 +93,9 @@ Result_fname(poque_Result *self, PyObject *args, PyObject *keywds)
         return NULL;
 
     fname = PQfname(self->result, column);
+    if (Result_check_warnings(self) == -1) {
+        return NULL;
+    }
     if (fname) {
         return PyUnicode_FromString(fname);
     }
@@ -96,25 +114,11 @@ Result_fnumber(poque_Result *self, PyObject *args, PyObject *keywds)
         return NULL;
 
     fnumber = PQfnumber(self->result, fname);
+    /* PQfnumber does not trigger notices at the moment of writing */
+    if (Result_check_warnings(self) == -1) {
+        return NULL;
+    }
     return PyLong_FromLong(fnumber);
-}
-
-
-static PyObject *
-_check_warnings(poque_Result *self, PyObject *obj) {
-    char *warning_msg;
-    if (self->conn == NULL || obj == NULL) {
-        return obj;
-    }
-    warning_msg = self->conn->warning_msg;
-    if (warning_msg != NULL) {
-        self->conn->warning_msg = NULL;
-        if (PyErr_WarnEx(PoqueWarning, warning_msg, 1) == -1) {
-            Py_DECREF(obj);
-            return NULL;
-        }
-    }
-    return obj;
 }
 
 
@@ -124,12 +128,16 @@ Result_column_oidproperty(
     Oid (*func)(const PGresult *, int))
 {
     int column;
+    Oid oid;
 
     if (parse_column_number(args, keywds, &column) == -1)
         return NULL;
 
-    return _check_warnings(
-        self, PyLong_FromUnsignedLong(func(self->result, column)));
+    oid = func(self->result, column);
+    if (Result_check_warnings(self) == -1) {
+        return NULL;
+    }
+    return PyLong_FromUnsignedLong(oid);
 }
 
 
@@ -152,12 +160,16 @@ Result_column_intproperty(
     poque_Result *self, PyObject *args, PyObject *keywds,
     int (*func)(const PGresult *, int))
 {
-    int column;
+    int column, value;
 
     if (parse_column_number(args, keywds, &column) == -1)
         return NULL;
 
-    return PyLong_FromLong(func(self->result, column));
+    value = func(self->result, column);
+    if (Result_check_warnings(self) == -1) {
+        return NULL;
+    }
+    return PyLong_FromLong(value);
 }
 
 
@@ -199,6 +211,32 @@ Result_colrow_args(PyObject *args, PyObject *kwds, int *row, int *column)
 }
 
 
+PyObject *
+Result_getview(poque_Result *self, char *data, int len)
+{
+    PyObject *vw, *vw_list;
+
+    vw_list = self->vw_list;
+    if (vw_list == NULL) {
+        vw_list = PyList_New(0);
+        if (vw_list == NULL) {
+            return NULL;
+        }
+        self->vw_list = vw_list;
+    }
+
+    vw = PyMemoryView_FromMemory(data, len, PyBUF_READ);
+    if (vw == NULL) {
+        return NULL;
+    }
+    if (PyList_Append(vw_list, vw) == -1) {
+        Py_DECREF(vw);
+        return NULL;
+    }
+    return vw;
+}
+
+
 static PyObject *
 Result_getvalue(poque_Result *self, PyObject *args, PyObject *kwds)
 {
@@ -209,55 +247,31 @@ Result_getvalue(poque_Result *self, PyObject *args, PyObject *kwds)
         return NULL;
     }
     data = PQgetvalue(self->result, row, column);
-    if (self->conn != NULL) {
-        char *warning_msg;
-        warning_msg = self->conn->warning_msg;
-        if (warning_msg != NULL) {
-            self->conn->warning_msg = NULL;
-            if (PyErr_WarnEx(PoqueWarning, warning_msg, 1) == -1) {
-                return NULL;
-            }
-        }
+    if (Result_check_warnings(self) == -1) {
+        return NULL;
     }
-
     if (data == NULL) {
         Py_RETURN_NONE;
     }
     len = PQgetlength(self->result, row, column);
     if (PQfformat(self->result, column) == 1) {
-        PyObject *vw, *vw_list;
-
-        vw_list = self->vw_list;
-        if (self->vw_list == NULL) {
-            vw_list = PyList_New(0);
-            if (vw_list == NULL) {
-                return NULL;
-            }
-            self->vw_list = vw_list;
-        }
-
-        vw = PyMemoryView_FromMemory(data, len, PyBUF_READ);
-        if (vw == NULL) {
-            return NULL;
-        }
-        if (PyList_Append(vw_list, vw) == -1) {
-            Py_DECREF(vw);
-            return NULL;
-        }
-        return vw;
+        return Result_getview(self, data, len);
     }
     return PyUnicode_FromStringAndSize(data, len);
 }
 
 static PyObject *
 Result_getlength(poque_Result *self, PyObject *args, PyObject *kwds) {
-    int row, column;
+    int row, column, length;
 
     if (Result_colrow_args(args, kwds, &row, &column) == -1) {
         return NULL;
     }
-    return _check_warnings(
-        self, PyLong_FromLong(PQgetlength(self->result, row, column)));
+    length = PQgetlength(self->result, row, column);
+    if (Result_check_warnings(self) == -1) {
+        return NULL;
+    }
+    return PyLong_FromLong(length);
 }
 
 static PyObject *

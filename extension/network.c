@@ -11,7 +11,7 @@ mac_binval(data_crs *crs)
         return NULL;
     if (crs_read_uint32(crs, &second) < 0)
         return NULL;
-    return PyLong_FromLongLong(((PY_UINT64_T)first << 32) + second);
+    return PyLong_FromLongLong(((long long)first << 32) | second);
 }
 
 

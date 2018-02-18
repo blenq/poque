@@ -39,7 +39,6 @@ typedef struct poque_Result {
 #error weird long type
 #endif
 
-
 #if SIZEOF_FLOAT != 4
 #error no type for float32
 #endif

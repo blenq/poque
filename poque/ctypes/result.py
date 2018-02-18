@@ -88,17 +88,14 @@ class Result(c_void_p):
     getisnull = _get_result_row_column_method(pq.PQgetisnull)
     _pq_getvalue = _get_result_row_column_method(pq.PQgetvalue)
 
-    clear = get_method(pq.PQclear)
-
     def __del__(self):
-        self.clear()
+        pq.PQclear(self)
 
     def pq_getvalue(self, row_number, column_number):
         data = self._pq_getvalue(row_number, column_number)
         if data is not None:
             if self.fformat(column_number) == FORMAT_TEXT:
                 return codecs.decode(data, "utf-8")
-            self._views.append(data)
         return data
 
     def _exception(self):
@@ -173,10 +170,21 @@ pq.PQgetisnull.errcheck = check_bool
 
 def check_value(res, func, args):
     if res is not None:
+        # create a memoryview from the raw pointer
         pg_res, row, col = args
         length = pg_res.getlength(row, col)
-        return memoryview((c_ubyte * length).from_address(res))
-#         return ValueCursor(data)
+
+        # a ctypes array implements the buffer interface, so it can be used as
+        # a base for the memoryview
+        data = (c_ubyte * length).from_address(res)
+
+        # The data will be freed when the Result object is garbage collected
+        # (by PQClear). Therefore we add a reference to the result so it
+        # doesn't get cleaned up as long as the buffer is exposed to the
+        # outside world
+        data._result = pg_res
+
+        return memoryview(data)
     return res
 
 
@@ -192,20 +200,5 @@ pq.PQresultErrorField.argtypes = [Result, c_int]
 pq.PQresultErrorField.restype = c_char_p
 pq.PQresultErrorField.errcheck = check_string
 
-
-def check_clear(res, func, args):
-    result = args[0]
-    if result:
-        result.value = 0
-        try:
-            views = result._views
-        except AttributeError:
-            pass
-        else:
-            for v in views:
-                v.release()
-
-
 pq.PQclear.argtypes = [Result]
 pq.PQclear.restype = None
-pq.PQclear.errcheck = check_clear

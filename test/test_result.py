@@ -1,6 +1,7 @@
 import datetime
 from decimal import Decimal
 from ipaddress import IPv4Interface, IPv6Interface, IPv4Network, IPv6Network
+import sys
 import unittest
 import weakref
 
@@ -36,59 +37,31 @@ class ResultTestBasic():
     def test_nparams(self):
         self.assertEqual(self.res.nparams, 0)
 
-    def test_clear(self):
-        res = self.cn.execute("SELECT 1 AS yo")
-        res.clear()
-        self.assertEqual(res.ntuples, 0)
-
     def test_fname(self):
         self.assertEqual(self.res.fname(0), 'yo')
         self.assertEqual(self.res.fname(column_number=0), 'yo')
-
-    def test_invalid_fname(self):
-        res = self.cn.execute("SELECT 1 AS yo")
-        res.clear()
-        self.assertIsNone(res.fname(0))
+        with self.assertWarns(self.poque.Warning):
+            self.assertEqual(self.res.fname(column_number=2), None)
 
     def test_fnumber(self):
         self.assertEqual(self.res.fnumber('yo'), 0)
         self.assertEqual(self.res.fnumber('no'), -1)
         self.assertEqual(self.res.fnumber(column_name='yo'), 0)
 
-    def test_invalid_fnumber(self):
-        res = self.cn.execute("SELECT 1 AS yo")
-        res.clear()
-        self.assertEqual(res.fnumber('yo'), -1)
-
     def test_ftable(self):
         self.assertEqual(self.res.ftable(0), self.poque.INVALID_OID)
         self.assertEqual(
             self.res.ftable(column_number=0), self.poque.INVALID_OID)
 
-    def test_invalid_ftable(self):
-        res = self.cn.execute("SELECT 1 AS yo")
-        res.clear()
-        self.assertEqual(res.ftable(0), self.poque.INVALID_OID)
-
     def test_ftablecol(self):
         self.assertEqual(self.res.ftablecol(0), 0)
         self.assertEqual(self.res.ftablecol(column_number=0), 0)
 
-    def test_invalid_ftablecol(self):
-        res = self.cn.execute("SELECT 1 AS yo")
-        res.clear()
-        self.assertEqual(res.ftablecol(0), 0)
-
     def test_fformat(self):
         self.assertEqual(self.res.fformat(0), 1)
         self.assertEqual(self.res.fformat(column_number=0), 1)
-
-    def test_invalid_fformat(self):
-        res = self.cn.execute("SELECT 1 AS yo")
-        res.clear()
-        self.assertEqual(res.fformat(4), 0)
-        with self.assertRaises(TypeError):
-            res.fformat()
+        with self.assertWarns(self.poque.Warning):
+            self.assertEqual(self.res.fformat(column_number=2), 0)
 
     def test_ftype(self):
         self.assertEqual(self.res.ftype(0), self.poque.INT4OID)
@@ -161,20 +134,28 @@ class ResultTestValues():
     def test_formats(self):
         res = self.cn.execute(command="SELECT 6::int4", result_format=0)
         self.assertEqual(res.pq_getvalue(0, 0), "6")
+        res = self.cn.execute(command="SELECT NULL", result_format=0)
+        self.assertEqual(res.pq_getvalue(0, 0), "")
         with self.assertWarns(self.poque.Warning):
             self.assertEqual(res.pq_getvalue(2, 3), None)
         res = self.cn.execute(command="SELECT 'hoi'", result_format=1)
         self.assertEqual(res.pq_getvalue(0, 0), b"hoi")
+        res = self.cn.execute(command="SELECT NULL", result_format=1)
+        self.assertEqual(res.pq_getvalue(0, 0), b"")
         with self.assertWarns(self.poque.Warning):
             self.assertEqual(res.pq_getvalue(2, 3), None)
 
     def test_view(self):
         res = self.cn.execute(command="SELECT 'hoi'", result_format=1)
+        rc = sys.getrefcount(res)
         val = res.pq_getvalue(0, 0)
         self.assertEqual(val, b"hoi")
-        res.clear()
-        with self.assertRaises(ValueError):
-            val[0]
+        self.assertIsInstance(val, memoryview)
+
+        # a memoryview
+        self.assertEqual(sys.getrefcount(res), rc + 1)
+        del val
+        self.assertEqual(sys.getrefcount(res), rc)
 
     def test_two_queries(self):
         res = self.cn.execute(command="SELECT 1;SELECT 2", result_format=0)

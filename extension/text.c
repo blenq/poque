@@ -17,7 +17,7 @@ hex_to_char(char hex) {
     };
 
     if (hex >= 0x30 && hex <= 0x66)
-        c = hex_vals[(unsigned char)hex];
+        c = hex_vals[(size_t)hex];
     if (c == -1)
         PyErr_SetString(PoqueError, "Invalid hexadecimal character");
     return c;
@@ -153,30 +153,11 @@ PyObject *
 bytea_binval(data_crs* crs)
 {
     char *data;
-    PyObject *vw, *vw_list;
     int len;
 
     len = crs_remaining(crs);
     data = crs_advance_end(crs);
-
-    vw_list = crs->result->vw_list;
-    if (vw_list == NULL) {
-        vw_list = PyList_New(0);
-        if (vw_list == NULL) {
-            return NULL;
-        }
-        crs->result->vw_list = vw_list;
-    }
-
-    vw = PyMemoryView_FromMemory(data, len, PyBUF_READ);
-    if (vw == NULL) {
-        return NULL;
-    }
-    if (PyList_Append(vw_list, vw) == -1) {
-        Py_DECREF(vw);
-        return NULL;
-    }
-    return vw;
+    return Result_getview(crs->result, data, len);
 }
 
 
@@ -195,13 +176,22 @@ bytes_encode(param_handler *handler, PyObject *param, char **loc) {
 static int
 bytes_encode_at(param_handler *handler, PyObject *param, char *loc) {
 	char *str;
-	int size;
+	Py_ssize_t size;
 
-	size = (int)PyBytes_GET_SIZE(param);
+	size = PyBytes_GET_SIZE(param);
+
+#if SIZEOF_SIZE_T > SIZEOF_INT
+	if (size > INT_MAX) {
+        PyErr_SetString(PyExc_ValueError,
+                        "Size of bytes value is too large");
+        return -1;
+	}
+#endif
+
 	str = PyBytes_AS_STRING(param);
-	memcpy(loc, str, size);
+	memcpy(loc, str, (int)size);
 
-	return size;
+	return (int)size;
 }
 
 
