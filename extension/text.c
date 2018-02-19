@@ -245,8 +245,6 @@ text_examine(TextParamHandler *handler, PyObject *param) {
     Py_ssize_t size;
     TextParam *tp;
 
-    tp = &handler->params[handler->examine_pos++];
-
     string = PyUnicode_AsUTF8AndSize(param, &size);
     if (string == NULL) {
         return -1;
@@ -258,6 +256,7 @@ text_examine(TextParamHandler *handler, PyObject *param) {
         return -1;
     }
 #endif
+    tp = current_examine_param(handler);
     tp->size = (int)size;
     tp->string = string;
     return (int)size;
@@ -268,7 +267,7 @@ static int
 text_encode(TextParamHandler *handler, PyObject *param, char **loc) {
     TextParam *tp;
 
-    tp = current_param(handler, &handler->encode_pos);
+    tp = current_encode_param(handler);
     *loc = tp->string;
     return 0;
 }
@@ -279,7 +278,7 @@ text_encode_at(TextParamHandler *handler, PyObject *param, char *loc) {
     int size;
     TextParam *tp;
 
-    tp = &handler->params[handler->encode_pos++];
+    tp = current_encode_param(handler);
     size = (int)tp->size;
     memcpy(loc, tp->string, size);
     return size;
@@ -340,7 +339,7 @@ object_examine(ObjectParamHandler *handler, PyObject *param)
 		return -1;
 	}
 
-    tp = &handler->params[handler->examine_pos++];
+    tp = current_examine_param(handler);
 	tp->ref = param;
 
 	string = PyUnicode_AsUTF8AndSize(param, &size);
@@ -366,7 +365,7 @@ static int
 object_encode(ObjectParamHandler *handler, PyObject *param, char **loc) {
     ObjectParam *tp;
 
-    tp = &handler->params[handler->encode_pos++];
+    tp = current_encode_param(handler);
     *loc = tp->string;
     return 0;
 }
@@ -377,7 +376,7 @@ object_encode_at(ObjectParamHandler *handler, PyObject *param, char *loc) {
     int size;
     ObjectParam *tp;
 
-    tp = &handler->params[handler->encode_pos++];
+    tp = current_encode_param(handler);
     size = (int)tp->size;
     memcpy(loc, tp->string, size);
     return size;

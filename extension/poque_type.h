@@ -55,6 +55,8 @@ typedef struct _param_handler {
 #define get_current_encode_param(h) get_current_param((h), (&(h)->encode_pos))
 
 #define current_param(h, p) &(h)->params[(*p)++]
+#define current_examine_param(h) current_param((h), (&(h)->examine_pos))
+#define current_encode_param(h) current_param((h), (&(h)->encode_pos))
 
 
 ph_new get_param_handler_constructor(PyTypeObject *typ);
