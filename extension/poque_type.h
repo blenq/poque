@@ -51,10 +51,28 @@ typedef struct _param_handler {
 #define handler_single(h) ((h)->num_params == 1)
 #define get_current_param(h, p) (handler_single(h) ? &h->params.param : \
                                                      &h->params.params[(*p)++])
+#define get_current_examine_param(h) get_current_param((h), (&(h)->examine_pos))
+#define get_current_encode_param(h) get_current_param((h), (&(h)->encode_pos))
 
 
 ph_new get_param_handler_constructor(PyTypeObject *typ);
 param_handler *new_param_handler(param_handler *def_handler, size_t handler_size);
+
+#define return_param_var_handler(dh, ht, pt) \
+	ht *handler; \
+	handler = (ht *)new_param_handler((param_handler *)&dh, sizeof(ht)); \
+	if (handler == NULL) { \
+		return NULL; \
+	} \
+	handler->num_params = num_params; \
+	if (num_params != 1) { \
+		handler->params.params = PyMem_Calloc(num_params, sizeof(pt)); \
+		if (handler->params.params == NULL) { \
+			PyMem_Free(handler); \
+			return (ht *)PyErr_NoMemory(); \
+		} \
+	} \
+	return handler
 
 void write_uint16(char **p, poque_uint16 val);
 void write_uint32(char **p, PY_UINT32_T val);

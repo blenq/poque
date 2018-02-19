@@ -249,7 +249,7 @@ text_examine(TextParamHandler *handler, PyObject *param) {
 	Py_ssize_t size;
 	TextParam *tp;
 
-    tp = get_current_param(handler, &handler->examine_pos);
+    tp = get_current_examine_param(handler);
 
     if (!PyUnicode_Check(param)) {
 		/* If the object is not a string, execute str(obj) and use the outcome.
@@ -282,7 +282,7 @@ static int
 text_encode(TextParamHandler *handler, PyObject *param, char **loc) {
 	TextParam *tp;
 
-	tp = get_current_param(handler, &handler->encode_pos);
+	tp = get_current_encode_param(handler);
 	*loc = tp->string;
 	return 0;
 }
@@ -293,7 +293,7 @@ text_encode_at(TextParamHandler *handler, PyObject *param, char *loc) {
 	int size;
 	TextParam *tp;
 
-    tp = get_current_param(handler, &handler->encode_pos);
+    tp = get_current_encode_param(handler);
 	size = (int)tp->size;
 	memcpy(loc, tp->string, size);
 	return size;
@@ -320,7 +320,7 @@ text_handler_free(TextParamHandler *handler) {
 }
 
 
-param_handler *
+TextParamHandler *
 new_text_param_handler(int num_params) {
 	static TextParamHandler def_handler = {
 		{
@@ -334,25 +334,8 @@ new_text_param_handler(int num_params) {
 		},
 		0
 	}; /* static initialized handler */
-	TextParamHandler *handler;
 
-	/* create new handler identical to static one */
-	handler = (TextParamHandler *)new_param_handler(
-		(param_handler *)&def_handler, sizeof(TextParamHandler));
-	if (handler == NULL) {
-		return NULL;
-	}
-
-    /* initialize TextParamHandler specifics */
-	handler->num_params = num_params;
-	if (!handler_single(handler)) {
-	    handler->params.params = PyMem_Calloc(num_params, sizeof(TextParam));
-	    if (handler->params.params == NULL) {
-	        return (param_handler *)PyErr_NoMemory();
-	    }
-	}
-
-	return (param_handler *)handler;
+	return_param_var_handler(def_handler, TextParamHandler, TextParam);
 }
 
 
@@ -398,7 +381,7 @@ int
 init_text(void)
 {
     register_value_handler_table(text_value_handlers);
-    register_parameter_handler(&PyUnicode_Type, new_text_param_handler);
+    register_parameter_handler(&PyUnicode_Type, (ph_new)new_text_param_handler);
     register_parameter_handler(&PyBytes_Type, new_bytes_param_handler);
     return 0;
 };

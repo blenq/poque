@@ -67,7 +67,7 @@ int_examine_text(IntParamHandler *handler, PyObject *param) {
 #endif
 
     /* set parameter values */
-    ip = get_current_param(handler, &handler->examine_pos);
+    ip = get_current_examine_param(handler);
     ip->ref = param;    /* keep reference for decrementing refcount later */
     ip->size = size;
     ip->value.string = val;
@@ -81,7 +81,7 @@ int_encode_text(IntParamHandler *handler, PyObject *param, char **loc) {
 
     /* just return the earlier stored pointer to the UTF-8 encoded char buffer
      */
-    ip = get_current_param(handler, &handler->encode_pos);
+    ip = get_current_encode_param(handler);
     *loc = ip->value.string;
     return 0;
 }
@@ -93,7 +93,7 @@ int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
     int size;
 
     /* copy the earlier retrieved UTF-8 encoded char buffer to location */
-    ip = get_current_param(handler, &handler->encode_pos);
+    ip = get_current_encode_param(handler);
     size = (int)ip->size;
     memcpy(loc, ip->value.string, size);
     return size;
@@ -164,7 +164,7 @@ int_examine_int8(IntParamHandler *handler, PyObject *param) {
         /* value does not fit into 64 bits integer, use text */
         return int_set_examine_text(handler, param);
     }
-    ip = get_current_param(handler, &handler->examine_pos);
+    ip = get_current_examine_param(handler);
     ip->ref = param;
     ip->value.int8 = val;
     return 8;
@@ -175,7 +175,7 @@ static int
 int_encode_at_int8(IntParamHandler *handler, PyObject *param, char *loc) {
     IntParam *ip;
 
-    ip = get_current_param(handler, &handler->encode_pos);
+    ip = get_current_encode_param(handler);
     write_uint64(&loc, ip->value.int8);
     return 8;
 }
@@ -240,7 +240,7 @@ int_examine(IntParamHandler *handler, PyObject *param) {
     }
 #endif
     /* value fits in 32 bits, set up parameter */
-    ip = get_current_param(handler, &handler->examine_pos);
+    ip = get_current_examine_param(handler);
     ip->ref = param;
     ip->value.int4 = val;
     return 4;
@@ -252,7 +252,7 @@ int_encode_at(IntParamHandler *handler, PyObject *param, char *loc)
 {
     IntParam *ip;
 
-    ip = get_current_param(handler, &handler->encode_pos);
+    ip = get_current_encode_param(handler);
     write_uint32(&loc, ip->value.int4);
     return 4;
 }
@@ -285,7 +285,7 @@ int_handler_free(IntParamHandler *handler)
 }
 
 
-param_handler *
+IntParamHandler *
 new_int_param_handler(int num_params) {
     static IntParamHandler def_handler = {
         {
@@ -299,25 +299,7 @@ new_int_param_handler(int num_params) {
         },
         0
     }; /* static initialized handler */
-    IntParamHandler *handler;
-
-    /* create new handler identical to static one */
-    handler = (IntParamHandler *)new_param_handler(
-        (param_handler *)&def_handler, sizeof(IntParamHandler));
-    if (handler == NULL) {
-        return NULL;
-    }
-
-    /* initialize IntParamHandler specifics */
-    handler->num_params = num_params;
-    if (!handler_single(handler)) {
-        handler->params.params = PyMem_Calloc(num_params, sizeof(IntParam));
-        if (handler->params.params == NULL) {
-            return (param_handler *)PyErr_NoMemory();
-        }
-    }
-
-    return (param_handler *)handler;
+	return_param_var_handler(def_handler, IntParamHandler, IntParam);
 }
 
 
@@ -719,7 +701,7 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
     write_uint16(&pos, dscale);
 
     /* set parameter values */
-    np = get_current_param(handler, &handler->examine_pos);
+    np = get_current_examine_param(handler);
     np->data = data;
     size = 8 + npg_digits * 2;
     np->size = size;
@@ -733,7 +715,7 @@ decimal_encode(DecimalParamHandler *handler, PyObject *param, char **loc)
     DecimalParam *np;
 
     /* return the earlier encoded buffer */
-    np = get_current_param(handler, &handler->encode_pos);
+    np = get_current_encode_param(handler);
     *loc = np->data;
     return 0;
 }
@@ -745,7 +727,7 @@ decimal_encode_at(DecimalParamHandler *handler, PyObject *param, char *loc) {
     int size;
 
     /* copy the earlier encoded buffer to location */
-    np = get_current_param(handler, &handler->encode_pos);
+    np = get_current_encode_param(handler);
     size = np->size;
     memcpy(loc, np->data, size);
     return size;
@@ -774,7 +756,7 @@ decimal_handler_free(DecimalParamHandler *handler)
 }
 
 
-param_handler *
+DecimalParamHandler *
 new_decimal_param_handler(int num_params) {
     static DecimalParamHandler def_handler = {
         {
@@ -788,25 +770,8 @@ new_decimal_param_handler(int num_params) {
         },
         0
     }; /* static initialized handler */
-    DecimalParamHandler *handler;
 
-    /* create new handler identical to static one */
-    handler = (DecimalParamHandler *)new_param_handler(
-        (param_handler *)&def_handler, sizeof(DecimalParamHandler));
-    if (handler == NULL) {
-        return NULL;
-    }
-
-    /* initialize DecimalParamHandler specifics */
-    handler->num_params = num_params;
-    if (!handler_single(handler)) {
-        handler->params.params = PyMem_Calloc(num_params, sizeof(DecimalParam));
-        if (handler->params.params == NULL) {
-            return (param_handler *)PyErr_NoMemory();
-        }
-    }
-
-    return (param_handler *)handler;
+	return_param_var_handler(def_handler, DecimalParamHandler, DecimalParam);
 }
 
 
@@ -993,11 +958,11 @@ init_numeric(void) {
 
     register_value_handler_table(numeric_value_handlers);
 
-    register_parameter_handler(&PyLong_Type, new_int_param_handler);
+    register_parameter_handler(&PyLong_Type, (ph_new)new_int_param_handler);
     register_parameter_handler(&PyFloat_Type, new_float_param_handler);
     register_parameter_handler(&PyBool_Type, new_bool_param_handler);
     register_parameter_handler((PyTypeObject *)PyDecimal,
-                               new_decimal_param_handler);
+                               (ph_new)new_decimal_param_handler);
 
     return 0;
 }
