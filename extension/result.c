@@ -1,6 +1,89 @@
 #include "poque.h"
 
 
+typedef struct {
+    PyObject_HEAD
+    PyObject *wr_list;
+	poque_Result *result;
+    char *data;
+    int len;
+} PoqueValue;
+
+
+static int
+PoqueValue_GetBuffer(PyObject *exporter, Py_buffer *view, int flags)
+{
+	PoqueValue *self;
+
+	self = (PoqueValue *)exporter;
+	return PyBuffer_FillInfo(
+			view, exporter, self->data, self->len, 1, flags);
+}
+
+
+static PyBufferProcs PoqueValue_BufProcs = {
+		PoqueValue_GetBuffer,
+		NULL
+};
+
+
+static void
+PoqueValue_dealloc(PoqueValue *self) {
+    if (self->wr_list != NULL)
+        PyObject_ClearWeakRefs((PyObject *) self);
+    Py_DECREF(self->result);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+
+PyTypeObject PoqueValueType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "poque.Value",                              /* tp_name */
+    sizeof(PoqueValue),                         /* tp_basicsize */
+    0,                                          /* tp_itemsize */
+    (destructor)PoqueValue_dealloc,             /* tp_dealloc */
+    0,                                          /* tp_print */
+    0,                                          /* tp_getattr */
+    0,                                          /* tp_setattr */
+    0,                                          /* tp_reserved */
+    0,                                          /* tp_repr */
+    0,                                          /* tp_as_number */
+    0,                                          /* tp_as_sequence */
+    0,                                          /* tp_as_mapping */
+    0,                                          /* tp_hash  */
+    0,                                          /* tp_call */
+    0,                                          /* tp_str */
+    0,                                          /* tp_getattro */
+    0,                                          /* tp_setattro */
+    &PoqueValue_BufProcs,                       /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,   /* tp_flags */
+    PyDoc_STR("poque value object"),            /* tp_doc */
+    0,                                          /* tp_traverse */
+    0,                                          /* tp_clear */
+    0,                                          /* tp_richcompare */
+    offsetof(PoqueValue, wr_list),              /* tp_weaklistoffset */
+    0,                                          /* tp_iter */
+};
+
+
+static PoqueValue *
+PoqueValue_New(poque_Result *result, char *data, int len)
+{
+	PoqueValue *value;
+
+	value = PyObject_New(PoqueValue, &PoqueValueType);
+	if (value == NULL) {
+		return NULL;
+	}
+    value->wr_list = NULL;
+	Py_INCREF(result);
+	value->result = result;
+	value->data = data;
+	value->len = len;
+	return value;
+}
+
+
 poque_Result *
 PoqueResult_New(PGresult *res, poque_Conn *conn) {
     poque_Result *result;
@@ -10,7 +93,6 @@ PoqueResult_New(PGresult *res, poque_Conn *conn) {
         return NULL;
     }
     result->result = res;
-    result->vw_list = NULL;
     result->wr_list = NULL;
     Py_INCREF(conn);
     result->conn = conn;
@@ -19,39 +101,9 @@ PoqueResult_New(PGresult *res, poque_Conn *conn) {
 
 
 static void
-_Result_clear(poque_Result *self) {
-    if (self->result == NULL) {
-        return;
-    }
-    if (self->vw_list) {
-        Py_ssize_t i, len;
-
-        len = PyList_GET_SIZE(self->vw_list);
-        for (i = 0; i < len; i++) {
-            PyObject *vw;
-            vw = PyList_GET_ITEM(self->vw_list, i);
-            PyObject_CallMethod(vw, "release", NULL);
-        }
-        Py_DECREF(self->vw_list);
-        self->vw_list = NULL;
-    }
-    PQclear(self->result);
-    self->result = NULL;
-    Py_DECREF(self->conn);
-    self->conn = NULL;
-}
-
-
-static PyObject *
-Result_clear(poque_Result *self, PyObject *unused) {
-    _Result_clear(self);
-    Py_RETURN_NONE;
-}
-
-
-static void
 Result_dealloc(poque_Result *self) {
-    _Result_clear(self);
+    PQclear(self->result);
+    Py_DECREF(self->conn);
     if (self->wr_list != NULL)
         PyObject_ClearWeakRefs((PyObject *) self);
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -214,26 +266,17 @@ Result_colrow_args(PyObject *args, PyObject *kwds, int *row, int *column)
 PyObject *
 Result_getview(poque_Result *self, char *data, int len)
 {
-    PyObject *vw, *vw_list;
+	PyObject *view;
+	PoqueValue *value;
 
-    vw_list = self->vw_list;
-    if (vw_list == NULL) {
-        vw_list = PyList_New(0);
-        if (vw_list == NULL) {
-            return NULL;
-        }
-        self->vw_list = vw_list;
-    }
 
-    vw = PyMemoryView_FromMemory(data, len, PyBUF_READ);
-    if (vw == NULL) {
-        return NULL;
-    }
-    if (PyList_Append(vw_list, vw) == -1) {
-        Py_DECREF(vw);
-        return NULL;
-    }
-    return vw;
+	value = PoqueValue_New(self, data, len);
+	if (value == NULL) {
+		return NULL;
+	}
+	view = PyMemoryView_FromObject((PyObject *)value);
+	Py_DECREF(value);
+	return view;
 }
 
 
@@ -254,7 +297,7 @@ Result_getvalue(poque_Result *self, PyObject *args, PyObject *kwds)
         Py_RETURN_NONE;
     }
     len = PQgetlength(self->result, row, column);
-    if (PQfformat(self->result, column) == 1) {
+    if (PQfformat(self->result, column) == FORMAT_BINARY) {
         return Result_getview(self, data, len);
     }
     return PyUnicode_FromStringAndSize(data, len);
@@ -336,9 +379,6 @@ static PyGetSetDef Result_getset[] = {{
 }};
 
 static PyMethodDef Result_methods[] = {{
-        "clear", (PyCFunction)Result_clear, METH_NOARGS,
-        PyDoc_STR("clear the result")
-    }, {
         "fname", (PyCFunction)Result_fname, METH_VARARGS| METH_KEYWORDS,
         PyDoc_STR("field name")
     },  {

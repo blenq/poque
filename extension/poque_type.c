@@ -353,7 +353,7 @@ array_examine(ArrayParamHandler *handler, PyObject *param) {
     /* Now calculate the total size, 12 for the header, 8 for each dimension,
      * 4 for each item and the size of the non NULL items calculated above */
     total_items = 1;
-    for (i = 0; i < (int)handler->num_dims; i++) {
+    for (i = 0; i < handler->num_dims; i++) {
         total_items *= handler->dims[i];
     }
     handler->handler.oid = handler->el_handler->array_oid;
@@ -1043,11 +1043,6 @@ PyObject *
 Poque_value(poque_Result *result, Oid oid, int format, char *data, int len) {
     pq_read read_func;
     Oid el_oid = InvalidOid;
-
-    if (format == 0 && data[len] != '\0') {
-        PyErr_SetString(PoqueError, "Invalid text format");
-        return NULL;
-    }
 
     read_func = get_read_func(oid, format, &el_oid);
     if (read_func == NULL) {

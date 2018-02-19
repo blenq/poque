@@ -380,7 +380,6 @@ static PoqueTypeEntry text_value_handlers[] = {
     {CHAROID, char_binval, char_binval, InvalidOid, NULL},
     {CSTRINGOID, text_val, NULL, InvalidOid, NULL},
     {BPCHAROID, text_val, NULL, InvalidOid, NULL},
-    {UNKNOWNOID, text_val, NULL, InvalidOid, NULL},
 
     {VARCHARARRAYOID, array_binval, NULL, VARCHAROID, NULL},
     {TEXTARRAYOID, array_binval, NULL, TEXTOID, NULL},

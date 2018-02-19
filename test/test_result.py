@@ -430,7 +430,7 @@ class ResultTestValues():
                                       self.get_unknown_cmp_type())
 
     def test_unknown_value_bin(self):
-        self._test_value_and_type_bin("SELECT 'hello'::unknown", 'hello',
+        self._test_value_and_type_bin("SELECT 'hello'::unknown", b'hello',
                                       self.get_unknown_cmp_type())
 
     def test_null_value_str(self):

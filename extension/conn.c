@@ -208,9 +208,8 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 	Oid *param_types;
 	char **param_values, **clean_up;
 	int *param_lengths, *param_formats;
-	size_t clean_up_count = 0, handler_count = 0;
 	PyObject *param;
-	int i;
+	int i, clean_up_count = 0, handler_count = 0;
 	PGresult *res = NULL;
 
 	param_handlers = PyMem_Malloc(num_params * sizeof(param_handler *));

@@ -22,7 +22,6 @@ typedef struct poque_Result {
     PyObject_HEAD
     PGresult *result;
     PyObject *wr_list;
-    PyObject *vw_list;
     poque_Conn *conn;
 } poque_Result;
 
@@ -57,6 +56,7 @@ extern PyObject *PoqueInterfaceError;
 extern PyObject *PoqueWarning;
 extern PyTypeObject poque_ConnType;
 extern PyTypeObject poque_ResultType;
+extern PyTypeObject PoqueValueType;
 
 poque_Result *PoqueResult_New(PGresult *res, poque_Conn *conn);
 
