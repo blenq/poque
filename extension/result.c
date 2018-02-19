@@ -1,6 +1,24 @@
 #include "poque.h"
 
 
+/* ===== PoqueValue ========================================================= */
+
+/* A PoqueValue is a minimal object that wraps a data pointer retrieved by
+ * PQgetValue. It is used to expose it without copying as a memoryview to the
+ * consumer (using buffer protocol)  and at the same time keep a reference to
+ * the result object.
+ *
+ * The problem it solves is the availability of the data. The data will be
+ * cleared automatically by libpq when the PGresult is cleared. Therefore it is
+ * necessary to keep the PGresult alive while the memoryview is in use.
+ * The PGresult will only be cleared by the destructor of the PoqueResult
+ * when there are no more references to it.
+ *
+ * The resulting reference chain looks like:
+ *
+ * memoryview -> PoqueValue -> PoqueResult -> PGresult
+ */
+
 typedef struct {
     PyObject_HEAD
     PyObject *wr_list;
@@ -13,6 +31,7 @@ typedef struct {
 static int
 PoqueValue_GetBuffer(PyObject *exporter, Py_buffer *view, int flags)
 {
+	/* fills in buffer from data pointer */
 	PoqueValue *self;
 
 	self = (PoqueValue *)exporter;
@@ -21,19 +40,20 @@ PoqueValue_GetBuffer(PyObject *exporter, Py_buffer *view, int flags)
 }
 
 
-static PyBufferProcs PoqueValue_BufProcs = {
-		PoqueValue_GetBuffer,
-		NULL
-};
-
-
 static void
 PoqueValue_dealloc(PoqueValue *self) {
+	/* standard destructor, clear weakrefs, break ref chain and free */
     if (self->wr_list != NULL)
         PyObject_ClearWeakRefs((PyObject *) self);
     Py_DECREF(self->result);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
+
+
+static PyBufferProcs PoqueValue_BufProcs = {
+		PoqueValue_GetBuffer,
+		NULL
+};
 
 
 PyTypeObject PoqueValueType = {
@@ -69,6 +89,7 @@ PyTypeObject PoqueValueType = {
 static PoqueValue *
 PoqueValue_New(poque_Result *result, char *data, int len)
 {
+	/* PoqueValue constructor */
 	PoqueValue *value;
 
 	value = PyObject_New(PoqueValue, &PoqueValueType);
@@ -83,6 +104,8 @@ PoqueValue_New(poque_Result *result, char *data, int len)
 	return value;
 }
 
+
+/* ===== PoqueResult ======================================================== */
 
 poque_Result *
 PoqueResult_New(PGresult *res, poque_Conn *conn) {
