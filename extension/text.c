@@ -163,35 +163,35 @@ bytea_binval(data_crs* crs)
 
 static int
 bytes_examine(param_handler *handler, PyObject *param) {
-	return (int)PyBytes_GET_SIZE(param);
+    return (int)PyBytes_GET_SIZE(param);
 }
 
 static int
 bytes_encode(param_handler *handler, PyObject *param, char **loc) {
-	*loc = PyBytes_AS_STRING(param);
-	return 0;
+    *loc = PyBytes_AS_STRING(param);
+    return 0;
 }
 
 
 static int
 bytes_encode_at(param_handler *handler, PyObject *param, char *loc) {
-	char *str;
-	Py_ssize_t size;
+    char *str;
+    Py_ssize_t size;
 
-	size = PyBytes_GET_SIZE(param);
+    size = PyBytes_GET_SIZE(param);
 
 #if SIZEOF_SIZE_T > SIZEOF_INT
-	if (size > INT_MAX) {
+    if (size > INT_MAX) {
         PyErr_SetString(PyExc_ValueError,
                         "Size of bytes value is too large");
         return -1;
-	}
+    }
 #endif
 
-	str = PyBytes_AS_STRING(param);
-	memcpy(loc, str, (int)size);
+    str = PyBytes_AS_STRING(param);
+    memcpy(loc, str, (int)size);
 
-	return (int)size;
+    return (int)size;
 }
 
 
@@ -232,110 +232,110 @@ typedef struct _TextParam {
 
 
 typedef struct _TextParamHandler {
-	param_handler handler;
-	int num_params;
-	int examine_pos;
-	int encode_pos;
-    union {
-        TextParam param;
-        TextParam *params;
-    } params;
+    param_handler handler;
+    int num_params;
+    int examine_pos;
+    int encode_pos;
+    TextParam params[];
 } TextParamHandler;
 
 
 static int
 text_examine(TextParamHandler *handler, PyObject *param) {
-	char *string;
-	Py_ssize_t size;
-	TextParam *tp;
+    char *string;
+    Py_ssize_t size;
+    TextParam *tp;
 
-    tp = get_current_examine_param(handler);
+    tp = &handler->params[handler->examine_pos++];
 
     if (!PyUnicode_Check(param)) {
-		/* If the object is not a string, execute str(obj) and use the outcome.
-		 * Keep a reference for cleanup
-		 */
-		param = PyObject_Str(param);
-		if (param == NULL) {
-			return -1;
-		}
-		tp->ref = param;
-	}
-	string = PyUnicode_AsUTF8AndSize(param, &size);
-	if (string == NULL) {
-		return -1;
-	}
+        /* If the object is not a string, execute str(obj) and use the outcome.
+         * Keep a reference for cleanup
+         */
+        param = PyObject_Str(param);
+        if (param == NULL) {
+            return -1;
+        }
+        tp->ref = param;
+    }
+    else {
+        tp->ref = NULL;
+    }
+    string = PyUnicode_AsUTF8AndSize(param, &size);
+    if (string == NULL) {
+        return -1;
+    }
 #if SIZEOF_SIZE_T > SIZEOF_INT
-	if (size > INT32_MAX) {
+    if (size > INT32_MAX) {
         PyErr_SetString(PyExc_ValueError,
                         "String too long for postgresql");
-	    return -1;
-	}
+        return -1;
+    }
 #endif
-	tp->size = size;
-	tp->string = string;
-	return (int)size;
+    tp->size = size;
+    tp->string = string;
+    return (int)size;
 }
 
 
 static int
 text_encode(TextParamHandler *handler, PyObject *param, char **loc) {
-	TextParam *tp;
+    TextParam *tp;
 
-	tp = get_current_encode_param(handler);
-	*loc = tp->string;
-	return 0;
+    tp = &handler->params[handler->encode_pos++];
+    *loc = tp->string;
+    return 0;
 }
 
 
 static int
 text_encode_at(TextParamHandler *handler, PyObject *param, char *loc) {
-	int size;
-	TextParam *tp;
+    int size;
+    TextParam *tp;
 
-    tp = get_current_encode_param(handler);
-	size = (int)tp->size;
-	memcpy(loc, tp->string, size);
-	return size;
+    tp = &handler->params[handler->encode_pos++];
+    size = (int)tp->size;
+    memcpy(loc, tp->string, size);
+    return size;
 }
 
 
 static void
 text_handler_free(TextParamHandler *handler) {
-	int i;
-	TextParam *tp;
+    int i;
+    TextParam *tp;
 
-	if (handler_single(handler)) {
-	    tp = &handler->params.param;
-	    Py_XDECREF(tp->ref);
-	}
-	else {
-	    for (i = 0; i < handler->examine_pos; i++) {
-	        tp = &handler->params.params[i];
-	        Py_XDECREF(tp->ref);
-	    }
-	    PyMem_Free(handler->params.params);
-	}
-	PyMem_Free(handler);
+    for (i = 0; i < handler->examine_pos; i++) {
+        tp = &handler->params[i];
+        Py_XDECREF(tp->ref);
+    }
+    PyMem_Free(handler);
 }
 
 
-TextParamHandler *
+param_handler *
 new_text_param_handler(int num_params) {
-	static TextParamHandler def_handler = {
-		{
-			(ph_examine)text_examine,		/* examine */
-			NULL,                           /* total_size */
-			(ph_encode)text_encode,		    /* encode */
-			(ph_encode_at)text_encode_at,   /* encode_at */
-			(ph_free)text_handler_free,	    /* free */
-			TEXTOID,		            	/* oid */
-			TEXTARRAYOID,		            /* array_oid */
-		},
-		0
-	}; /* static initialized handler */
+    static TextParamHandler def_handler = {
+        {
+            (ph_examine)text_examine,        /* examine */
+            NULL,                           /* total_size */
+            (ph_encode)text_encode,            /* encode */
+            (ph_encode_at)text_encode_at,   /* encode_at */
+            (ph_free)text_handler_free,        /* free */
+            TEXTOID,                        /* oid */
+            TEXTARRAYOID,                    /* array_oid */
+        },
+        0
+    }; /* static initialized handler */
+    param_handler *handler;
 
-	return_param_var_handler(def_handler, TextParamHandler, TextParam);
+    handler = new_param_handler(
+        (param_handler *)&def_handler,
+        sizeof(TextParamHandler) + num_params * sizeof(TextParam));
+    if (handler == NULL) {
+        return NULL;
+    }
+    return handler;
 }
 
 
@@ -381,7 +381,7 @@ int
 init_text(void)
 {
     register_value_handler_table(text_value_handlers);
-    register_parameter_handler(&PyUnicode_Type, (ph_new)new_text_param_handler);
+    register_parameter_handler(&PyUnicode_Type, new_text_param_handler);
     register_parameter_handler(&PyBytes_Type, new_bytes_param_handler);
     return 0;
 };
