@@ -430,7 +430,12 @@ class ResultTestValues():
                                       self.get_unknown_cmp_type())
 
     def test_unknown_value_bin(self):
-        self._test_value_and_type_bin("SELECT 'hello'::unknown", b'hello',
+        # PostgreSQL 10 returns unknown as text
+        if (self.cn.server_version < 100000):
+            val = b'hello'
+        else:
+            val = 'hello'
+        self._test_value_and_type_bin("SELECT 'hello'::unknown", val,
                                       self.get_unknown_cmp_type())
 
     def test_null_value_str(self):
