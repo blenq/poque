@@ -52,7 +52,7 @@ int_examine_text(IntParamHandler *handler, PyObject *param) {
     }
 
 #if SIZEOF_SIZE_T > SIZEOF_INT
-    if (size > INT32_MAX) {
+    if (size > INT_MAX) {
         Py_DECREF(param);
         PyErr_SetString(PyExc_ValueError,
                         "String too long for postgresql");
@@ -70,19 +70,18 @@ int_examine_text(IntParamHandler *handler, PyObject *param) {
 
 
 static int
-int_encode_text(IntParamHandler *handler, PyObject *param, char **loc) {
-    IntParam *ip;
-
+int_encode_text(IntParamHandler *handler, PyObject *param, char **loc)
+{
     /* just return the earlier stored pointer to the UTF-8 encoded char buffer
      */
-    ip = current_encode_param(handler);
-    *loc = ip->value.string;
+    *loc = (current_encode_param(handler))->value.string;
     return 0;
 }
 
 
 static int
-int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
+int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc)
+{
     IntParam *ip;
     int size;
 
@@ -108,31 +107,43 @@ int_total_size_text(IntParamHandler *handler) {
 }
 
 
+static void
+int_handler_free_text(IntParamHandler *handler)
+{
+    int i;
+
+	/* clean up cached PyUnicode value */
+	for (i = 0; i < handler->examine_pos; i++) {
+		Py_DECREF(handler->params[i].ref);
+	}
+    /* and free ourselves */
+    PyMem_Free(handler);
+}
+
+
 static int
 int_set_examine_text(IntParamHandler *handler, PyObject *param) {
     int i;
     int examine_pos;
+    static param_handler int_text_param_handler = {
+		(ph_examine)int_examine_text,        	/* examine */
+		(ph_total_size)int_total_size_text,     /* total_size */
+		(ph_encode)int_encode_text,             /* encode */
+		(ph_encode_at)int_encode_at_text,    	/* encode_at */
+		(ph_free)int_handler_free_text,      	/* free */
+		TEXTOID,                        		/* oid */
+		TEXTARRAYOID,                 			/* array_oid */
+	};
 
     /* set up handler for text values */
-    handler->handler.oid = TEXTOID;
-    handler->handler.array_oid = TEXTARRAYOID;
-    handler->handler.encode_at = (ph_encode_at)int_encode_at_text;
-	handler->handler.encode = (ph_encode)int_encode_text;
-	handler->handler.examine = (ph_examine)int_examine_text;
-	handler->handler.total_size = (ph_total_size)int_total_size_text;
+    memcpy(handler, &int_text_param_handler, sizeof(param_handler));
 
-	/* Other values have been examined earlier. First set up size
-	 * calculation because the running total of the previous examine
-	 * results gives the wrong number.
-	 */
-
-	/* and then rewrite the cached values */
+	/* Other values might have been examined earlier. Rewrite the cached
+	 * values */
 	examine_pos = handler->examine_pos;
 	handler->examine_pos = 0;
 	for (i = 0; i < examine_pos; i++) {
-		IntParam *p;
-		p = &handler->params[i];
-		if (int_examine_text(handler, p->ref) < 0) {
+		if (int_examine_text(handler, handler->params[i].ref) < 0) {
 			return -1;
 		}
 	}
@@ -159,11 +170,9 @@ int_examine_int8(IntParamHandler *handler, PyObject *param) {
 
 
 static int
-int_encode_at_int8(IntParamHandler *handler, PyObject *param, char *loc) {
-    IntParam *ip;
-
-    ip = current_encode_param(handler);
-    write_uint64(&loc, ip->value.int8);
+int_encode_at_int8(IntParamHandler *handler, PyObject *param, char *loc)
+{
+    write_uint64(&loc, (current_encode_param(handler))->value.int8);
     return 8;
 }
 
@@ -178,19 +187,20 @@ int_total_size_int8(IntParamHandler *handler) {
 static int
 int_set_examine_int8(IntParamHandler *handler, PyObject *param) {
     int i;
+    static param_handler int8_param_handler = {
+		(ph_examine)int_examine_int8,        	/* examine */
+		(ph_total_size)int_total_size_int8,     /* total_size */
+		NULL,                                   /* encode */
+		(ph_encode_at)int_encode_at_int8,    	/* encode_at */
+		(ph_free)PyMem_Free,                 	/* free */
+		INT8OID,                        		/* oid */
+		INT8ARRAYOID,                 			/* array_oid */
+	};
 
     /* set up handler for pg type INT8 */
-    handler->handler.oid = INT8OID;
-    handler->handler.array_oid = INT8ARRAYOID;
-    handler->handler.encode_at = (ph_encode_at)int_encode_at_int8;
-	handler->handler.examine = (ph_examine)int_examine_int8;
-	handler->handler.total_size = (ph_total_size)int_total_size_int8;
+    memcpy(handler, &int8_param_handler, sizeof(param_handler));
 
-	/* Other values have been examined earlier. First set up size
-	 * calculation because the running total of previous examine results
-	 * gives the wrong number.
-	 */
-	/* and then rewrite the cached values */
+	/* Other values have been examined earlier. Rewrite the cached values */
 	for (i = 0; i < handler->examine_pos; i++) {
 		IntParam *p;
 		p = &handler->params[i];
@@ -198,6 +208,7 @@ int_set_examine_int8(IntParamHandler *handler, PyObject *param) {
 	}
     return int_examine_int8(handler, param);
 }
+
 
 static int
 int_examine(IntParamHandler *handler, PyObject *param) {
@@ -232,27 +243,8 @@ int_examine(IntParamHandler *handler, PyObject *param) {
 static int
 int_encode_at(IntParamHandler *handler, PyObject *param, char *loc)
 {
-    IntParam *ip;
-
-    ip = current_encode_param(handler);
-    write_uint32(&loc, ip->value.int4);
+    write_uint32(&loc, (current_encode_param(handler))->value.int4);
     return 4;
-}
-
-
-static void
-int_handler_free(IntParamHandler *handler)
-{
-    int i;
-
-	if (handler->handler.oid == TEXTOID) {
-		/* clean up cached PyUnicode value */
-		for (i = 0; i < handler->examine_pos; i++) {
-			Py_DECREF(handler->params[i].ref);
-		}
-	}
-    /* and free ourselves */
-    PyMem_Free(handler);
 }
 
 
@@ -264,7 +256,7 @@ new_int_param_handler(int num_params) {
             NULL,                           /* total_size */
             NULL,                           /* encode */
             (ph_encode_at)int_encode_at,    /* encode_at */
-            (ph_free)int_handler_free,      /* free */
+            (ph_free)PyMem_Free,            /* free */
             INT4OID,                        /* oid */
             INT4ARRAYOID,                   /* array_oid */
         },
