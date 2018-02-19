@@ -26,13 +26,7 @@ typedef struct _IntParamHandler {
     int num_params;             /* number of parameters */
     int examine_pos;            /* where to examine next */
     int encode_pos;             /* where to encode next */
-    /* this union is used to prevent an extra malloc in case of a single
-     * value
-     */
-    union {
-        IntParam param;
-        IntParam *params;
-    } params;                   /* cache of parameter values */
+    IntParam params[];          /* cache of parameter values */
 } IntParamHandler;
 
 
@@ -67,7 +61,7 @@ int_examine_text(IntParamHandler *handler, PyObject *param) {
 #endif
 
     /* set parameter values */
-    ip = get_current_examine_param(handler);
+    ip = current_examine_param(handler);
     ip->ref = param;    /* keep reference for decrementing refcount later */
     ip->size = size;
     ip->value.string = val;
@@ -81,7 +75,7 @@ int_encode_text(IntParamHandler *handler, PyObject *param, char **loc) {
 
     /* just return the earlier stored pointer to the UTF-8 encoded char buffer
      */
-    ip = get_current_encode_param(handler);
+    ip = current_encode_param(handler);
     *loc = ip->value.string;
     return 0;
 }
@@ -93,7 +87,7 @@ int_encode_at_text(IntParamHandler *handler, PyObject *param, char *loc) {
     int size;
 
     /* copy the earlier retrieved UTF-8 encoded char buffer to location */
-    ip = get_current_encode_param(handler);
+    ip = current_encode_param(handler);
     size = (int)ip->size;
     memcpy(loc, ip->value.string, size);
     return size;
@@ -107,7 +101,7 @@ int_total_size_text(IntParamHandler *handler) {
 
     for (i = 0; i < handler->examine_pos; i++) {
         IntParam *p;
-        p = &handler->params.params[i];
+        p = &handler->params[i];
         ret += (int)p->size;
     }
     return ret;
@@ -123,35 +117,28 @@ int_set_examine_text(IntParamHandler *handler, PyObject *param) {
     handler->handler.oid = TEXTOID;
     handler->handler.array_oid = TEXTARRAYOID;
     handler->handler.encode_at = (ph_encode_at)int_encode_at_text;
+	handler->handler.encode = (ph_encode)int_encode_text;
+	handler->handler.examine = (ph_examine)int_examine_text;
+	handler->handler.total_size = (ph_total_size)int_total_size_text;
 
-    if (handler_single(handler)) {
-        /* one less malloc and copy */
-        handler->handler.encode = (ph_encode)int_encode_text;
-    }
-    else {
-        /* set up stuff for multiple values */
-        handler->handler.examine = (ph_examine)int_examine_text;
-        if (handler->examine_pos) {
-            /* Other values have been examined earlier. First set up size
-             * calculation because the running total of the previous examine
-             * results gives the wrong number.
-             */
-            handler->handler.total_size = (ph_total_size)int_total_size_text;
+	/* Other values have been examined earlier. First set up size
+	 * calculation because the running total of the previous examine
+	 * results gives the wrong number.
+	 */
 
-            /* and then rewrite the cached values */
-            examine_pos = handler->examine_pos;
-            handler->examine_pos = 0;
-            for (i = 0; i < examine_pos; i++) {
-                IntParam *p;
-                p = &handler->params.params[i];
-                if (int_examine_text(handler, p->ref) < 0) {
-                    return -1;
-                }
-            }
-        }
-    }
+	/* and then rewrite the cached values */
+	examine_pos = handler->examine_pos;
+	handler->examine_pos = 0;
+	for (i = 0; i < examine_pos; i++) {
+		IntParam *p;
+		p = &handler->params[i];
+		if (int_examine_text(handler, p->ref) < 0) {
+			return -1;
+		}
+	}
     return int_examine_text(handler, param);
 }
+
 
 static int
 int_examine_int8(IntParamHandler *handler, PyObject *param) {
@@ -164,7 +151,7 @@ int_examine_int8(IntParamHandler *handler, PyObject *param) {
         /* value does not fit into 64 bits integer, use text */
         return int_set_examine_text(handler, param);
     }
-    ip = get_current_examine_param(handler);
+    ip = current_examine_param(handler);
     ip->ref = param;
     ip->value.int8 = val;
     return 8;
@@ -175,7 +162,7 @@ static int
 int_encode_at_int8(IntParamHandler *handler, PyObject *param, char *loc) {
     IntParam *ip;
 
-    ip = get_current_encode_param(handler);
+    ip = current_encode_param(handler);
     write_uint64(&loc, ip->value.int8);
     return 8;
 }
@@ -196,24 +183,19 @@ int_set_examine_int8(IntParamHandler *handler, PyObject *param) {
     handler->handler.oid = INT8OID;
     handler->handler.array_oid = INT8ARRAYOID;
     handler->handler.encode_at = (ph_encode_at)int_encode_at_int8;
+	handler->handler.examine = (ph_examine)int_examine_int8;
+	handler->handler.total_size = (ph_total_size)int_total_size_int8;
 
-    /* if this is the only parameter, don't bother about the rest */
-    if (!handler_single(handler)) {
-        handler->handler.examine = (ph_examine)int_examine_int8;
-        if (handler->examine_pos) {
-            /* Other values have been examined earlier. First set up size
-             * calculation because the running total of previous examine results
-             * gives the wrong number.
-             */
-            handler->handler.total_size = (ph_total_size)int_total_size_int8;
-            /* and then rewrite the cached values */
-            for (i = 0; i < handler->examine_pos; i++) {
-                IntParam *p;
-                p = &handler->params.params[i];
-                p->value.int8 = p->value.int4;
-            }
-        }
-    }
+	/* Other values have been examined earlier. First set up size
+	 * calculation because the running total of previous examine results
+	 * gives the wrong number.
+	 */
+	/* and then rewrite the cached values */
+	for (i = 0; i < handler->examine_pos; i++) {
+		IntParam *p;
+		p = &handler->params[i];
+		p->value.int8 = p->value.int4;
+	}
     return int_examine_int8(handler, param);
 }
 
@@ -240,7 +222,7 @@ int_examine(IntParamHandler *handler, PyObject *param) {
     }
 #endif
     /* value fits in 32 bits, set up parameter */
-    ip = get_current_examine_param(handler);
+    ip = current_examine_param(handler);
     ip->ref = param;
     ip->value.int4 = val;
     return 4;
@@ -252,7 +234,7 @@ int_encode_at(IntParamHandler *handler, PyObject *param, char *loc)
 {
     IntParam *ip;
 
-    ip = get_current_encode_param(handler);
+    ip = current_encode_param(handler);
     write_uint32(&loc, ip->value.int4);
     return 4;
 }
@@ -263,29 +245,18 @@ int_handler_free(IntParamHandler *handler)
 {
     int i;
 
-    if (handler_single(handler)) {
-        if (handler->handler.oid == TEXTOID) {
-            /* clean up cached PyUnicode value */
-            Py_XDECREF(handler->params.param.ref);
-        }
-    }
-    else {
-        if (handler->handler.oid == TEXTOID) {
-            /* clean up cached PyUnicode value */
-            for (i = 0; i < handler->examine_pos; i++) {
-                Py_DECREF(handler->params.params[i].ref);
-            }
-        }
-        /* deallocate param array */
-        PyMem_Free(handler->params.params);
-    }
-
+	if (handler->handler.oid == TEXTOID) {
+		/* clean up cached PyUnicode value */
+		for (i = 0; i < handler->examine_pos; i++) {
+			Py_DECREF(handler->params[i].ref);
+		}
+	}
     /* and free ourselves */
     PyMem_Free(handler);
 }
 
 
-IntParamHandler *
+param_handler *
 new_int_param_handler(int num_params) {
     static IntParamHandler def_handler = {
         {
@@ -299,7 +270,15 @@ new_int_param_handler(int num_params) {
         },
         0
     }; /* static initialized handler */
-	return_param_var_handler(def_handler, IntParamHandler, IntParam);
+    param_handler *handler;
+
+    handler = new_param_handler(
+        (param_handler *)&def_handler,
+        sizeof(IntParamHandler) + num_params * sizeof(IntParam));
+    if (handler == NULL) {
+        return NULL;
+    }
+    return handler;
 }
 
 
@@ -499,13 +478,7 @@ typedef struct _DecimalParamHandler {
     int num_params;             /* number of parameters */
     int examine_pos;            /* where to examine next */
     int encode_pos;             /* where to encode next */
-    /* this union is used to prevent an extra malloc in case of a single
-     * value
-     */
-    union {
-        DecimalParam param;
-        DecimalParam *params;
-    } params;                   /* cache of parameter values */
+    DecimalParam params[];      /* cache of parameter values */
 } DecimalParamHandler;
 
 
@@ -701,7 +674,7 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
     write_uint16(&pos, dscale);
 
     /* set parameter values */
-    np = get_current_examine_param(handler);
+    np = current_examine_param(handler);
     np->data = data;
     size = 8 + npg_digits * 2;
     np->size = size;
@@ -715,7 +688,7 @@ decimal_encode(DecimalParamHandler *handler, PyObject *param, char **loc)
     DecimalParam *np;
 
     /* return the earlier encoded buffer */
-    np = get_current_encode_param(handler);
+    np = current_encode_param(handler);
     *loc = np->data;
     return 0;
 }
@@ -727,7 +700,7 @@ decimal_encode_at(DecimalParamHandler *handler, PyObject *param, char *loc) {
     int size;
 
     /* copy the earlier encoded buffer to location */
-    np = get_current_encode_param(handler);
+    np = current_encode_param(handler);
     size = np->size;
     memcpy(loc, np->data, size);
     return size;
@@ -739,24 +712,17 @@ decimal_handler_free(DecimalParamHandler *handler)
 {
     int i;
 
-    if (handler_single(handler)) {
-        PyMem_Free(handler->params.param.data);
-    }
-    else {
-        /* clean up cached values */
-        for (i = 0; i < handler->examine_pos; i++) {
-            PyMem_Free(handler->params.params[i].data);
-        }
-        /* deallocate param array */
-        PyMem_Free(handler->params.params);
-    }
+	/* clean up cached values */
+	for (i = 0; i < handler->examine_pos; i++) {
+		PyMem_Free(handler->params[i].data);
+	}
 
     /* and free ourselves */
     PyMem_Free(handler);
 }
 
 
-DecimalParamHandler *
+param_handler *
 new_decimal_param_handler(int num_params) {
     static DecimalParamHandler def_handler = {
         {
@@ -770,8 +736,15 @@ new_decimal_param_handler(int num_params) {
         },
         0
     }; /* static initialized handler */
+    param_handler *handler;
 
-	return_param_var_handler(def_handler, DecimalParamHandler, DecimalParam);
+    handler = new_param_handler(
+        (param_handler *)&def_handler,
+        sizeof(DecimalParamHandler) + num_params * sizeof(DecimalParam));
+    if (handler == NULL) {
+        return NULL;
+    }
+    return handler;
 }
 
 
@@ -958,11 +931,11 @@ init_numeric(void) {
 
     register_value_handler_table(numeric_value_handlers);
 
-    register_parameter_handler(&PyLong_Type, (ph_new)new_int_param_handler);
+    register_parameter_handler(&PyLong_Type, new_int_param_handler);
     register_parameter_handler(&PyFloat_Type, new_float_param_handler);
     register_parameter_handler(&PyBool_Type, new_bool_param_handler);
     register_parameter_handler((PyTypeObject *)PyDecimal,
-                               (ph_new)new_decimal_param_handler);
+                               new_decimal_param_handler);
 
     return 0;
 }
