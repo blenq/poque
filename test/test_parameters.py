@@ -242,6 +242,10 @@ class ResultTestParameters():
         res = self.cn.execute("SELECT $1", [None])
         self.assertIsNone(res.getvalue(0, 0))
 
+    def test_unknown_param(self):
+        res = self.cn.execute("SELECT $1", [set([1])])
+        self.assertEqual(res.getvalue(0, 0), '{1}')
+
     def test_all_none_array_param(self):
         res = self.cn.execute(
             "SELECT $1", ([[None, None], [None, None]],))

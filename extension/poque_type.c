@@ -110,7 +110,7 @@ get_param_handler_constructor(PyTypeObject *typ) {
             return cons->constructor;
         }
     }
-    return new_text_param_handler;
+    return new_object_param_handler;
 }
 
 
