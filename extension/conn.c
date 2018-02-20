@@ -13,9 +13,9 @@ static void Conn_set_error(PGconn *conn) {
 static PyObject*
 Conn_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
-    poque_Conn *self;
+    PoqueConn *self;
 
-    self = (poque_Conn *)type->tp_alloc(type, 0);
+    self = (PoqueConn *)type->tp_alloc(type, 0);
     if (self) {
         self->conn = NULL;
         self->wr_list = NULL;
@@ -95,7 +95,7 @@ Conn_init_kwds(PyObject *kwds, char **names, char **values,
 
 
 static void
-Conn_notice_receiver(poque_Conn *self, const PGresult *res)
+Conn_notice_receiver(PoqueConn *self, const PGresult *res)
 {
     char *sql_state;
 
@@ -109,7 +109,7 @@ Conn_notice_receiver(poque_Conn *self, const PGresult *res)
 
 
 static int
-Conn_init(poque_Conn *self, PyObject *args, PyObject *kwds)
+Conn_init(PoqueConn *self, PyObject *args, PyObject *kwds)
 {
     /*
     * We allocate space for a possible 62 (= 64 minus a terminating
@@ -179,7 +179,7 @@ Conn_init(poque_Conn *self, PyObject *args, PyObject *kwds)
 
 
 static PyObject *
-Conn_finish(poque_Conn *self, PyObject *unused)
+Conn_finish(PoqueConn *self, PyObject *unused)
 {
     PQfinish(self->conn);
     self->conn = NULL;
@@ -188,7 +188,7 @@ Conn_finish(poque_Conn *self, PyObject *unused)
 
 
 static PyObject *
-Conn_fileno(poque_Conn *self, PyObject *unused)
+Conn_fileno(PoqueConn *self, PyObject *unused)
 {
     int ret;
     ret = PQsocket(self->conn);
@@ -314,7 +314,7 @@ end:
 
 
 static PyObject *
-Conn_execute(poque_Conn *self, PyObject *args, PyObject *kwds) {
+Conn_execute(PoqueConn *self, PyObject *args, PyObject *kwds) {
 
     char *sql;
     PyObject *parameters = NULL;
@@ -366,7 +366,7 @@ Conn_execute(poque_Conn *self, PyObject *args, PyObject *kwds) {
 
 
 static PyObject *
-Conn_parameter_status(poque_Conn *self, PyObject *args) {
+Conn_parameter_status(PoqueConn *self, PyObject *args) {
     char *param_name;
     const char *ret;
 
@@ -382,7 +382,7 @@ Conn_parameter_status(poque_Conn *self, PyObject *args) {
 
 
 static PyObject *
-Conn_poll(poque_Conn *self, PostgresPollingStatusType (poll_func)(PGconn *)) {
+Conn_poll(PoqueConn *self, PostgresPollingStatusType (poll_func)(PGconn *)) {
     PostgresPollingStatusType status;
 
     status = poll_func(self->conn);
@@ -395,14 +395,14 @@ Conn_poll(poque_Conn *self, PostgresPollingStatusType (poll_func)(PGconn *)) {
 
 
 static PyObject *
-Conn_connect_poll(poque_Conn *self, PyObject *unused)
+Conn_connect_poll(PoqueConn *self, PyObject *unused)
 {
     return Conn_poll(self, PQconnectPoll);
 }
 
 
 static PyObject *
-Conn_info(poque_Conn *self, PyObject *unused)
+Conn_info(PoqueConn *self, PyObject *unused)
 {
     PyObject *options;
     PQconninfoOption *info;
@@ -424,7 +424,7 @@ Conn_info(poque_Conn *self, PyObject *unused)
 
 
 static PyObject *
-Conn_reset(poque_Conn *self, PyObject *unused)
+Conn_reset(PoqueConn *self, PyObject *unused)
 {
     PQreset(self->conn);
     if (PQstatus(self->conn) == CONNECTION_BAD) {
@@ -436,7 +436,7 @@ Conn_reset(poque_Conn *self, PyObject *unused)
 
 
 static PyObject *
-Conn_reset_start(poque_Conn *self, PyObject *unused)
+Conn_reset_start(PoqueConn *self, PyObject *unused)
 {
     int ret;
 
@@ -450,7 +450,7 @@ Conn_reset_start(poque_Conn *self, PyObject *unused)
 
 
 static PyObject *
-Conn_reset_poll(poque_Conn *self, PyObject *unused)
+Conn_reset_poll(PoqueConn *self, PyObject *unused)
 {
     return Conn_poll(self, PQresetPoll);
 }
@@ -458,7 +458,7 @@ Conn_reset_poll(poque_Conn *self, PyObject *unused)
 
 static PyObject *
 Conn_escape_function(
-        poque_Conn *self, PyObject *args, PyObject *kwds, char *kwlist[],
+        PoqueConn *self, PyObject *args, PyObject *kwds, char *kwlist[],
         char *(*func)(PGconn *, const char *, size_t)) {
     char *literal;
     Py_ssize_t lit_size;
@@ -479,21 +479,21 @@ Conn_escape_function(
 
 
 static PyObject *
-Conn_escape_literal(poque_Conn *self, PyObject *args, PyObject *kwds) {
+Conn_escape_literal(PoqueConn *self, PyObject *args, PyObject *kwds) {
     static char *kwlist[] = {"literal", NULL};
     return Conn_escape_function(self, args, kwds, kwlist, PQescapeLiteral);
 }
 
 
 static PyObject *
-Conn_escape_identifier(poque_Conn *self, PyObject *args, PyObject *kwds) {
+Conn_escape_identifier(PoqueConn *self, PyObject *args, PyObject *kwds) {
     static char *kwlist[] = {"identifier", NULL};
     return Conn_escape_function(self, args, kwds, kwlist, PQescapeIdentifier);
 }
 
 
 static void
-Conn_dealloc(poque_Conn *self)
+Conn_dealloc(PoqueConn *self)
 {
     PQfinish(self->conn);
     if (self->wr_list != NULL)
@@ -503,7 +503,7 @@ Conn_dealloc(poque_Conn *self)
 
 
 static PyObject *
-Conn_intprop(poque_Conn *self, int (*func)(PGconn *))
+Conn_intprop(PoqueConn *self, int (*func)(PGconn *))
 {
     /* Generic function to get int properties */
     return PyLong_FromLong(func(self->conn));
@@ -511,7 +511,7 @@ Conn_intprop(poque_Conn *self, int (*func)(PGconn *))
 
 
 static PyObject *
-Conn_charprop(poque_Conn *self, char *(*func)(PGconn *))
+Conn_charprop(PoqueConn *self, char *(*func)(PGconn *))
 {
     char *ret;
     ret = func(self->conn);
@@ -643,10 +643,10 @@ static PyMethodDef Conn_methods[] = {{
 }};
 
 
-PyTypeObject poque_ConnType = {
+PyTypeObject PoqueConnType = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "poque.Conn",                               /* tp_name */
-    sizeof(poque_Conn),                         /* tp_basicsize */
+    sizeof(PoqueConn),                         /* tp_basicsize */
     0,                                          /* tp_itemsize */
     (destructor)Conn_dealloc,                   /* tp_dealloc */
     0,                                          /* tp_print */
@@ -668,7 +668,7 @@ PyTypeObject poque_ConnType = {
     0,                                          /* tp_traverse */
     0,                                          /* tp_clear */
     0,                                          /* tp_richcompare */
-    offsetof(poque_Conn, wr_list),              /* tp_weaklistoffset */
+    offsetof(PoqueConn, wr_list),              /* tp_weaklistoffset */
     0,                                          /* tp_iter */
     0,                                          /* tp_iternext */
     Conn_methods,                               /* tp_methods */

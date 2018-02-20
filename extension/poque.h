@@ -15,14 +15,14 @@ typedef struct {
     PGconn *conn;
     PyObject *wr_list;
     char *warning_msg;
-} poque_Conn;
+} PoqueConn;
 
 
 typedef struct PoqueResult {
     PyObject_HEAD
     PGresult *result;
     PyObject *wr_list;
-    poque_Conn *conn;
+    PoqueConn *conn;
 } PoqueResult;
 
 
@@ -54,11 +54,11 @@ typedef struct PoqueResult PoqueResult;
 extern PyObject *PoqueError;
 extern PyObject *PoqueInterfaceError;
 extern PyObject *PoqueWarning;
-extern PyTypeObject poque_ConnType;
+extern PyTypeObject PoqueConnType;
 extern PyTypeObject PoqueResultType;
 extern PyTypeObject PoqueValueType;
 
-PoqueResult *PoqueResult_New(PGresult *res, poque_Conn *conn);
+PoqueResult *PoqueResult_New(PGresult *res, PoqueConn *conn);
 
 PyObject *Poque_info_options(PQconninfoOption *options);
 PyObject *Poque_value(PoqueResult *result, Oid oid, int format, char *data,

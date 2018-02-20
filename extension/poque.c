@@ -90,7 +90,7 @@ error:
 }
 
 static PyObject *
-Poque_conn_defaults(PyObject *self, PyObject *unused) {
+PoqueConn_defaults(PyObject *self, PyObject *unused) {
     PQconninfoOption *options;
     PyObject *info;
 
@@ -104,7 +104,7 @@ Poque_conn_defaults(PyObject *self, PyObject *unused) {
 }
 
 static PyObject *
-Poque_conninfo_parse(PyObject *self, PyObject *args) {
+PoqueConninfo_parse(PyObject *self, PyObject *args) {
     char *conn_info, *err_msg;
     PQconninfoOption *options;
     PyObject *info;
@@ -152,9 +152,9 @@ poque_encrypt_password(PyObject *self, PyObject *args, PyObject *kwargs) {
 
 
 static PyMethodDef PoqueMethods[] = {
-    {"conn_defaults", Poque_conn_defaults, METH_NOARGS,
+    {"conn_defaults", PoqueConn_defaults, METH_NOARGS,
      PyDoc_STR("default connection options")},
-    {"conninfo_parse", Poque_conninfo_parse,  METH_VARARGS,
+    {"conninfo_parse", PoqueConninfo_parse,  METH_VARARGS,
      PyDoc_STR("parse a connection string")},
     {"lib_version", poque_libversion, METH_NOARGS, PyDoc_STR("libpq version")},
     {"encrypt_password", (PyCFunction)poque_encrypt_password,
@@ -229,14 +229,14 @@ PyInit__poque(void)
     PyModule_AddObject(m, "InterfaceError", PoqueInterfaceError);
 
     /* boilerplate type initialization */
-    poque_ConnType.tp_new = PyType_GenericNew;
-    if (PyType_Ready(&poque_ConnType) < 0)
+    PoqueConnType.tp_new = PyType_GenericNew;
+    if (PyType_Ready(&PoqueConnType) < 0)
         return NULL;
 
     /* Add connection type to the module */
-    Py_INCREF(&poque_ConnType);
+    Py_INCREF(&PoqueConnType);
     if (PyModule_AddObject(
-            m, "Conn", (PyObject *)&poque_ConnType) == -1) {
+            m, "Conn", (PyObject *)&PoqueConnType) == -1) {
         return NULL;
     }
 

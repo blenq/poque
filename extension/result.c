@@ -108,7 +108,7 @@ PoqueValue_New(PoqueResult *result, char *data, int len)
 /* ===== PoqueResult ======================================================== */
 
 PoqueResult *
-PoqueResult_New(PGresult *res, poque_Conn *conn) {
+PoqueResult_New(PGresult *res, PoqueConn *conn) {
     PoqueResult *result;
 
     result = PyObject_New(PoqueResult, &PoqueResultType);
