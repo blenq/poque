@@ -275,7 +275,7 @@ new_int_param_handler(int num_params) {
 
 
 static PyObject *
-int16_binval(data_crs *crs)
+int16_binval(ValueCursor *crs)
 {
     poque_int16 value;
     if (crs_read_int16(crs, &value) < 0)
@@ -285,7 +285,7 @@ int16_binval(data_crs *crs)
 
 
 static PyObject *
-uint32_binval(data_crs *crs)
+uint32_binval(ValueCursor *crs)
 {
     PY_UINT32_T value;
     if (crs_read_uint32(crs, &value) < 0)
@@ -295,7 +295,7 @@ uint32_binval(data_crs *crs)
 
 
 static PyObject *
-int32_binval(data_crs *crs)
+int32_binval(ValueCursor *crs)
 {
     PY_INT32_T value;
     if (crs_read_int32(crs, &value) < 0)
@@ -305,7 +305,7 @@ int32_binval(data_crs *crs)
 
 
 static PyObject *
-int64_binval(data_crs *crs)
+int64_binval(ValueCursor *crs)
 {
     PY_INT64_T value;
 
@@ -316,7 +316,7 @@ int64_binval(data_crs *crs)
 
 
 static PyObject *
-int_strval(data_crs *crs)
+int_strval(ValueCursor *crs)
 {
     char *data, *pend;
     PyObject *value;
@@ -333,7 +333,7 @@ int_strval(data_crs *crs)
 
 
 static PyObject *
-bool_binval(data_crs *crs) {
+bool_binval(ValueCursor *crs) {
     char data;
 
     if (crs_read_char(crs, &data) < 0)
@@ -343,7 +343,7 @@ bool_binval(data_crs *crs) {
 
 
 static PyObject *
-bool_strval(data_crs *crs) {
+bool_strval(ValueCursor *crs) {
     char data;
 
     if (crs_read_char(crs, &data) < 0)
@@ -385,7 +385,7 @@ new_bool_param_handler(int num_param) {
 
 
 static PyObject *
-float64_binval(data_crs *crs)
+float64_binval(ValueCursor *crs)
 {
     double val;
     if (crs_read_double(crs, &val) < 0)
@@ -395,7 +395,7 @@ float64_binval(data_crs *crs)
 
 
 static PyObject *
-float32_binval(data_crs *crs)
+float32_binval(ValueCursor *crs)
 {
 	double val;
 	if (crs_read_float(crs, &val) < 0)
@@ -405,7 +405,7 @@ float32_binval(data_crs *crs)
 
 
 static PyObject *
-float_strval(data_crs *crs)
+float_strval(ValueCursor *crs)
 {
 	double val;
 	char *data, *pend;
@@ -744,7 +744,7 @@ new_decimal_param_handler(int num_params) {
 static PyObject *PyDecimal;
 
 static PyObject *
-numeric_strval(data_crs *crs) {
+numeric_strval(ValueCursor *crs) {
     /* Create a Decimal from a text value */
     char *data;
 
@@ -769,7 +769,7 @@ numeric_set_digit(PyObject *digit_tuple, int val, Py_ssize_t idx) {
 
 
 static PyObject *
-numeric_binval(data_crs *crs) {
+numeric_binval(ValueCursor *crs) {
     /* Create a Decimal from a pg numeric binary value
      *
      * PG numerics are not entirely the same as Python decimals, but they are

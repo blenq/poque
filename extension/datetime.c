@@ -238,7 +238,7 @@ date_vals_from_int(PY_INT32_T jd, int *year, int *month, int *day)
 
 
 static PyObject *
-date_binval(data_crs *crs)
+date_binval(ValueCursor *crs)
 {
     PY_INT32_T jd;
     int year, month, day;
@@ -284,7 +284,7 @@ time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
 
 
 static PyObject *
-_time_binval(data_crs *crs, PY_INT64_T value, PyObject *tz)
+_time_binval(ValueCursor *crs, PY_INT64_T value, PyObject *tz)
 {
     int hour, minute, second, usec;
 
@@ -296,7 +296,7 @@ _time_binval(data_crs *crs, PY_INT64_T value, PyObject *tz)
 
 
 static PyObject *
-time_binval(data_crs *crs)
+time_binval(ValueCursor *crs)
 {
     PY_INT64_T value;
 
@@ -307,7 +307,7 @@ time_binval(data_crs *crs)
 
 
 static PyObject *
-timetz_binval(data_crs *crs)
+timetz_binval(ValueCursor *crs)
 {
     PyObject *tz, *timedelta, *ret, *offset, *tzone;
     PY_INT64_T value;
@@ -344,7 +344,7 @@ timetz_binval(data_crs *crs)
 
 
 static PyObject *
-_timestamp_binval(data_crs *crs, PyObject *tz)
+_timestamp_binval(ValueCursor *crs, PyObject *tz)
 {
     PY_INT64_T value, time;
     PY_INT32_T date;
@@ -384,20 +384,20 @@ _timestamp_binval(data_crs *crs, PyObject *tz)
 
 
 static PyObject *
-timestamp_binval(data_crs *crs) {
+timestamp_binval(ValueCursor *crs) {
     return _timestamp_binval(crs, Py_None);
 }
 
 
 static PyObject *
-timestamptz_binval(data_crs *crs)
+timestamptz_binval(ValueCursor *crs)
 {
     return _timestamp_binval(crs, utc);
 }
 
 
 static PyObject *
-interval_binval(data_crs *crs)
+interval_binval(ValueCursor *crs)
 {
     PY_INT64_T secs, usecs;
     PY_INT32_T days, months;
@@ -431,7 +431,7 @@ interval_binval(data_crs *crs)
 
 
 static PyObject *
-abstime_binval(data_crs *crs)
+abstime_binval(ValueCursor *crs)
 {
     PyObject *abstime, *seconds, *args;
     PY_INT32_T value;
@@ -454,7 +454,7 @@ abstime_binval(data_crs *crs)
 
 
 static PyObject *
-reltime_binval(data_crs *crs)
+reltime_binval(ValueCursor *crs)
 {
     PY_INT32_T value;
 
@@ -465,7 +465,7 @@ reltime_binval(data_crs *crs)
 
 
 static PyObject *
-tinterval_binval(data_crs *crs) {
+tinterval_binval(ValueCursor *crs) {
     PyObject *tinterval, *abstime;
     int i;
 

@@ -1,7 +1,7 @@
 #include "val_crs.h"
 
 void
-crs_init(data_crs *crs, char *data, int len, Oid el_oid, poque_Result *result)
+crs_init(ValueCursor *crs, char *data, int len, Oid el_oid, poque_Result *result)
 {
     crs->data = data;
     crs->len = len;
@@ -12,7 +12,7 @@ crs_init(data_crs *crs, char *data, int len, Oid el_oid, poque_Result *result)
 
 
 char *
-crs_advance(data_crs *crs, int len) {
+crs_advance(ValueCursor *crs, int len) {
     char *data;
 
     data = crs->data + crs->idx;
@@ -27,7 +27,7 @@ crs_advance(data_crs *crs, int len) {
 
 
 char *
-crs_advance_end(data_crs *crs) {
+crs_advance_end(ValueCursor *crs) {
     char *data;
 
     data = crs->data + crs->idx;
@@ -37,7 +37,7 @@ crs_advance_end(data_crs *crs) {
 
 
 int
-crs_read_char(data_crs *crs, char *value) {
+crs_read_char(ValueCursor *crs, char *value) {
 
 	char *data;
 
@@ -50,7 +50,7 @@ crs_read_char(data_crs *crs, char *value) {
 
 
 int
-crs_read_uint16(data_crs *crs, poque_uint16 *value)
+crs_read_uint16(ValueCursor *crs, poque_uint16 *value)
 {
     unsigned char *data;
 
@@ -64,7 +64,7 @@ crs_read_uint16(data_crs *crs, poque_uint16 *value)
 
 
 int
-crs_read_uint32(data_crs *crs, PY_UINT32_T *value)
+crs_read_uint32(ValueCursor *crs, PY_UINT32_T *value)
 {
     unsigned char *data;
 
@@ -80,7 +80,7 @@ crs_read_uint32(data_crs *crs, PY_UINT32_T *value)
 
 
 int
-crs_read_uint64(data_crs *crs, PY_UINT64_T *value)
+crs_read_uint64(ValueCursor *crs, PY_UINT64_T *value)
 {
     unsigned char *data;
 
@@ -106,7 +106,7 @@ crs_read_uint64(data_crs *crs, PY_UINT64_T *value)
  *   point. (Can anyone name any?)
  */
 int
-crs_read_double(data_crs *crs, double *value)
+crs_read_double(ValueCursor *crs, double *value)
 {
 	char *data;
 
@@ -121,7 +121,7 @@ crs_read_double(data_crs *crs, double *value)
 
 
 int
-crs_read_float(data_crs *crs, double *value)
+crs_read_float(ValueCursor *crs, double *value)
 {
 	char *data;
 

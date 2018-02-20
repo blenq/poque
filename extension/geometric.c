@@ -2,7 +2,7 @@
 
 
 static int
-add_float_to_tuple(PyObject *tup, data_crs *crs, int idx)
+add_float_to_tuple(PyObject *tup, ValueCursor *crs, int idx)
 {
     double val;
     PyObject *float_val;
@@ -19,7 +19,7 @@ add_float_to_tuple(PyObject *tup, data_crs *crs, int idx)
 
 
 static PyObject *
-float_tuple_binval(data_crs *crs, int len) {
+float_tuple_binval(ValueCursor *crs, int len) {
     PyObject *tup;
     int i;
 
@@ -36,19 +36,19 @@ float_tuple_binval(data_crs *crs, int len) {
 }
 
 static PyObject *
-point_binval(data_crs *crs) {
+point_binval(ValueCursor *crs) {
     return float_tuple_binval(crs, 2);
 }
 
 
 static PyObject *
-line_binval(data_crs *crs) {
+line_binval(ValueCursor *crs) {
     return float_tuple_binval(crs, 3);
 }
 
 
 static PyObject *
-lseg_binval(data_crs *crs)
+lseg_binval(ValueCursor *crs)
 {
     PyObject *point, *lseg;
     int i;
@@ -69,7 +69,7 @@ lseg_binval(data_crs *crs)
 
 
 static PyObject *
-polygon_binval(data_crs *crs) {
+polygon_binval(ValueCursor *crs) {
     PyObject *points;
     PY_INT32_T npoints, i;
 
@@ -96,7 +96,7 @@ polygon_binval(data_crs *crs) {
 
 
 static PyObject *
-path_binval(data_crs *crs)
+path_binval(ValueCursor *crs)
 {
     PyObject *path, *points, *closed;
     char data;
@@ -129,7 +129,7 @@ path_binval(data_crs *crs)
 
 
 static PyObject *
-circle_binval(data_crs *crs) {
+circle_binval(ValueCursor *crs) {
     PyObject *circle, *center;
 
     circle = PyTuple_New(2);

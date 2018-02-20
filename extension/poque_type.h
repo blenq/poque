@@ -4,7 +4,7 @@
 #include "poque.h"
 #include "val_crs.h"
 
-typedef PyObject *(*pq_read)(data_crs *crs);
+typedef PyObject *(*pq_read)(ValueCursor *crs);
 
 typedef struct _poqueTypeEntry {
     Oid oid;
@@ -14,7 +14,7 @@ typedef struct _poqueTypeEntry {
     struct _poqueTypeEntry *next;
 } PoqueTypeEntry;
 
-PyObject *array_binval(data_crs *crs);
+PyObject *array_binval(ValueCursor *crs);
 PyObject *Result_getview(poque_Result *self, char *data, int len);
 
 

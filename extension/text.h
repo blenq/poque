@@ -4,8 +4,8 @@
 #include "poque_type.h"
 
 int init_text(void);
-PyObject *text_val(data_crs* crs);
-PyObject *bytea_binval(data_crs* crs);
+PyObject *text_val(ValueCursor* crs);
+PyObject *bytea_binval(ValueCursor* crs);
 param_handler *new_text_param_handler(int num_param);
 
 

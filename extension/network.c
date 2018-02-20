@@ -2,7 +2,7 @@
 
 
 static PyObject *
-mac_binval(data_crs *crs)
+mac_binval(ValueCursor *crs)
 {
     poque_uint16 first;
     PY_UINT32_T second;
@@ -16,7 +16,7 @@ mac_binval(data_crs *crs)
 
 
 static PyObject *
-mac8_binval(data_crs *crs)
+mac8_binval(ValueCursor *crs)
 {
     PY_UINT64_T val;
 
@@ -40,7 +40,7 @@ static PyTypeObject *IPv6Interface;
 
 
 static PyObject *
-ip_binval(data_crs *crs, int cidr, PyTypeObject *v4_cls, PyTypeObject *v6_cls)
+ip_binval(ValueCursor *crs, int cidr, PyTypeObject *v4_cls, PyTypeObject *v6_cls)
 {
     unsigned char *cr;
     int mask, size, is_cidr, family;
@@ -100,14 +100,14 @@ ip_binval(data_crs *crs, int cidr, PyTypeObject *v4_cls, PyTypeObject *v6_cls)
 
 
 static PyObject *
-inet_binval(data_crs *crs)
+inet_binval(ValueCursor *crs)
 {
     return ip_binval(crs, 0, IPv4Interface, IPv6Interface);
 }
 
 
 static PyObject *
-cidr_binval(data_crs *crs)
+cidr_binval(ValueCursor *crs)
 {
     return ip_binval(crs, 1, IPv4Network, IPv6Network);
 }

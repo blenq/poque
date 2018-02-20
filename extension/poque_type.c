@@ -513,7 +513,7 @@ static PyObject *
 read_value(char *data, int len, pq_read read_func, Oid el_oid,
            poque_Result *result)
 {
-    data_crs crs;
+    ValueCursor crs;
     PyObject *val;
 
     crs_init(&crs, data, len, el_oid, result);
@@ -531,7 +531,7 @@ read_value(char *data, int len, pq_read read_func, Oid el_oid,
 
 
 static PyObject *
-get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
+get_arr_value(ValueCursor *crs, PY_INT32_T *arraydims, pq_read read_func,
               Oid el_oid)
 {
     /* Get multidimensional array as a nested list of item values
@@ -595,7 +595,7 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
 
 
 PyObject *
-array_binval(data_crs *crs) {
+array_binval(ValueCursor *crs) {
     unsigned int i;
     PY_UINT32_T dims;
     PY_INT32_T flags, arraydims[7];
@@ -659,7 +659,7 @@ array_binval(data_crs *crs) {
 
 
 static PyObject *
-tid_binval(data_crs *crs)
+tid_binval(ValueCursor *crs)
 {
     PY_UINT32_T block_num;
     poque_uint16 offset;
@@ -689,7 +689,7 @@ tid_binval(data_crs *crs)
 
 
 static PyObject *
-tid_strval(data_crs *crs)
+tid_strval(ValueCursor *crs)
 {
     PyObject *tid, *bl_num;
     char *dt, *bl_data, *pend;
@@ -744,7 +744,7 @@ tid_strval(data_crs *crs)
 static PyObject *json_loads;
 
 static PyObject *
-json_val(data_crs *crs)
+json_val(ValueCursor *crs)
 {
     PyObject *ret;
     int remaining;
@@ -757,7 +757,7 @@ json_val(data_crs *crs)
 
 
 static PyObject *
-jsonb_bin_val(data_crs *crs)
+jsonb_bin_val(ValueCursor *crs)
 {
     if (crs_advance(crs, 1)[0] != 1)
         PyErr_SetString(PoqueError, "Invalid jsonb version");
@@ -783,7 +783,7 @@ inplace_op(PyObject *(*op)(PyObject *, PyObject *),
 
 
 static PyObject *
-bit_strval(data_crs *crs) {
+bit_strval(ValueCursor *crs) {
     PyObject *val, *one=NULL;
 
     /* initialize return value */
@@ -838,7 +838,7 @@ error:
 
 
 static PyObject *
-bit_binval(data_crs *crs) {
+bit_binval(ValueCursor *crs) {
     /* Reads a bitstring as a Python integer
 
     Format:

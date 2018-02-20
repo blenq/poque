@@ -87,7 +87,7 @@ bytea_fill_fromescape(char *data, char *end, char *dest) {
 
 
 static PyObject *
-bytea_strval(data_crs *crs)
+bytea_strval(ValueCursor *crs)
 {
     /* converts the textual representation of a bytea value to a Python
      * bytes value
@@ -150,7 +150,7 @@ bytea_strval(data_crs *crs)
 
 
 PyObject *
-bytea_binval(data_crs* crs)
+bytea_binval(ValueCursor* crs)
 {
     char *data;
     int len;
@@ -215,7 +215,7 @@ new_bytes_param_handler(int num_param) {
 /* ======== pg text types =================================================== */
 
 PyObject *
-text_val(data_crs* crs)
+text_val(ValueCursor* crs)
 {
     char *data;
 
@@ -425,7 +425,7 @@ new_object_param_handler(int num_params) {
 /* ======== pg char type ==================================================== */
 
 static PyObject *
-char_binval(data_crs* crs)
+char_binval(ValueCursor* crs)
 {
     char data;
 

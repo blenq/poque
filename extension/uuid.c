@@ -7,7 +7,7 @@ static PyTypeObject *PyUUID_Type;
 
 
 PyObject *
-uuid_binval(data_crs *crs)
+uuid_binval(ValueCursor *crs)
 {
     char *data;
 
@@ -20,7 +20,7 @@ uuid_binval(data_crs *crs)
 
 
 PyObject *
-uuid_strval(data_crs *crs)
+uuid_strval(ValueCursor *crs)
 {
     char *data;
 
