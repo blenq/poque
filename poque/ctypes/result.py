@@ -38,6 +38,7 @@ class Result(c_void_p):
     nfields = get_property(pq.PQnfields)
     nparams = get_property(pq.PQnparams)
     error_message = get_property(pq.PQresultErrorMessage)
+    _cmd_tuples = get_property(pq.PQcmdTuples)
 
     fformat = _get_result_column_method(pq.PQfformat)
     fmod = _get_result_column_method(pq.PQfmod)
@@ -46,6 +47,11 @@ class Result(c_void_p):
     ftable = _get_result_column_method(pq.PQftable)
     ftablecol = _get_result_column_method(pq.PQftablecol)
     ftype = _get_result_column_method(pq.PQftype)
+
+    @property
+    def cmd_tuples(self):
+        ct = self._cmd_tuples
+        return -1 if ct == "" else int(ct)
 
     def _check_warnings(self, ret):
         warning_msg = self._conn._warning_msg
@@ -138,7 +144,9 @@ pq.PQresultStatus.argtypes = [Result]
 pq.PQntuples.argtypes = [Result]
 pq.PQnfields.argtypes = [Result]
 pq.PQnparams.argtypes = [Result]
-
+pq.PQcmdTuples.argtypes = [Result]
+pq.PQcmdTuples.restype = c_char_p
+pq.PQcmdTuples.errcheck = check_string
 
 pq.PQfformat.argtypes = [Result, c_int]
 pq.PQfmod.argtypes = [Result, c_int]

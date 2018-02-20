@@ -10,6 +10,7 @@ from uuid import UUID
 from .pq import pq, check_string, PQconninfoOptions, check_info_options
 from .constants import *  # noqa
 from .common import get_struct
+from .cursor import Cursor
 from .dt import (
     DateParameterHandler, TimeParameterHandler, DateTimeParameterHandler)
 from .numeric import (
@@ -178,7 +179,9 @@ class Conn(c_void_p):
     # The pointer value is already correctly set by the __new__ method, so it
     # does not need to be called anyway
     def __init__(self, *args, **kwargs):
-        pass
+        self._notice_proc = PQnoticeReceiver(self._notice_proc)
+        pq.PQsetNoticeReceiver(self, self._notice_proc, self)
+        self.autocommit = False
 
     connect_poll = get_method(pq.PQconnectPoll)
 
@@ -235,6 +238,8 @@ class Conn(c_void_p):
         self._finish()
         self.value = 0
 
+    close = finish
+
     def _raise_error(self):
         if self:
             raise InterfaceError(self.error_message)
@@ -259,6 +264,17 @@ class Conn(c_void_p):
         IPv4Network: NetworkParameterHandler,
         IPv6Network: NetworkParameterHandler,
     }
+
+    def cursor(self):
+        return Cursor(self)
+
+    def commit(self):
+        if self.transaction_status != TRANS_IDLE:
+            self.execute("COMMIT")
+
+    def rollback(self):
+        if self.transaction_status != TRANS_IDLE:
+            self.execute("ROLLBACK")
 
     def execute(self, command, parameters=None, result_format=FORMAT_BINARY):
         command = command.encode()
@@ -296,7 +312,7 @@ class Conn(c_void_p):
             lengths[i] = length
 
         res = pq.PQexecParams(self, command, num_params, oids, values,
-                               lengths, formats, result_format)
+                              lengths, formats, result_format)
         res.conn = self
         return res
 
@@ -306,8 +322,6 @@ def check_connect(conn, func, args):
         raise MemoryError()
     if conn.status == CONNECTION_BAD:
         conn._raise_error()
-    conn._notice_proc = PQnoticeReceiver(conn._notice_proc)
-    pq.PQsetNoticeReceiver(conn, conn._notice_proc, conn)
     return conn
 
 
