@@ -2,7 +2,7 @@
 #define _POQUE_TYPE_H_
 
 #include "poque.h"
-#include "cursor.h"
+#include "val_crs.h"
 
 typedef PyObject *(*pq_read)(data_crs *crs);
 
