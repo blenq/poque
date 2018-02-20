@@ -4,7 +4,7 @@ from warnings import warn
 
 from .pq import pq, check_string
 from .common import result_converters, register_result_converters
-from .cursor import ValueCursor
+from .value_cursor import ValueCursor
 from .dt import get_date_time_converters
 from .numeric import get_numeric_converters
 from .lib import Warning, Error, get_property, get_method
