@@ -18,12 +18,12 @@ typedef struct {
 } poque_Conn;
 
 
-typedef struct poque_Result {
+typedef struct PoqueResult {
     PyObject_HEAD
     PGresult *result;
     PyObject *wr_list;
     poque_Conn *conn;
-} poque_Result;
+} PoqueResult;
 
 
 #if SIZEOF_SHORT != 2
@@ -49,19 +49,19 @@ typedef struct poque_Result {
 typedef signed short poque_int16;
 typedef unsigned short poque_uint16;
 
-typedef struct poque_Result poque_Result;
+typedef struct PoqueResult PoqueResult;
 
 extern PyObject *PoqueError;
 extern PyObject *PoqueInterfaceError;
 extern PyObject *PoqueWarning;
 extern PyTypeObject poque_ConnType;
-extern PyTypeObject poque_ResultType;
+extern PyTypeObject PoqueResultType;
 extern PyTypeObject PoqueValueType;
 
-poque_Result *PoqueResult_New(PGresult *res, poque_Conn *conn);
+PoqueResult *PoqueResult_New(PGresult *res, poque_Conn *conn);
 
 PyObject *Poque_info_options(PQconninfoOption *options);
-PyObject *Poque_value(poque_Result *result, Oid oid, int format, char *data,
+PyObject *Poque_value(PoqueResult *result, Oid oid, int format, char *data,
                       int len);
 
 

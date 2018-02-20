@@ -1,7 +1,7 @@
 #include "val_crs.h"
 
 void
-crs_init(ValueCursor *crs, char *data, int len, Oid el_oid, poque_Result *result)
+crs_init(ValueCursor *crs, char *data, int len, Oid el_oid, PoqueResult *result)
 {
     crs->data = data;
     crs->len = len;

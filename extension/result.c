@@ -22,7 +22,7 @@
 typedef struct {
     PyObject_HEAD
     PyObject *wr_list;
-	poque_Result *result;
+	PoqueResult *result;
     char *data;
     int len;
 } PoqueValue;
@@ -87,7 +87,7 @@ PyTypeObject PoqueValueType = {
 
 
 static PoqueValue *
-PoqueValue_New(poque_Result *result, char *data, int len)
+PoqueValue_New(PoqueResult *result, char *data, int len)
 {
 	/* PoqueValue constructor */
 	PoqueValue *value;
@@ -107,11 +107,11 @@ PoqueValue_New(poque_Result *result, char *data, int len)
 
 /* ===== PoqueResult ======================================================== */
 
-poque_Result *
+PoqueResult *
 PoqueResult_New(PGresult *res, poque_Conn *conn) {
-    poque_Result *result;
+    PoqueResult *result;
 
-    result = PyObject_New(poque_Result, &poque_ResultType);
+    result = PyObject_New(PoqueResult, &PoqueResultType);
     if (result == NULL) {
         return NULL;
     }
@@ -124,7 +124,7 @@ PoqueResult_New(PGresult *res, poque_Conn *conn) {
 
 
 static void
-Result_dealloc(poque_Result *self) {
+Result_dealloc(PoqueResult *self) {
     PQclear(self->result);
     Py_DECREF(self->conn);
     if (self->wr_list != NULL)
@@ -144,7 +144,7 @@ parse_column_number(PyObject *args, PyObject *keywds, int *column)
 
 
 static int
-Result_check_warnings(poque_Result *self) {
+Result_check_warnings(PoqueResult *self) {
     char *warning_msg;
     if (self->conn == NULL) {
         return 0;
@@ -159,7 +159,7 @@ Result_check_warnings(poque_Result *self) {
 
 
 static PyObject *
-Result_fname(poque_Result *self, PyObject *args, PyObject *keywds)
+Result_fname(PoqueResult *self, PyObject *args, PyObject *keywds)
 {
     int column;
     char *fname;
@@ -179,7 +179,7 @@ Result_fname(poque_Result *self, PyObject *args, PyObject *keywds)
 
 
 static PyObject *
-Result_fnumber(poque_Result *self, PyObject *args, PyObject *keywds)
+Result_fnumber(PoqueResult *self, PyObject *args, PyObject *keywds)
 {
     int fnumber;
     char *fname;
@@ -199,7 +199,7 @@ Result_fnumber(poque_Result *self, PyObject *args, PyObject *keywds)
 
 static PyObject *
 Result_column_oidproperty(
-    poque_Result *self, PyObject *args, PyObject *keywds,
+    PoqueResult *self, PyObject *args, PyObject *keywds,
     Oid (*func)(const PGresult *, int))
 {
     int column;
@@ -217,14 +217,14 @@ Result_column_oidproperty(
 
 
 static PyObject *
-Result_ftable(poque_Result *self, PyObject *args, PyObject *keywds)
+Result_ftable(PoqueResult *self, PyObject *args, PyObject *keywds)
 {
     return Result_column_oidproperty(self, args, keywds, PQftable);
 }
 
 
 static PyObject *
-Result_ftype(poque_Result *self, PyObject *args, PyObject *keywds)
+Result_ftype(PoqueResult *self, PyObject *args, PyObject *keywds)
 {
     return Result_column_oidproperty(self, args, keywds, PQftype);
 }
@@ -232,7 +232,7 @@ Result_ftype(poque_Result *self, PyObject *args, PyObject *keywds)
 
 static PyObject *
 Result_column_intproperty(
-    poque_Result *self, PyObject *args, PyObject *keywds,
+    PoqueResult *self, PyObject *args, PyObject *keywds,
     int (*func)(const PGresult *, int))
 {
     int column, value;
@@ -249,28 +249,28 @@ Result_column_intproperty(
 
 
 static PyObject *
-Result_ftablecol(poque_Result *self, PyObject *args, PyObject *keywds)
+Result_ftablecol(PoqueResult *self, PyObject *args, PyObject *keywds)
 {
     return Result_column_intproperty(self, args, keywds, PQftablecol);
 }
 
 
 static PyObject *
-Result_fformat(poque_Result *self, PyObject *args, PyObject *keywds)
+Result_fformat(PoqueResult *self, PyObject *args, PyObject *keywds)
 {
     return Result_column_intproperty(self, args, keywds, PQfformat);
 }
 
 
 static PyObject *
-Result_fmod(poque_Result *self, PyObject *args, PyObject *keywds)
+Result_fmod(PoqueResult *self, PyObject *args, PyObject *keywds)
 {
     return Result_column_intproperty(self, args, keywds, PQfmod);
 }
 
 
 static PyObject *
-Result_fsize(poque_Result *self, PyObject *args, PyObject *keywds)
+Result_fsize(PoqueResult *self, PyObject *args, PyObject *keywds)
 {
     return Result_column_intproperty(self, args, keywds, PQfsize);
 }
@@ -287,7 +287,7 @@ Result_colrow_args(PyObject *args, PyObject *kwds, int *row, int *column)
 
 
 PyObject *
-Result_getview(poque_Result *self, char *data, int len)
+Result_getview(PoqueResult *self, char *data, int len)
 {
 	PyObject *view;
 	PoqueValue *value;
@@ -304,7 +304,7 @@ Result_getview(poque_Result *self, char *data, int len)
 
 
 static PyObject *
-Result_getvalue(poque_Result *self, PyObject *args, PyObject *kwds)
+Result_getvalue(PoqueResult *self, PyObject *args, PyObject *kwds)
 {
     int row, column, len;
     char *data;
@@ -327,7 +327,7 @@ Result_getvalue(poque_Result *self, PyObject *args, PyObject *kwds)
 }
 
 static PyObject *
-Result_getlength(poque_Result *self, PyObject *args, PyObject *kwds) {
+Result_getlength(PoqueResult *self, PyObject *args, PyObject *kwds) {
     int row, column, length;
 
     if (Result_colrow_args(args, kwds, &row, &column) == -1) {
@@ -341,7 +341,7 @@ Result_getlength(poque_Result *self, PyObject *args, PyObject *kwds) {
 }
 
 static PyObject *
-Result_value(poque_Result *self, PyObject *args, PyObject *kwds)
+Result_value(PoqueResult *self, PyObject *args, PyObject *kwds)
 {
     int row, column;
 
@@ -358,7 +358,7 @@ Result_value(poque_Result *self, PyObject *args, PyObject *kwds)
 }
 
 static PyObject *
-Result_isnull(poque_Result *self, PyObject *args, PyObject *kwds)
+Result_isnull(PoqueResult *self, PyObject *args, PyObject *kwds)
 {
     int row, column;
 
@@ -373,7 +373,7 @@ Result_isnull(poque_Result *self, PyObject *args, PyObject *kwds)
 
 
 static PyObject *
-Result_intprop(poque_Result *self, int (*func)(PGresult *))
+Result_intprop(PoqueResult *self, int (*func)(PGresult *))
 {
     /* Generic function to get int properties */
     return PyLong_FromLong(func(self->result));
@@ -443,10 +443,10 @@ static PyMethodDef Result_methods[] = {{
         NULL
 }};
 
-PyTypeObject poque_ResultType = {
+PyTypeObject PoqueResultType = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "poque.Result",                             /* tp_name */
-    sizeof(poque_Result),                       /* tp_basicsize */
+    sizeof(PoqueResult),                       /* tp_basicsize */
     0,                                          /* tp_itemsize */
     (destructor)Result_dealloc,                 /* tp_dealloc */
     0,                                          /* tp_print */
@@ -468,7 +468,7 @@ PyTypeObject poque_ResultType = {
     0,                                          /* tp_traverse */
     0,                                          /* tp_clear */
     0,                                          /* tp_richcompare */
-    offsetof(poque_Result, wr_list),            /* tp_weaklistoffset */
+    offsetof(PoqueResult, wr_list),            /* tp_weaklistoffset */
     0,                                          /* tp_iter */
     0,                                          /* tp_iternext */
     Result_methods,                             /* tp_methods */

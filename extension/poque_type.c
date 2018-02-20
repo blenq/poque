@@ -511,7 +511,7 @@ get_read_func(Oid oid, int format, Oid *el_oid);
 
 static PyObject *
 read_value(char *data, int len, pq_read read_func, Oid el_oid,
-           poque_Result *result)
+           PoqueResult *result)
 {
     ValueCursor crs;
     PyObject *val;
@@ -1040,7 +1040,7 @@ get_read_func(Oid oid, int format, Oid *el_oid) {
 
 
 PyObject *
-Poque_value(poque_Result *result, Oid oid, int format, char *data, int len) {
+Poque_value(PoqueResult *result, Oid oid, int format, char *data, int len) {
     pq_read read_func;
     Oid el_oid = InvalidOid;
 

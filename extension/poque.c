@@ -241,17 +241,17 @@ PyInit__poque(void)
     }
 
     /* Initialize result */
-    poque_ResultType.tp_new = PyType_GenericNew;
-    if (PyType_Ready(&poque_ResultType) < 0)
+    PoqueResultType.tp_new = PyType_GenericNew;
+    if (PyType_Ready(&PoqueResultType) < 0)
         return NULL;
 
     PoqueValueType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&PoqueValueType) < 0)
         return NULL;
     /* Add result type to the module */
-/*    Py_INCREF(&poque_ResultType);
+/*    Py_INCREF(&PoqueResultType);
     if (PyModule_AddObject(
-            m, "Conn", (PyObject *)&poque_ResultType) == -1) {
+            m, "Conn", (PyObject *)&PoqueResultType) == -1) {
         return NULL;
     } */
     if (PyModule_AddIntMacro(m, FORMAT_BINARY) == -1) return NULL;

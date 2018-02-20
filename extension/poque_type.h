@@ -15,7 +15,7 @@ typedef struct _poqueTypeEntry {
 } PoqueTypeEntry;
 
 PyObject *array_binval(ValueCursor *crs);
-PyObject *Result_getview(poque_Result *self, char *data, int len);
+PyObject *Result_getview(PoqueResult *self, char *data, int len);
 
 
 typedef struct _param_handler param_handler;

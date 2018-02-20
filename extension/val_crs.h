@@ -8,7 +8,7 @@ typedef struct {
     int len;
     int idx;
     Oid el_oid;
-    poque_Result *result;
+    PoqueResult *result;
 } ValueCursor;
 
 
@@ -19,7 +19,7 @@ typedef struct {
 #define crs_el_oid(crs) (crs)->el_oid
 
 void crs_init(ValueCursor *crs, char *data, int len, Oid el_oid,
-              poque_Result *result);
+              PoqueResult *result);
 char * crs_advance(ValueCursor *crs, int len);
 char * crs_advance_end(ValueCursor *crs);
 int crs_read_char(ValueCursor *crs, char *value);
