@@ -1,0 +1,202 @@
+Goal of poque
+
+* Provide a Python client library for PostgreSQL based on libpq
+* Provide as much functionality as possible from libpq in a Pythonic way
+  Pythonic here means:
+    * No namespacing, like 'PG..' or 'PQ..' necessary. This is taken care of
+      by implementing Python classes. For example: PQstatus becomes conn.status
+    * Adjust casing to Python. PQtransactionStatus becomes 
+      conn.transaction_status
+    * Convert pg values which have an obvious Python counterpart and vice versa
+      for both parameter and result values. pg int4 becomes Python int. Python
+      datetime becomes pg timestamp.
+* Make type adaptation customizable
+* Provide a Python dbapi
+* Use native PostgreSQL parameters ($1, $2 etc). Much more elegant than
+  implementing parameter inclusion on the client side, because
+  * Statement and parameters stay separated all the way. Even less chance of
+    SQL injection
+  * Consistent use of parameters. No difference between server side and
+    client side parameters. For example, no confusing code like:
+        cur.execute("PREPARE stmt AS SELECT $1, $2")
+        cur.execute("EXECUTE stmt(%s, %s)", params)
+        cur.execute("DEALLOCATE stmt")
+* Provide both a fast implementation as a C extension and a very compatible
+  implementation using ctypes
+
+
+Main differences with psycopg2
+
+* Extensive libpq coverage
+* Use of native parameters
+* ctypes version available
+* multi statement support
+
+
+Poque stack layers
+
+1. libpq
+  1. Connection. The TCP or Unix socket connection, with optionally ssl
+     layered on top of it
+  2. Protocol implementation. The translation to and from C objects of the wire
+     protocol
+  3. C api. The C objects exposed to the caller. Parameters and result values
+     are still in wire format. 
+     BTW. Not 100% strict. The C API exposes for example the connection file
+     descriptor from layer 1, to enable libpq inclusion in your own non
+     blocking main loop.
+
+2. poque
+  1. Python wrapper around the libpq objects. Pythonified and including
+     type conversion for both parameters and results.
+  2. DBAPI implementation on top of the libpq objects. Separation is very
+     thin. Connection object is the same for both. Some methods and properties
+     belong to the DBAPI layer, others to libpq.
+
+3. caller
+  1. Issue SQL statements to the poque lib and retrieve results
+
+
+Should I implement server side cursors in the DBAPI cursor?
+
+Why would you want that?
+
+Pro
+* Large dataset in chunks
+
+Con
+* Additional complexity in cursor object.
+* Doesn't fit well in the layers. SQL statements should be issued by the caller
+  only. The rest of the stack should not be aware of the contents of the SQL 
+  statements and just transparently
+  pass those through.
+  To implement server side cursor, the dbapi cursor must prepend a SQL
+  statement with a "DECLARE <name> CURSOR FOR " when executing and then issue
+  FETCH statements to retrieve data. Especially the rewriting is ugly. Becomes
+  a real issue when multistatements are issued.
+  BTW, I feel the same about DBAPI transaction
+  management on the connection object. This issues SQL statements itself, but
+  there is no way around that. At least it doesn't have to adjust SQL 
+  statements from the caller.
+
+
+libpq keeps entire result sets in memory. If the result set is large, that
+could be problematic. This can be solved with server side cursors. It can also
+be solved with single row mode, available in libpq since 9.2. With single row
+mode, sql statements do not have to be tampered with. Single row mode is also
+still usable with an aggressive connection pooling policy (e.g. statement
+pooling in pgBouncer) unlike server side cursors.
+
+Conclusion. No server side cursor implementation in poque Cursor object. Single
+row mode will be implemented instead.
+Of course a calling application is still able to issue the DECLARE and FETCH
+statements and use server side cursors from caller space.
+
+Is there any other reason to use server side cursors than memory reduction? I
+don't know. With single row mode, as opposed to server side cursors, the cursor
+will be forward only. That's the only drawback I can think of.
+
+
+# Explicit single row mode
+
+Will implement. To keep memory usage low it is possible to use single row mode
+on a cursor. This has to be explicitly switched on, because it limits the
+functionality of the cursor. The cursor will retrieve
+the next row (result) when fetchone is called, directly or indirectly.
+
+Limitations:
+* forward only cursor
+* No other statements can be executed on the connection while the cursor is in
+  use. In use means, there is still a reference to the cursor and the cursor is
+  not explicitly closed or nextset had not returned False yet.  
+
+# Implicit single row mode
+
+If fetchall() is called on a Cursor it will return a list of all records. libpq
+also keeps the entire result in memory. So all data is now twice in memory.
+This can be resolved using libpq single row mode and fill a Python list for
+each result. Should I implement that?
+Note: I am not talking about explicit single row mode, which can be activated
+by the caller. In the explicit version, the new single row result will be
+retrieved when the caller calls fetchone or something similar. I am talking
+now about using single row mode to retrieve the entire result before returning
+from the execute call.
+
+Pro:
+    * Less memory in fetchall() case
+    * Scrolling backwards is more efficient because it doesn't have to convert
+      pg values into Python values again.
+
+Con:
+    * Because bytea and unknown binary values are returned as a memoryview
+      directly into the result data buffer, these libpq results are kept alive
+      automatically.
+      This means that if there is such a value in the rows the memory usage can
+      actually be higher, because there will be a PGresult structure and Python
+      result object alive
+      for each row with a bytea value, instead of just one for the entire
+      result.
+
+I am voting against it for now.
+This is only a real advantage when the result is large and there are no binary
+values in the result and the caller is using fetchall.
+I think (yes.... very subjective) that is not a large use case. I also think
+that most callers use a cursor in a forward
+only manner with fetchone or similarly as an iterator. If they don't, they
+should :-)
+
+
+DBAPI weirdness
+* Exceptions are weird.
+
+  "The module should make all error information available
+  through these exceptions or subclasses thereof"
+  This means that for situations where an IndexError or ValueError would be
+  more appropriate these should not be raised. I think that is not consistent
+  at all. For example, when I try to read from a closed file, Python raises
+  a ValueError, but when I try to execute a SQL statement on a closed
+  connection I need to raise an InterfaceError. How did I solve this. Well
+  actually I did not yet, but I will implement an Exception that inherits from
+  both.
+
+  "An IndexError should be raised in case a scroll operation would leave the
+  result set"
+  What is this? That contradicts the first quote completely.
+
+* Autocommit feature
+
+  "Note that if the database supports an auto-commit feature, this must be 
+   initially off. An interface method may be provided to turn it back on."
+  Well, most existing DBAPI providers implement this as a property instead of
+  a method. I chose to follow the property road.
+
+* nextset semantics
+
+  These are unclear. "Otherwise, it returns a true value and
+  subsequent calls to the .fetch*() methods will return rows from the next
+  result set." So if I execute this:
+
+  SELECT 1; UPDATE table ....; SELECT 2;
+
+  After the execute the cursor has access to the result of the "SELECT 1"
+  statement. When nextset is called apparently the cursor has to proceed to the
+  "SELECT 2" statement result. So what happens with the rowcount property?
+  Should this
+  be the total number of affected records (both manipulated and returned) or
+  should it be the current?
+
+  And if I prolong that thought. What should I do if I execute
+
+  UPDATE table ....; SELECT 2;
+
+  After calling execute, does the cursor have to be positioned on the SELECT
+  result? I think so 
+  So if I want to find out how many records were updated I am forced to execute
+  two queries separately if I only want to use DBAPI functionality.
+
+  And if a SELECT statement returns zero rows? Should nextset skip it.
+  According to the quote it should. I won't implement that. Nextset will
+  proceed to the next result set, but it can have zero rows. In other words, it
+  will position itself on the next result where nfields > 0.
+
+
