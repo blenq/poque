@@ -86,7 +86,7 @@ class Cursor():
         if res is None:
             raise InterfaceError("Invalid cursor state")
         if res.nfields == 0:
-            raise InterfaceError("Cursor has no result")
+            raise InterfaceError("No result set")
 
     def _fetchone(self):
         res = self._res

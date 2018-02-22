@@ -74,6 +74,11 @@ class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
         cr.close()
         with self.assertRaises(self.poque.InterfaceError):
             cr.execute("SELECT 1")
+        cn = self.poque.Conn(conninfo())
+        cr = cn.cursor()
+        cn.close()
+        with self.assertRaises(self.poque.InterfaceError):
+            cr.execute("SELECT 1")
 
     two_row_query = """
     SELECT 1 as first,
@@ -141,6 +146,8 @@ class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
         self.assertEqual(cr.fetchmany(), [
             (1, 'hello', Decimal('2.3'), Decimal('4.7')),
         ])
+        self.assertEqual(cr.fetchone(),
+                         (2, 'hi', Decimal('6.32'), Decimal('5.7')))
         cr.execute(self.two_row_query)
         cr.arraysize = 4
         self.assertEqual(cr.fetchmany(), [
