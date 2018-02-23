@@ -61,6 +61,8 @@ class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
         cr = self.cn.cursor()
         cr.execute("SELECT $2, $1", (4, 5))
         self.assertEqual(cr.fetchone(), (5, 4))
+        cr.execute(parameters=(4, 5), operation="SELECT $2, $1")
+        self.assertEqual(cr.fetchone(), (5, 4))
 
     def test_execute_many(self):
         cr = self.cn.cursor()
@@ -189,3 +191,30 @@ class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
     def test_cursor_conn(self):
         cr = self.cn.cursor()
         self.assertIs(self.cn, cr.connection)
+
+    def test_scroll(self):
+        cr = self.cn.cursor()
+        with self.assertRaises(self.poque.InterfaceError):
+            cr.scroll(2)
+        cr.execute("SELECT * FROM (VALUES (1), (2), (3), (4)) t;")
+        cr.fetchone()
+        cr.scroll(2)
+        self.assertEqual(cr.fetchone(), (4,))
+        cr.scroll(1, "absolute")
+        cr.scroll(1, "relative")
+        self.assertEqual(cr.fetchone(), (3,))
+        cr.scroll(0, "absolute")
+        self.assertEqual(cr.fetchone(), (1,))
+        with self.assertRaises(self.poque.InterfaceError):
+            cr.scroll(0, "somewhere")
+        with self.assertRaises(self.poque.InterfaceError):
+            cr.scroll(8)
+        with self.assertRaises(IndexError):
+            cr.scroll(8)
+        cr.execute("SET bytea_output=hex")
+        with self.assertRaises(self.poque.InterfaceError):
+            cr.scroll(0, "absolute")
+        cr.execute("SELECT * FROM (VALUES (1), (2), (3), (4)) t;")
+        cr.close()
+        with self.assertRaises(self.poque.InterfaceError):
+            cr.scroll(0, "absolute")

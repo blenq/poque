@@ -1,7 +1,7 @@
 from itertools import islice
 
 from .constants import *  # noqa
-from .lib import InterfaceError
+from .lib import InterfaceError, InterfaceIndexError
 from builtins import property
 
 
@@ -14,7 +14,7 @@ class Cursor():
 
     def _check_closed(self):
         if self._cn is None:
-            raise InterfaceError("Connection is closed")
+            raise InterfaceError("Cursor is closed")
 
     @property
     def connection(self):
@@ -68,12 +68,12 @@ class Cursor():
             ))
         return ret
 
-    def execute(self, operation, parameters=None):
+    def execute(self, operation, *args, **kwargs):
         self._check_closed()
         cn = self._cn
         if not cn.autocommit and cn.transaction_status == TRANS_IDLE:
             cn.execute("BEGIN")
-        self._res = cn.execute(operation, parameters)
+        self._res = cn.execute(operation, *args, **kwargs)
         self._pos = 0
 
     def execute_many(self, operation, seq_of_parameters):
@@ -116,6 +116,20 @@ class Cursor():
         if size is None:
             size = self.arraysize
         return list(islice(self, size))
+
+    def scroll(self, value, mode="relative"):
+        if self._res is None or self._res.nfields == 0:
+            raise InterfaceError("No result set")
+        if mode == "relative":
+            pos = self._pos + value
+        elif mode == "absolute":
+            pos = value
+        else:
+            raise InterfaceError("Invalid mode")
+        if pos < 0 or pos > self._res.ntuples:
+            # Weird one. According to pep this should be an IndexError.
+            raise InterfaceIndexError("Position out of range")
+        self._pos = pos
 
     def close(self):
         # not actually closing anything, just removing references

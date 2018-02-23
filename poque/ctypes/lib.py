@@ -15,6 +15,10 @@ class InterfaceError(Error):
     pass
 
 
+class InterfaceIndexError(IndexError, InterfaceError):
+    pass
+
+
 class DatabaseError(Error):
     pass
 

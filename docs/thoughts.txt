@@ -21,6 +21,9 @@ Goal of poque
         cur.execute("PREPARE stmt AS SELECT $1, $2")
         cur.execute("EXECUTE stmt(%s, %s)", params)
         cur.execute("DEALLOCATE stmt")
+  There is also a drawback. Multi statements can not be used in combination
+  with parameters. Existing psycopg2 users are already used to the one
+  statement limit, so that's not a real issue.
 * Provide both a fast implementation as a C extension and a very compatible
   implementation using ctypes
 
@@ -54,7 +57,8 @@ Poque stack layers
      belong to the DBAPI layer, others to libpq.
 
 3. caller
-  1. Issue SQL statements to the poque lib and retrieve results
+  1. Issue SQL statements to the poque lib and retrieve results. The caller can
+     hook into both layers of the poque lib or a combination thereof.
 
 
 Should I implement server side cursors in the DBAPI cursor?
