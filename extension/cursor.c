@@ -1,0 +1,326 @@
+#include "poque.h"
+
+typedef struct PoqueCursor {
+    PyObject_HEAD
+    PyObject *wr_list;
+    PoqueConn *conn;
+    PoqueResult *result;
+    int arraysize;
+    int pos;
+} PoqueCursor;
+
+
+static PGresult *
+_PoqueCursor_execute(PoqueCursor *self, char *sql, PyObject *parameters,
+                     int format)
+{
+    PoqueConn *cn;
+    PGresult *res;
+
+    cn = self->conn;
+
+    /* check state */
+    if (cn == NULL) {
+        PyErr_SetString(PoqueInterfaceError, "Cursor is closed");
+        return NULL;
+    }
+
+    /* check if we should start a transaction */
+    if (!cn->autocommit && PQtransactionStatus(cn->conn) == PQTRANS_IDLE) {
+        res = _Conn_execute(cn, "BEGIN", NULL, FORMAT_TEXT);
+        if (res == NULL) {
+            return NULL;
+        }
+        PQclear(res);
+    }
+
+    /* execute statement */
+    res = _Conn_execute(cn, sql, parameters, format);
+    if (res == NULL) {
+        return NULL;
+    }
+    return res;
+}
+
+
+static PyObject *
+PoqueCursor_execute(PoqueCursor *self, PyObject *args, PyObject *kwds) {
+    char *sql;
+    PyObject *parameters = NULL;
+    int format = FORMAT_BINARY;
+    PoqueResult *result, *tmp;
+    PGresult *res;
+    static char *kwlist[] = {"operation", "parameters", "result_format", NULL};
+
+    /* args parsing */
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwds, "s|Oi", kwlist, &sql, &parameters, &format)) {
+        return NULL;
+    }
+
+    res = _PoqueCursor_execute(self, sql, parameters, format);
+    if (res == NULL) {
+        return NULL;
+    }
+
+    result = PoqueResult_New(res, self->conn);
+    if (result == NULL) {
+        PQclear(res);
+    }
+
+    /* set PoqueResult on cursor */
+    tmp = self->result;
+    self->result = result;
+    Py_XDECREF(tmp);
+    self->pos = 0;
+
+    /* and done */
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *
+PoqueCursor_executemany(PoqueCursor *self, PyObject *args, PyObject *kwds) {
+    char *sql;
+    PyObject *seq_of_parameters = NULL, *parameters;
+    int format = FORMAT_BINARY;
+    Py_ssize_t i, seq_len;
+    PGresult *res;
+    PoqueResult *tmp;
+    static char *kwlist[] = {
+        "operation", "seq_of_parameters", "result_format", NULL};
+
+    /* args parsing */
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwds, "s|Oi", kwlist, &sql, &seq_of_parameters, &format)) {
+        return NULL;
+    }
+    seq_of_parameters = PySequence_Fast(
+            seq_of_parameters, "seq_of_parameters should be a sequence");
+    if (seq_of_parameters == NULL) {
+        return NULL;
+    }
+    seq_len = PySequence_Fast_GET_SIZE(seq_of_parameters);
+    for (i = 0; i < seq_len; i++) {
+        parameters = PySequence_Fast_GET_ITEM(seq_of_parameters, i);
+        res = _PoqueCursor_execute(self, sql, parameters, format);
+        if (res == NULL) {
+            return NULL;
+        }
+        PQclear(res);
+    }
+    /* reset PoqueResult on cursor */
+    tmp = self->result;
+    self->result = NULL;
+    Py_XDECREF(tmp);
+
+    /* and done */
+    Py_RETURN_NONE;
+
+}
+
+
+static int
+PoqueCursor_CheckFetch(PoqueCursor *self) {
+    PoqueResult *result;
+
+    result = self->result;
+    if (result == NULL) {
+        PyErr_SetString(PoqueInterfaceError, "Invalid cursor state");
+        return -1;
+    }
+    if (PQnfields(result->result) == 0) {
+        PyErr_SetString(PoqueInterfaceError, "No result set");
+        return -1;
+    }
+    return 0;
+}
+
+
+static PyObject *
+_PoqueCursor_FetchOne(PoqueCursor *self) {
+    PoqueResult *result;
+    int pos;
+
+    result = self->result;
+    pos = self->pos;
+    if (pos < PQntuples(result->result)) {
+        int i, n;
+        PyObject *row;
+
+        n = PQnfields(result->result);
+        row = PyTuple_New(n);
+        if (row == NULL) {
+            return NULL;
+        }
+        for (i = 0; i < n; i++) {
+            PyObject *val;
+            val = _Result_value(result, pos, i);
+            if (val == NULL) {
+                Py_DECREF(row);
+                return NULL;
+            }
+            PyTuple_SET_ITEM(row, i, val);
+        }
+        self->pos++;
+        return row;
+    }
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *
+PoqueCursor_FetchOne(PoqueCursor *self, PyObject *unused) {
+    if (PoqueCursor_CheckFetch(self) == -1) {
+        return NULL;
+    }
+    return _PoqueCursor_FetchOne(self);
+}
+
+
+static PyObject *
+PoqueCursor_FetchAll(PoqueCursor *self, PyObject *unused) {
+    int i, n;
+    PyObject *rows;
+
+    if (PoqueCursor_CheckFetch(self) == -1) {
+        return NULL;
+    }
+    n = PQntuples(self->result->result) - self->pos;
+    rows = PyList_New(n);
+    if (rows == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < n; i++) {
+        PyObject *row;
+        row = _PoqueCursor_FetchOne(self);
+        if (row == NULL) {
+            Py_DECREF(rows);
+            return row;
+        }
+        PyList_SET_ITEM(rows, i, row);
+    }
+    return rows;
+}
+
+
+static PyObject *
+PoqueCursor_close(PoqueCursor *self, PyObject *unused) {
+    if (self->conn) {
+        PoqueConn *conn = self->conn;
+        self->conn = NULL;
+        Py_DECREF(conn);
+    }
+    if (self->result) {
+        PoqueResult *result = self->result;
+        self->result = NULL;
+        Py_DECREF(result);
+    }
+    Py_RETURN_NONE;
+}
+
+
+static void
+PoqueCursor_dealloc(PoqueCursor *self) {
+    /* standard destructor, clear weakrefs, break ref chain and free */
+    if (self->wr_list != NULL)
+        PyObject_ClearWeakRefs((PyObject *) self);
+    Py_XDECREF(self->result);
+    Py_XDECREF(self->conn);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+
+static PyMemberDef Cursor_members[] = {
+    {"connection", T_OBJECT, offsetof(PoqueCursor, conn), READONLY,
+     "The connection"},
+    {"arraysize", T_INT, offsetof(PoqueCursor, arraysize), 0,
+     "Array size"},
+    {NULL}
+};
+
+static PyObject *
+Cursor_void(PyObject *self, PyObject *args, PyObject *kwds) {
+    Py_RETURN_NONE;
+}
+
+
+static PyMethodDef Cursor_methods[] = {{
+        "setinputsizes", (PyCFunction)Cursor_void, METH_VARARGS | METH_KEYWORDS,
+        PyDoc_STR("set input sizes")
+    }, {
+        "setoutputsize", (PyCFunction)Cursor_void, METH_VARARGS | METH_KEYWORDS,
+        PyDoc_STR("set output size")
+    }, {
+        "close", (PyCFunction)PoqueCursor_close, METH_NOARGS,
+        PyDoc_STR("closes cursor")
+    }, {
+        "execute", (PyCFunction)PoqueCursor_execute,
+        METH_VARARGS | METH_KEYWORDS, PyDoc_STR("executes a statement")
+    }, {
+        "executemany", (PyCFunction)PoqueCursor_executemany,
+        METH_VARARGS | METH_KEYWORDS, PyDoc_STR(
+            "executes a statement multiple times")
+    }, {
+        "fetchone", (PyCFunction)PoqueCursor_FetchOne, METH_NOARGS,
+        PyDoc_STR("fetch a row")
+    }, {
+        "fetchall", (PyCFunction)PoqueCursor_FetchAll, METH_NOARGS,
+        PyDoc_STR("fetch remaining rows")
+    }, {
+        NULL
+}};
+
+
+PyTypeObject PoqueCursorType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "poque.Cursor",                             /* tp_name */
+    sizeof(PoqueCursor),                        /* tp_basicsize */
+    0,                                          /* tp_itemsize */
+    (destructor)PoqueCursor_dealloc,            /* tp_dealloc */
+    0,                                          /* tp_print */
+    0,                                          /* tp_getattr */
+    0,                                          /* tp_setattr */
+    0,                                          /* tp_reserved */
+    0,                                          /* tp_repr */
+    0,                                          /* tp_as_number */
+    0,                                          /* tp_as_sequence */
+    0,                                          /* tp_as_mapping */
+    0,                                          /* tp_hash  */
+    0,                                          /* tp_call */
+    0,                                          /* tp_str */
+    0,                                          /* tp_getattro */
+    0,                                          /* tp_setattro */
+    0,                                          /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,   /* tp_flags */
+    PyDoc_STR("poque cursor object"),           /* tp_doc */
+    0,                                          /* tp_traverse */
+    0,                                          /* tp_clear */
+    0,                                          /* tp_richcompare */
+    offsetof(PoqueCursor, wr_list),             /* tp_weaklistoffset */
+    0,                                          /* tp_iter */
+    0,                                          /* tp_iternext */
+    Cursor_methods,                             /* tp_methods */
+    Cursor_members,                             /* tp_members */
+    0                                           /* tp_getset */
+};
+
+
+PoqueCursor *
+PoqueCursor_New(PoqueConn *conn)
+{
+    /* PoqueCursor constructor */
+    PoqueCursor *cursor;
+
+    cursor = PyObject_New(PoqueCursor, &PoqueCursorType);
+    if (cursor == NULL) {
+        return NULL;
+    }
+    cursor->wr_list = NULL;
+    Py_INCREF(conn);
+    cursor->conn = conn;
+    cursor->result = NULL;
+    cursor->arraysize = 1;
+    cursor->pos = 0;
+    return cursor;
+}

@@ -15,16 +15,10 @@ typedef struct {
     PGconn *conn;
     PyObject *wr_list;
     char *warning_msg;
+    char autocommit;
 } PoqueConn;
 
-
-typedef struct PoqueResult {
-    PyObject_HEAD
-    PGresult *result;
-    PyObject *wr_list;
-    PoqueConn *conn;
-} PoqueResult;
-
+#include "cursor.h"
 
 #if SIZEOF_SHORT != 2
 #error no type for int16
@@ -49,7 +43,13 @@ typedef struct PoqueResult {
 typedef signed short poque_int16;
 typedef unsigned short poque_uint16;
 
-typedef struct PoqueResult PoqueResult;
+typedef struct PoqueResult {
+    PyObject_HEAD
+    PGresult *result;
+    PyObject *wr_list;
+    PoqueConn *conn;
+} PoqueResult;
+
 
 extern PyObject *PoqueError;
 extern PyObject *PoqueInterfaceError;
@@ -57,8 +57,13 @@ extern PyObject *PoqueWarning;
 extern PyTypeObject PoqueConnType;
 extern PyTypeObject PoqueResultType;
 extern PyTypeObject PoqueValueType;
+extern PyTypeObject PoqueCursorType;
+
+PGresult *_Conn_execute(
+    PoqueConn *self, char *sql, PyObject *parameters, int format);
 
 PoqueResult *PoqueResult_New(PGresult *res, PoqueConn *conn);
+PyObject *_Result_value(PoqueResult *self, int row, int column);
 
 PyObject *Poque_info_options(PQconninfoOption *options);
 PyObject *Poque_value(PoqueResult *result, Oid oid, int format, char *data,

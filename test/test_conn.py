@@ -13,6 +13,9 @@ class TestConnectionOpen():
         kwargs = config.connparams()
         cn = self.poque.connect(**kwargs)
         self.assertEqual(cn.status, self.poque.CONNECTION_OK)
+        self.assertIs(cn.autocommit, False)
+        cn.autocommit = True
+        self.assertIs(cn.autocommit, True)
 
     def test_connect_params_expand(self):
         connstring = config.conninfo()

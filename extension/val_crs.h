@@ -1,5 +1,5 @@
-#ifndef _POQUE_CURSOR_H_
-#define _POQUE_CURSOR_H_
+#ifndef _POQUE_VALCRS_H_
+#define _POQUE_VALCRS_H_
 
 #include "poque.h"
 

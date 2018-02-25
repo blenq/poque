@@ -306,12 +306,14 @@ Result_getview(PoqueResult *self, char *data, int len)
 static PyObject *
 Result_getvalue(PoqueResult *self, PyObject *args, PyObject *kwds)
 {
-    int row, column, len;
+    int row, column;
     char *data;
+    int len;
 
     if (Result_colrow_args(args, kwds, &row, &column) == -1) {
         return NULL;
     }
+
     data = PQgetvalue(self->result, row, column);
     if (Result_check_warnings(self) == -1) {
         return NULL;
@@ -340,14 +342,10 @@ Result_getlength(PoqueResult *self, PyObject *args, PyObject *kwds) {
     return PyLong_FromLong(length);
 }
 
-static PyObject *
-Result_value(PoqueResult *self, PyObject *args, PyObject *kwds)
-{
-    int row, column;
 
-    if (Result_colrow_args(args, kwds, &row, &column) == -1) {
-        return NULL;
-    }
+PyObject *
+_Result_value(PoqueResult *self, int row, int column)
+{
     if (PQgetisnull(self->result, row, column))
         Py_RETURN_NONE;
     return Poque_value(self,
@@ -356,6 +354,19 @@ Result_value(PoqueResult *self, PyObject *args, PyObject *kwds)
                        PQgetvalue(self->result, row, column),
                        PQgetlength(self->result, row, column));
 }
+
+
+static PyObject *
+Result_value(PoqueResult *self, PyObject *args, PyObject *kwds)
+{
+    int row, column;
+
+    if (Result_colrow_args(args, kwds, &row, &column) == -1) {
+        return NULL;
+    }
+    return _Result_value(self, row, column);
+}
+
 
 static PyObject *
 Result_isnull(PoqueResult *self, PyObject *args, PyObject *kwds)

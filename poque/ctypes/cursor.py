@@ -11,6 +11,7 @@ class Cursor():
         self._cn = cn
         self._res = None
         self.arraysize = 1
+        self._pos = 0
 
     def _check_closed(self):
         if self._cn is None:
@@ -76,9 +77,9 @@ class Cursor():
         self._res = cn.execute(operation, *args, **kwargs)
         self._pos = 0
 
-    def execute_many(self, operation, seq_of_parameters):
+    def executemany(self, operation, seq_of_parameters, *args, **kwargs):
         for parameters in seq_of_parameters:
-            self.execute(operation, parameters)
+            self.execute(operation, parameters, *args, **kwargs)
         self._res = None
 
     def _check_fetch(self):
@@ -88,7 +89,8 @@ class Cursor():
         if res.nfields == 0:
             raise InterfaceError("No result set")
 
-    def _fetchone(self):
+    def fetchone(self):
+        self._check_fetch()
         res = self._res
         pos = self._pos
         if pos < res.ntuples:
@@ -97,25 +99,38 @@ class Cursor():
             return ret
         return None
 
-    def fetchone(self):
-        self._check_fetch()
-        return self._fetchone()
-
     def __iter__(self):
-        self._check_fetch()
-        while True:
-            row = self._fetchone()
-            if row is None:
-                break
-            yield row
+        return self
+
+    def __next__(self):
+        ret = self.fetchone()
+        if ret is None:
+            raise StopIteration
+        return ret
 
     def fetchall(self):
-        return list(self)
+        self._check_fetch()
+        return self._fetchmany(self._res.ntuples)
+
+    def _fetchmany(self, n):
+        res = self._res
+        nfields = res.nfields
+        ret = [tuple(res.getvalue(pos, i) for i in range(nfields))
+               for pos in range(self._pos, n)]
+        self._pos = n
+        return ret
+
+    def __length_hint__(self):
+        res = self._res
+        if res is None:
+            return 0
+        return res.ntuples - self._pos
 
     def fetchmany(self, size=None):
+        self._check_fetch()
         if size is None:
             size = self.arraysize
-        return list(islice(self, size))
+        return self._fetchmany(min(self._res.ntuples, self._pos + size))
 
     def scroll(self, value, mode="relative"):
         if self._res is None or self._res.nfields == 0:

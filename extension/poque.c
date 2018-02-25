@@ -245,9 +245,14 @@ PyInit__poque(void)
     if (PyType_Ready(&PoqueResultType) < 0)
         return NULL;
 
-    PoqueValueType.tp_new = PyType_GenericNew;
+//    PoqueValueType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&PoqueValueType) < 0)
         return NULL;
+
+    if (PyType_Ready(&PoqueCursorType) < 0)
+        return NULL;
+
+
     /* Add result type to the module */
 /*    Py_INCREF(&PoqueResultType);
     if (PyModule_AddObject(

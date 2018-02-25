@@ -10,19 +10,6 @@ static void Conn_set_error(PGconn *conn) {
     }
 }
 
-static PyObject*
-Conn_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
-{
-    PoqueConn *self;
-
-    self = (PoqueConn *)type->tp_alloc(type, 0);
-    if (self) {
-        self->conn = NULL;
-        self->wr_list = NULL;
-        self->warning_msg = NULL;
-    }
-    return (PyObject *)self;
-}
 
 #define CONN_MAX_KWDS 64
 
@@ -315,18 +302,28 @@ end:
 
 static PyObject *
 Conn_execute(PoqueConn *self, PyObject *args, PyObject *kwds) {
-
     char *sql;
     PyObject *parameters = NULL;
     int format = FORMAT_BINARY;
     PGresult *res;
-    ExecStatusType res_status;
-    Py_ssize_t num_params = 0;
 
     static char *kwlist[] = {"command", "parameters", "result_format", NULL};
     if (!PyArg_ParseTupleAndKeywords(
             args, kwds, "s|Oi", kwlist, &sql, &parameters, &format))
         return NULL;
+    res = _Conn_execute(self, sql, parameters, format);
+    if (res == NULL) {
+        return NULL;
+    }
+    return (PyObject *)PoqueResult_New(res, self);
+}
+
+PGresult *
+_Conn_execute(PoqueConn *self, char *sql, PyObject *parameters, int format) {
+
+    PGresult *res;
+    ExecStatusType res_status;
+    Py_ssize_t num_params = 0;
 
     if (format)
         format = FORMAT_BINARY;
@@ -359,9 +356,10 @@ Conn_execute(PoqueConn *self, PyObject *args, PyObject *kwds) {
     res_status = PQresultStatus(res);
     if (res_status == PGRES_BAD_RESPONSE || res_status == PGRES_FATAL_ERROR) {
         PyErr_SetString(PoqueError, PQresultErrorMessage(res));
+        PQclear(res);
         return NULL;
     }
-    return (PyObject *)PoqueResult_New(res, self);
+    return res;
 }
 
 
@@ -456,6 +454,13 @@ Conn_reset_poll(PoqueConn *self, PyObject *unused)
 }
 
 
+static PoqueCursor *
+Conn_cursor(PoqueConn *self, PyObject *unused)
+{
+    return PoqueCursor_New(self);
+}
+
+
 static PyObject *
 Conn_escape_function(
         PoqueConn *self, PyObject *args, PyObject *kwds, char *kwlist[],
@@ -520,6 +525,13 @@ Conn_charprop(PoqueConn *self, char *(*func)(PGconn *))
     }
     Py_RETURN_NONE;
 }
+
+
+static PyMemberDef Conn_members[] = {
+    {"autocommit", T_BOOL, offsetof(PoqueConn, autocommit), 0,
+     "Autocommit"},
+    {NULL}
+};
 
 
 static PyGetSetDef Conn_getset[] = {{
@@ -608,6 +620,9 @@ static PyMethodDef Conn_methods[] = {{
         "finish", (PyCFunction)Conn_finish, METH_NOARGS,
         PyDoc_STR("close the connection")
     }, {
+        "close", (PyCFunction)Conn_finish, METH_NOARGS,
+        PyDoc_STR("close the connection")
+    }, {
         "fileno", (PyCFunction)Conn_fileno, METH_NOARGS,
         PyDoc_STR("gets the file descriptor of the connection")
     }, {
@@ -638,6 +653,9 @@ static PyMethodDef Conn_methods[] = {{
         "escape_identifier", (PyCFunction)Conn_escape_identifier,
         METH_VARARGS| METH_KEYWORDS,
         PyDoc_STR("escape an indentifier")
+    }, {
+        "cursor", (PyCFunction)Conn_cursor, METH_NOARGS,
+        PyDoc_STR("create cursor")
     }, {
         NULL
 }};
@@ -672,7 +690,7 @@ PyTypeObject PoqueConnType = {
     0,                                          /* tp_iter */
     0,                                          /* tp_iternext */
     Conn_methods,                               /* tp_methods */
-    0,                                          /* tp_members */
+    Conn_members,                               /* tp_members */
     Conn_getset,                                /* tp_getset */
     0,                                          /* tp_base */
     0,                                          /* tp_dict */
@@ -680,6 +698,5 @@ PyTypeObject PoqueConnType = {
     0,                                          /* tp_descr_set */
     0,                                          /* tp_dictoffset */
     (initproc)Conn_init,                        /* tp_init */
-    0,                                          /* tp_alloc */
-    Conn_new,                                   /* tp_new */
+    0                                           /* tp_alloc */
 };
