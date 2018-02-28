@@ -46,11 +46,10 @@ class Cursor():
         if res is None:
             return None
 
-        ret = []
-        for i in range(self._res.nfields):
+        def get_field_desc(i):
             oid = res.ftype(i)
             internal_size = res.fsize(i)
-            if internal_size == -1:
+            if internal_size < 0:
                 internal_size = None
             precision = None
             scale = None
@@ -63,11 +62,10 @@ class Cursor():
                 precision = 53
             elif oid == FLOAT4OID:
                 precision = 24
-            ret.append((
-                res.fname(i), oid, None, internal_size, precision, scale,
-                None
-            ))
-        return ret
+            return (res.fname(i), oid, None, internal_size, precision, scale,
+                    None)
+
+        return [get_field_desc(j) for j in range(self._res.nfields)]
 
     def execute(self, operation, *args, **kwargs):
         self._check_closed()

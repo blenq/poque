@@ -121,6 +121,139 @@ PoqueCursor_executemany(PoqueCursor *self, PyObject *args, PyObject *kwds) {
 
 
 static int
+SetNoneIfNegative(PyObject *tup, Py_ssize_t idx, int n) {
+    PyObject *item;
+
+    if (n < 0) {
+        Py_INCREF(Py_None);
+        item = Py_None;
+    }
+    else {
+        item = PyLong_FromLong(n);
+        if (item == NULL) {
+            return -1;
+        }
+    }
+    PyTuple_SET_ITEM(tup, idx, item);
+    return 0;
+}
+
+
+static PyObject *
+PoqueCursor_description(PoqueCursor *self, void *val)
+{
+    PoqueResult *result;
+    PGresult *res;
+    int nfields, i;
+    PyObject *desc;
+
+    /* check state */
+    if (self->conn == NULL) {
+        PyErr_SetString(PoqueInterfaceError, "Cursor is closed");
+        return NULL;
+    }
+
+    /* no result yet */
+    result = self->result;
+    if (result == NULL) {
+        Py_RETURN_NONE;
+    }
+
+    /* result without result set */
+    res = result->result;
+    nfields = PQnfields(res);
+    if (nfields == 0) {
+        Py_RETURN_NONE;
+    }
+
+    /* create list for the fields */
+    desc = PyList_New(nfields);
+    if (desc == NULL) {
+        return NULL;
+    }
+
+    /* get info per field */
+    for (i = 0; i < nfields; i++) {
+        Oid oid;
+        int i_tmp, precision = -1, scale = -1;
+        char *ch_tmp;
+        PyObject *field_desc, *py_tmp;
+
+        /* add field description tuple to description list */
+        field_desc = PyTuple_New(7);
+        if (field_desc == NULL) {
+            goto error;
+        }
+        PyList_SET_ITEM(desc, i, field_desc);
+
+        /* set name */
+        ch_tmp = PQfname(res, i);
+        if (ch_tmp == NULL) {
+            Py_INCREF(Py_None);
+            py_tmp = Py_None;
+        }
+        else {
+            py_tmp = PyUnicode_FromString(ch_tmp);
+            if (py_tmp == NULL) {
+                goto error;
+            }
+        }
+        PyTuple_SET_ITEM(field_desc, 0, py_tmp);
+
+        /* set type */
+        oid = PQftype(res, i);
+        py_tmp = PyLong_FromUnsignedLong(oid);
+        if (py_tmp == NULL) {
+            goto error;
+        }
+        PyTuple_SET_ITEM(field_desc, 1, py_tmp);
+
+        /* set display_size */
+        Py_INCREF(Py_None);
+        PyTuple_SET_ITEM(field_desc, 2, Py_None);
+
+        /* set internal size */
+        if (SetNoneIfNegative(field_desc, 3, PQfsize(res, i)) == -1) {
+            goto error;
+        }
+
+        /* get precision and scale */
+        if (oid == NUMERICOID) {
+            i_tmp = PQfmod(res, i) - 4;
+            if (i_tmp >= 0) {
+                precision = i_tmp >> 16;
+                scale = i_tmp & 0xffff;
+            }
+        }
+        else if (oid == FLOAT8OID) {
+            precision = 53;
+        }
+        else if (oid == FLOAT4OID) {
+            precision = 24;
+        }
+
+        /* set precision */
+        if (SetNoneIfNegative(field_desc, 4, precision) == -1) {
+            goto error;
+        }
+
+        /* set scale */
+        if (SetNoneIfNegative(field_desc, 5, scale) == -1) {
+            goto error;
+        }
+
+        /* set null ok */
+        Py_INCREF(Py_None);
+        PyTuple_SET_ITEM(field_desc, 6, Py_None);
+    }
+    return desc;
+error:
+    Py_DECREF(desc);
+    return NULL;
+}
+
+
+static int
 PoqueCursor_CheckFetch(PoqueCursor *self) {
     PoqueResult *result;
 
@@ -233,10 +366,10 @@ PoqueCursor_dealloc(PoqueCursor *self) {
 static PyObject *
 Cursor_rownumber(PoqueCursor *self, void *val)
 {
-	if (self->result == NULL || PQnfields(self->result->result) == 0) {
-		Py_RETURN_NONE;
-	}
-	return PyLong_FromLong(self->pos);
+    if (self->result == NULL || PQnfields(self->result->result) == 0) {
+        Py_RETURN_NONE;
+    }
+    return PyLong_FromLong(self->pos);
 }
 
 
@@ -260,8 +393,14 @@ static PyGetSetDef Cursor_getset[] = {{
         NULL,
         PyDoc_STR("Row number"),
         NULL
-	}, {
-		NULL
+    }, {
+        "description",
+        (getter)PoqueCursor_description,
+        NULL,
+        PyDoc_STR("Gets field descriptions"),
+        NULL
+    }, {
+        NULL
 }};
 
 
@@ -322,8 +461,8 @@ PyTypeObject PoqueCursorType = {
     0,                                          /* tp_iternext */
     Cursor_methods,                             /* tp_methods */
     Cursor_members,                             /* tp_members */
-	Cursor_getset,                              /* tp_getset */
-	0
+    Cursor_getset,                              /* tp_getset */
+    0
 };
 
 

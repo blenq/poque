@@ -10,21 +10,44 @@ class CursorTest():
     def setUpClass(cls):
         cls.cn = cls.poque.Conn(conninfo())
 
+    def setUp(self):
+        self.cn.execute("BEGIN")
+
+    def tearDown(self):
+        self.cn.execute("ROLLBACK")
+
     @classmethod
     def tearDownClass(cls):
         cls.cn.finish()
+
+    def test_cursor_description(self):
+        cr = self.cn.cursor()
+        self.assertIsNone(cr.description)
+        cr.execute("""
+            SELECT
+                1 as first, 'hello' as second,
+                '2.3'::decimal(4,2) as third,
+                '4.7'::decimal as fourth,
+                '1.5'::float4 as fifth,
+                '1.5'::float8 as sixth""")
+        self.assertEqual(cr.description, [
+            ('first', self.poque.INT4OID, None, 4, None, None, None),
+            ('second', self.get_unknown_cmp_type(), None,
+             None, None, None, None),
+            ('third', self.poque.NUMERICOID, None, None, 4, 2, None),
+            ('fourth', self.poque.NUMERICOID, None, None, None, None, None),
+            ('fifth', self.poque.FLOAT4OID, None, 4, 24, None, None),
+            ('sixth', self.poque.FLOAT8OID, None, 8, 53, None, None),
+        ])
+        cr.close()
+        with self.assertRaises(self.poque.InterfaceError):
+            cr.description
 
     def get_unknown_cmp_type(self):
         if (self.cn.server_version < 100000):
             return self.poque.UNKNOWNOID
         else:
             return self.poque.TEXTOID
-
-    def get_unknown_fsize(self):
-        if (self.cn.server_version < 100000):
-            return -2
-        else:
-            return None
 
     def test_new_cursor(self):
         cr = self.cn.cursor()
@@ -138,25 +161,6 @@ class CursorTestExtension(
 
 
 class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
-
-    def test_cursor_description(self):
-        cr = self.cn.cursor()
-        self.assertIsNone(cr.description)
-        cr.execute("""
-            SELECT
-                1 as first, 'hello' as second,
-                '2.3'::decimal(4,2) as third,
-                '4.7'::decimal as fourth""")
-        self.assertEqual(cr.description, [
-            ('first', self.poque.INT4OID, None, 4, None, None, None),
-            ('second', self.get_unknown_cmp_type(), None,
-             self.get_unknown_fsize(), None, None, None),
-            ('third', self.poque.NUMERICOID, None, None, 4, 2, None),
-            ('fourth', self.poque.NUMERICOID, None, None, None, None, None),
-        ])
-        cr.close()
-        with self.assertRaises(self.poque.InterfaceError):
-            cr.description
 
     def test_cursor_rowcount(self):
         cr = self.cn.cursor()
