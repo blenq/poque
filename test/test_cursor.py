@@ -14,6 +14,18 @@ class CursorTest():
     def tearDownClass(cls):
         cls.cn.finish()
 
+    def get_unknown_cmp_type(self):
+        if (self.cn.server_version < 100000):
+            return self.poque.UNKNOWNOID
+        else:
+            return self.poque.TEXTOID
+
+    def get_unknown_fsize(self):
+        if (self.cn.server_version < 100000):
+            return -2
+        else:
+            return None
+
     def test_new_cursor(self):
         cr = self.cn.cursor()
         self.assertIsNotNone(cr)
@@ -107,6 +119,18 @@ class CursorTest():
         cr = self.cn.cursor()
         self.assertEqual(cr.arraysize, 1)
 
+    def test_rownumber(self):
+        cr = self.cn.cursor()
+        self.assertIsNone(cr.rownumber)
+        cr.execute(self.two_row_query)
+        self.assertEqual(cr.rownumber, 0)
+        cr.fetchone()
+        self.assertEqual(cr.rownumber, 1)
+        cr.fetchall()
+        self.assertEqual(cr.rownumber, 2)
+        cr.execute("SET bytea_output=hex")
+        self.assertIsNone(cr.rownumber)
+
 
 class CursorTestExtension(
         BaseExtensionTest, CursorTest, unittest.TestCase):
@@ -125,7 +149,8 @@ class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
                 '4.7'::decimal as fourth""")
         self.assertEqual(cr.description, [
             ('first', self.poque.INT4OID, None, 4, None, None, None),
-            ('second', self.poque.TEXTOID, None, None, None, None, None),
+            ('second', self.get_unknown_cmp_type(), None,
+             self.get_unknown_fsize(), None, None, None),
             ('third', self.poque.NUMERICOID, None, None, 4, 2, None),
             ('fourth', self.poque.NUMERICOID, None, None, None, None, None),
         ])
@@ -185,18 +210,6 @@ class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
         self.assertEqual(cr.fetchmany(2), [
             (2, 'hi', Decimal('6.32'), Decimal('5.7')),
         ])
-
-    def test_rownumber(self):
-        cr = self.cn.cursor()
-        self.assertIsNone(cr.rownumber)
-        cr.execute(self.two_row_query)
-        self.assertEqual(cr.rownumber, 0)
-        cr.fetchone()
-        self.assertEqual(cr.rownumber, 1)
-        cr.fetchall()
-        self.assertEqual(cr.rownumber, 2)
-        cr.execute("SET bytea_output=hex")
-        self.assertIsNone(cr.rownumber)
 
     def test_scroll(self):
         cr = self.cn.cursor()

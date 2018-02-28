@@ -344,13 +344,12 @@ _Conn_execute(PoqueConn *self, char *sql, PyObject *parameters, int format) {
     	Py_END_ALLOW_THREADS
     	if (res == NULL) {
             Conn_set_error(self->conn);
-            return NULL;
         }
     } else {
     	res = Conn_exec_params(self->conn, sql, parameters, num_params, format);
-    	if (res == NULL) {
-            return NULL;
-        }
+    }
+	if (res == NULL) {
+        return NULL;
     }
 
     res_status = PQresultStatus(res);

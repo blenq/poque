@@ -230,6 +230,15 @@ PoqueCursor_dealloc(PoqueCursor *self) {
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
+static PyObject *
+Cursor_rownumber(PoqueCursor *self, void *val)
+{
+	if (self->result == NULL || PQnfields(self->result->result) == 0) {
+		Py_RETURN_NONE;
+	}
+	return PyLong_FromLong(self->pos);
+}
+
 
 static PyMemberDef Cursor_members[] = {
     {"connection", T_OBJECT, offsetof(PoqueCursor, conn), READONLY,
@@ -243,6 +252,17 @@ static PyObject *
 Cursor_void(PyObject *self, PyObject *args, PyObject *kwds) {
     Py_RETURN_NONE;
 }
+
+
+static PyGetSetDef Cursor_getset[] = {{
+        "rownumber",
+        (getter)Cursor_rownumber,
+        NULL,
+        PyDoc_STR("Row number"),
+        NULL
+	}, {
+		NULL
+}};
 
 
 static PyMethodDef Cursor_methods[] = {{
@@ -302,7 +322,8 @@ PyTypeObject PoqueCursorType = {
     0,                                          /* tp_iternext */
     Cursor_methods,                             /* tp_methods */
     Cursor_members,                             /* tp_members */
-    0                                           /* tp_getset */
+	Cursor_getset,                              /* tp_getset */
+	0
 };
 
 
