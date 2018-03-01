@@ -28,9 +28,11 @@ class Cursor():
         if res is None:
             return -1
         rc = res.cmd_tuples
-        if rc == -1:
+        if rc is not None:
+            return rc
+        if res.nfields:
             return res.ntuples
-        return rc
+        return -1
 
     @property
     def rownumber(self):

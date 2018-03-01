@@ -51,7 +51,7 @@ class Result(c_void_p):
     @property
     def cmd_tuples(self):
         ct = self._cmd_tuples
-        return -1 if ct == "" else int(ct)
+        return None if ct == "" else int(ct)
 
     def _check_warnings(self, ret):
         warning_msg = self._conn._warning_msg

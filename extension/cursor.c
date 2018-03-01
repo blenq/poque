@@ -253,6 +253,36 @@ error:
 }
 
 
+static PyObject *
+PoqueCursor_rowcount(PoqueCursor *self, void *val) {
+    PoqueResult *result;
+    PGresult *res;
+    char *cmd_tup;
+
+    /* check state */
+    if (self->conn == NULL) {
+        PyErr_SetString(PoqueInterfaceError, "Cursor is closed");
+        return NULL;
+    }
+
+    /* no result yet */
+    result = self->result;
+    if (result == NULL) {
+        return PyLong_FromLong(-1);
+    }
+
+    res = result->result;
+    cmd_tup = PQcmdTuples(res);
+    if (cmd_tup[0] != '\0') {
+        return PyLong_FromString(cmd_tup, NULL, 10);
+    }
+    if (PQnfields(res) > 0) {
+        return PyLong_FromLong(PQntuples(res));
+    }
+    return PyLong_FromLong(-1);
+}
+
+
 static int
 PoqueCursor_CheckFetch(PoqueCursor *self) {
     PoqueResult *result;
@@ -388,6 +418,12 @@ Cursor_void(PyObject *self, PyObject *args, PyObject *kwds) {
 
 
 static PyGetSetDef Cursor_getset[] = {{
+        "rowcount",
+        (getter)PoqueCursor_rowcount,
+        NULL,
+        PyDoc_STR("Row count"),
+        NULL
+    }, {
         "rownumber",
         (getter)Cursor_rownumber,
         NULL,

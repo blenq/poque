@@ -154,14 +154,6 @@ class CursorTest():
         cr.execute("SET bytea_output=hex")
         self.assertIsNone(cr.rownumber)
 
-
-class CursorTestExtension(
-        BaseExtensionTest, CursorTest, unittest.TestCase):
-    pass
-
-
-class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
-
     def test_cursor_rowcount(self):
         cr = self.cn.cursor()
         self.assertEqual(cr.rowcount, -1)
@@ -173,6 +165,14 @@ class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
         cr.close()
         with self.assertRaises(self.poque.InterfaceError):
             cr.rowcount
+
+
+class CursorTestExtension(
+        BaseExtensionTest, CursorTest, unittest.TestCase):
+    pass
+
+
+class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
 
     def test_iter(self):
         cr = self.cn.cursor()
