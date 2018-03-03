@@ -477,16 +477,18 @@ typedef struct _DecimalParamHandler {
 static inline int
 decimal_check_infinite(PyObject *decimal) {
     PyObject *py_obj;
-    int ret = 0;
+    int ret;
+    _Py_IDENTIFIER(is_infinite);
 
-    py_obj = PyObject_CallMethod(decimal, "is_infinite", NULL);
+    py_obj = _PyObject_CallMethodIdObjArgs(decimal, &PyId_is_infinite, NULL);
     if (py_obj == NULL) {
         return -1;
     }
-    if (PyObject_IsTrue(py_obj)) {
-        PyErr_SetString(PyExc_ValueError,
-                        "PostgreSQL does not support decimal infinites");
-        ret = -1;
+    ret = PyObject_IsTrue(py_obj);
+    if (ret && ret != -1) {
+		PyErr_SetString(PyExc_ValueError,
+						"PostgreSQL does not support decimal infinites");
+		ret = -1;
     }
     Py_DECREF(py_obj);
     return ret;
@@ -495,9 +497,10 @@ decimal_check_infinite(PyObject *decimal) {
 static inline int
 decimal_check_nan(PyObject *decimal) {
     PyObject *py_obj;
-    int ret = 0;
+    int ret;
+    _Py_IDENTIFIER(is_nan);
 
-    py_obj = PyObject_CallMethod(decimal, "is_nan", NULL);
+    py_obj = _PyObject_CallMethodIdObjArgs(decimal, &PyId_is_nan, NULL);
     if (py_obj == NULL) {
         return -1;
     }
@@ -547,9 +550,10 @@ decimal_examine(DecimalParamHandler *handler, PyObject *param)
         /* normal decimal */
         Py_ssize_t exp;
         int dec_weight, q, r;
+        _Py_IDENTIFIER(as_tuple);
 
         /* get sign, digits and exponent */
-        val = PyObject_CallMethod(param, "as_tuple", NULL);
+        val = _PyObject_CallMethodIdObjArgs(param, &PyId_as_tuple, NULL);
         if (val == NULL) {
             return -1;
         }

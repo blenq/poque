@@ -22,9 +22,10 @@ static int
 date_pgordinal(PyObject *param, int *ordinal)
 {
     PyObject *py_ordinal;
+    _Py_IDENTIFIER(toordinal);
 
     /* get the Python ordinal */
-    py_ordinal = PyObject_CallMethod(param, "toordinal", NULL);
+    py_ordinal = _PyObject_CallMethodIdObjArgs(param, &PyId_toordinal, NULL);
     if (py_ordinal == NULL) {
         return -1;
     }
@@ -146,9 +147,11 @@ datetimetz_encode_at(
         param_handler *handler, PyObject *param, char *loc) {
     PyObject *utc_param;
     int ret;
+    _Py_IDENTIFIER(astimezone);
 
     /* convert datetime object to UTC */
-    utc_param = PyObject_CallMethod(param, "astimezone", "O", utc);
+    utc_param = _PyObject_CallMethodIdObjArgs(
+        param, &PyId_astimezone, utc, NULL);
     if (utc_param == NULL) {
         return -1;
     }
