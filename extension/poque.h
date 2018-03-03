@@ -53,6 +53,7 @@ typedef struct PoqueResult {
 
 extern PyObject *PoqueError;
 extern PyObject *PoqueInterfaceError;
+extern PyObject *PoqueInterfaceIndexError;
 extern PyObject *PoqueWarning;
 extern PyTypeObject PoqueConnType;
 extern PyTypeObject PoqueResultType;

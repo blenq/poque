@@ -183,14 +183,6 @@ class CursorTest():
         with self.assertRaises(self.poque.InterfaceError):
             list(cr)
 
-
-class CursorTestExtension(
-        BaseExtensionTest, CursorTest, unittest.TestCase):
-    pass
-
-
-class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
-
     def test_fetchmany(self):
         cr = self.cn.cursor()
         cr.execute(self.two_row_query)
@@ -242,3 +234,12 @@ class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
         cr.close()
         with self.assertRaises(self.poque.InterfaceError):
             cr.scroll(0, "absolute")
+
+
+class CursorTestExtension(
+        BaseExtensionTest, CursorTest, unittest.TestCase):
+    pass
+
+
+class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
+    pass

@@ -3,6 +3,7 @@
 
 PyObject *PoqueError;
 PyObject *PoqueInterfaceError;
+PyObject *PoqueInterfaceIndexError;
 PyObject *PoqueWarning;
 
 static PyTypeObject InfoOption;
@@ -10,20 +11,20 @@ static PyTypeObject InfoOption;
 
 static int
 fill_info_option_char(PyObject *option, Py_ssize_t i, char *val) {
-	PyObject *value;
+    PyObject *value;
 
-	if (val == NULL) {
-		value = Py_None;
-		Py_INCREF(Py_None);
-	}
-	else {
-		value = PyUnicode_FromString(val);
-		if (value == NULL) {
-			return -1;
-		}
-	}
-	PyStructSequence_SET_ITEM(option, i, value);
-	return 0;
+    if (val == NULL) {
+        value = Py_None;
+        Py_INCREF(Py_None);
+    }
+    else {
+        value = PyUnicode_FromString(val);
+        if (value == NULL) {
+            return -1;
+        }
+    }
+    PyStructSequence_SET_ITEM(option, i, value);
+    return 0;
 }
 
 
@@ -37,24 +38,24 @@ Poque_info_options(PQconninfoOption *options) {
         return NULL;
 
     for (i = 0; options[i].keyword; i++) {
-    	option = PyStructSequence_New(&InfoOption);
-    	if (option == NULL) {
-    		goto error;
-    	}
-    	if (fill_info_option_char(option, 0, options[i].envvar) < 0)
-    		goto error;
-    	if (fill_info_option_char(option, 1, options[i].compiled) < 0)
-    		goto error;
-    	if (fill_info_option_char(option, 2, options[i].val) < 0)
-    		goto error;
-    	if (fill_info_option_char(option, 3, options[i].label) < 0)
-    		goto error;
-    	if (fill_info_option_char(option, 4, options[i].dispchar) < 0)
-    		goto error;
-    	value = PyLong_FromLong(options[i].dispsize);
-    	if (value == NULL)
-    		goto error;
-    	PyStructSequence_SET_ITEM(option, 5, value);
+        option = PyStructSequence_New(&InfoOption);
+        if (option == NULL) {
+            goto error;
+        }
+        if (fill_info_option_char(option, 0, options[i].envvar) < 0)
+            goto error;
+        if (fill_info_option_char(option, 1, options[i].compiled) < 0)
+            goto error;
+        if (fill_info_option_char(option, 2, options[i].val) < 0)
+            goto error;
+        if (fill_info_option_char(option, 3, options[i].label) < 0)
+            goto error;
+        if (fill_info_option_char(option, 4, options[i].dispchar) < 0)
+            goto error;
+        value = PyLong_FromLong(options[i].dispsize);
+        if (value == NULL)
+            goto error;
+        PyStructSequence_SET_ITEM(option, 5, value);
         if (PyDict_SetItemString(info, options[i].keyword, option) == -1) {
             goto error;
         }
@@ -64,7 +65,7 @@ Poque_info_options(PQconninfoOption *options) {
 
 //
 //
-//    	PyStructSequence_SetItem()
+//        PyStructSequence_SetItem()
 //        values = Py_BuildValue("sssssi",
 //            options[i].envvar,
 //            options[i].compiled,
@@ -180,23 +181,23 @@ static struct PyModuleDef poque_module = {
 
 static int
 create_info_option(void) {
-	PyStructSequence_Field fields[] = {
-		{"envvar", NULL},
-		{"compiled", NULL},
-		{"val", NULL},
-		{"label", NULL},
-		{"dispchar", NULL},
-		{"dispsize", NULL},
-		{NULL}
-	};
-	PyStructSequence_Desc desc = {
-		"poque.InfoOption",		/* name */
-		NULL,					/* doc */
-		fields,					/* fields */
-		6
-	};
+    PyStructSequence_Field fields[] = {
+        {"envvar", NULL},
+        {"compiled", NULL},
+        {"val", NULL},
+        {"label", NULL},
+        {"dispchar", NULL},
+        {"dispsize", NULL},
+        {NULL}
+    };
+    PyStructSequence_Desc desc = {
+        "poque.InfoOption",        /* name */
+        NULL,                    /* doc */
+        fields,                    /* fields */
+        6
+    };
 
-	return PyStructSequence_InitType2(&InfoOption, &desc);
+    return PyStructSequence_InitType2(&InfoOption, &desc);
 }
 
 
@@ -204,10 +205,11 @@ PyMODINIT_FUNC
 PyInit__poque(void)
 {
     PyObject *m;
+    PyObject *tmp;
 
     /* create InfoOption type */
     if (create_info_option() < 0)
-    	return NULL;
+        return NULL;
 
     /* create the actual module */
     m = PyModule_Create(&poque_module);
@@ -227,6 +229,16 @@ PyInit__poque(void)
     PoqueInterfaceError = PyErr_NewException("poque.InterfaceError", PoqueError, NULL);
     Py_INCREF(PoqueInterfaceError);
     PyModule_AddObject(m, "InterfaceError", PoqueInterfaceError);
+
+    /* add error to module */
+    tmp = Py_BuildValue("OO", PyExc_IndexError, PoqueInterfaceError);
+    if (tmp == NULL) {
+        return NULL;
+    }
+    PoqueInterfaceIndexError = PyErr_NewException("poque.InterfaceIndexError", tmp, NULL);
+    Py_DECREF(tmp);
+    Py_INCREF(PoqueInterfaceIndexError);
+    PyModule_AddObject(m, "InterfaceIndexError", PoqueInterfaceIndexError);
 
     /* boilerplate type initialization */
     PoqueConnType.tp_new = PyType_GenericNew;
