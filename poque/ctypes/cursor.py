@@ -121,6 +121,8 @@ class Cursor():
         return ret
 
     def __length_hint__(self):
+        # called when cursor is used as list constructor argument for
+        # efficient list allocation
         res = self._res
         if res is None:
             return 0

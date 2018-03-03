@@ -286,32 +286,33 @@ PoqueCursor_rowcount(PoqueCursor *self, void *val) {
 static int
 PoqueCursor_CheckFetch(PoqueCursor *self) {
     PoqueResult *result;
+    int nfields;
 
     result = self->result;
     if (result == NULL) {
         PyErr_SetString(PoqueInterfaceError, "Invalid cursor state");
         return -1;
     }
-    if (PQnfields(result->result) == 0) {
+    nfields = PQnfields(result->result);
+    if (nfields == 0) {
         PyErr_SetString(PoqueInterfaceError, "No result set");
         return -1;
     }
-    return 0;
+    return nfields;
 }
 
 
 static PyObject *
-_PoqueCursor_FetchOne(PoqueCursor *self) {
+_PoqueCursor_FetchOne(PoqueCursor *self, int n) {
     PoqueResult *result;
     int pos;
 
     result = self->result;
     pos = self->pos;
     if (pos < PQntuples(result->result)) {
-        int i, n;
+        int i;
         PyObject *row;
 
-        n = PQnfields(result->result);
         row = PyTuple_New(n);
         if (row == NULL) {
             return NULL;
@@ -334,19 +335,23 @@ _PoqueCursor_FetchOne(PoqueCursor *self) {
 
 static PyObject *
 PoqueCursor_FetchOne(PoqueCursor *self, PyObject *unused) {
-    if (PoqueCursor_CheckFetch(self) == -1) {
+	int nfields;
+
+	nfields = PoqueCursor_CheckFetch(self);
+    if (nfields == -1) {
         return NULL;
     }
-    return _PoqueCursor_FetchOne(self);
+    return _PoqueCursor_FetchOne(self, nfields);
 }
 
 
 static PyObject *
 PoqueCursor_FetchAll(PoqueCursor *self, PyObject *unused) {
-    int i, n;
+    int i, n, nfields;
     PyObject *rows;
 
-    if (PoqueCursor_CheckFetch(self) == -1) {
+    nfields = PoqueCursor_CheckFetch(self);
+    if (nfields == -1) {
         return NULL;
     }
     n = PQntuples(self->result->result) - self->pos;
@@ -356,7 +361,7 @@ PoqueCursor_FetchAll(PoqueCursor *self, PyObject *unused) {
     }
     for (i = 0; i < n; i++) {
         PyObject *row;
-        row = _PoqueCursor_FetchOne(self);
+        row = _PoqueCursor_FetchOne(self, nfields);
         if (row == NULL) {
             Py_DECREF(rows);
             return row;
@@ -364,6 +369,28 @@ PoqueCursor_FetchAll(PoqueCursor *self, PyObject *unused) {
         PyList_SET_ITEM(rows, i, row);
     }
     return rows;
+}
+
+
+static PyObject *
+PoqueCursor_iter(PyObject *self)
+{
+    Py_INCREF(self);
+    return self;
+}
+
+
+static PyObject *
+PoqueCursor_iternext(PoqueCursor *self)
+{
+	PyObject *row;
+
+	row = PoqueCursor_FetchOne(self, NULL);
+	if (row == Py_None) {
+		Py_DECREF(Py_None);
+		return NULL;
+	}
+	return row;
 }
 
 
@@ -493,8 +520,8 @@ PyTypeObject PoqueCursorType = {
     0,                                          /* tp_clear */
     0,                                          /* tp_richcompare */
     offsetof(PoqueCursor, wr_list),             /* tp_weaklistoffset */
-    0,                                          /* tp_iter */
-    0,                                          /* tp_iternext */
+    PoqueCursor_iter,                           /* tp_iter */
+    (iternextfunc)PoqueCursor_iternext,         /* tp_iternext */
     Cursor_methods,                             /* tp_methods */
     Cursor_members,                             /* tp_members */
     Cursor_getset,                              /* tp_getset */

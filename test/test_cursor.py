@@ -166,6 +166,23 @@ class CursorTest():
         with self.assertRaises(self.poque.InterfaceError):
             cr.rowcount
 
+    def test_iter(self):
+        cr = self.cn.cursor()
+        cr.execute(self.two_row_query)
+        self.assertEqual(list(cr), [
+            (1, 'hello', Decimal('2.3'), Decimal('4.7')),
+            (2, 'hi', Decimal('6.32'), Decimal('5.7')),
+        ])
+        cr.execute(self.two_row_query)
+        it = (r for r in cr)
+        self.assertEqual(next(it),
+                         (1, 'hello', Decimal('2.3'), Decimal('4.7')))
+        cr.close()
+        with self.assertRaises(self.poque.InterfaceError):
+            next(it)
+        with self.assertRaises(self.poque.InterfaceError):
+            list(cr)
+
 
 class CursorTestExtension(
         BaseExtensionTest, CursorTest, unittest.TestCase):
@@ -173,22 +190,6 @@ class CursorTestExtension(
 
 
 class CursorTestCtypes(BaseCTypesTest, CursorTest, unittest.TestCase):
-
-    def test_iter(self):
-        cr = self.cn.cursor()
-        cr.execute(self.two_row_query)
-        self.assertEqual([r for r in cr], [
-            (1, 'hello', Decimal('2.3'), Decimal('4.7')),
-            (2, 'hi', Decimal('6.32'), Decimal('5.7')),
-        ])
-        cr.execute(self.two_row_query)
-        it = (r for r in cr)
-        next(it)
-        cr.close()
-        with self.assertRaises(self.poque.InterfaceError):
-            next(it)
-        with self.assertRaises(self.poque.InterfaceError):
-            list(cr)
 
     def test_fetchmany(self):
         cr = self.cn.cursor()
