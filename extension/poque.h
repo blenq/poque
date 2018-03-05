@@ -5,6 +5,7 @@
 #include <libpq-fe.h>
 #include <structmember.h>
 
+
 #ifdef __GNUC__
 #pragma GCC visibility push(hidden)
 #endif
@@ -43,12 +44,28 @@ typedef struct {
 typedef signed short poque_int16;
 typedef unsigned short poque_uint16;
 
+typedef struct _ValueCursor ValueCursor;
+
+typedef PyObject *(*pq_read)(ValueCursor *crs);
+
+pq_read get_read_func(Oid oid, int format, Oid *el_oid);
+
+typedef struct _ResultValueReader {
+	pq_read read_func;
+	Oid el_oid;
+} ResultValueReader;
+
 typedef struct PoqueResult {
     PyObject_HEAD
     PGresult *result;
     PyObject *wr_list;
     PoqueConn *conn;
+    ResultValueReader *readers;
 } PoqueResult;
+
+PyObject *
+read_value(char *data, int len, pq_read read_func, Oid el_oid,
+           PoqueResult *result);
 
 
 extern PyObject *PoqueError;

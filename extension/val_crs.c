@@ -1,37 +1,16 @@
 #include "val_crs.h"
 
-void
-crs_init(ValueCursor *crs, char *data, int len, Oid el_oid, PoqueResult *result)
-{
-    crs->data = data;
-    crs->len = len;
-    crs->idx = 0;
-    crs->el_oid = el_oid;
-    crs->result = result;
-}
-
 
 char *
 crs_advance(ValueCursor *crs, int len) {
     char *data;
 
-    data = crs->data + crs->idx;
-
-	if (crs->idx + len > crs->len) {
+	if (crs->idx > crs->len - len) {
 		PyErr_SetString(PoqueError, "Item length exceeds data length");
 		return NULL;
 	}
-	crs->idx += len;
-    return data;
-}
-
-
-char *
-crs_advance_end(ValueCursor *crs) {
-    char *data;
-
     data = crs->data + crs->idx;
-	crs->idx = crs->len;
+	crs->idx += len;
     return data;
 }
 
@@ -72,8 +51,8 @@ crs_read_uint32(ValueCursor *crs, PY_UINT32_T *value)
     if (data == NULL)
         return -1;
 
-    *value = ((PY_UINT32_T)data[0] << 24) | ((PY_UINT32_T)data[1] << 16) |
-             ((PY_UINT32_T)data[2] << 8) | data[3];
+    *value = ((PY_UINT32_T)data[0] << 24) | (data[1] << 16) |
+             (data[2] << 8) | data[3];
 
     return 0;
 }

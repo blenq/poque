@@ -4,8 +4,6 @@
 #include "poque.h"
 #include "val_crs.h"
 
-typedef PyObject *(*pq_read)(ValueCursor *crs);
-
 typedef struct _poqueTypeEntry {
     Oid oid;
     pq_read binval;

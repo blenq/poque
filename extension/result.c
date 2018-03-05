@@ -1,5 +1,5 @@
 #include "poque.h"
-
+#include "val_crs.h"
 
 /* ===== PoqueValue ========================================================= */
 
@@ -110,6 +110,7 @@ PoqueValue_New(PoqueResult *result, char *data, int len)
 PoqueResult *
 PoqueResult_New(PGresult *res, PoqueConn *conn) {
     PoqueResult *result;
+    int nfields;
 
     result = PyObject_New(PoqueResult, &PoqueResultType);
     if (result == NULL) {
@@ -119,6 +120,24 @@ PoqueResult_New(PGresult *res, PoqueConn *conn) {
     result->wr_list = NULL;
     Py_INCREF(conn);
     result->conn = conn;
+
+    nfields = PQnfields(res);
+	result->readers = NULL;
+    if (nfields) {
+    	ResultValueReader *readers;
+    	int i;
+
+    	readers = PyMem_Malloc(nfields * sizeof(ResultValueReader));
+    	if (readers == NULL) {
+    		Py_DECREF(result);
+    		return NULL;
+    	}
+    	for (i = 0; i < nfields; i++) {
+    		readers[i].read_func = get_read_func(
+    			PQftype(res, i), PQfformat(res, i), &readers[i].el_oid);
+    	}
+    	result->readers = readers;
+    }
     return result;
 }
 
@@ -346,13 +365,19 @@ Result_getlength(PoqueResult *self, PyObject *args, PyObject *kwds) {
 PyObject *
 _Result_value(PoqueResult *self, int row, int column)
 {
+    ResultValueReader *reader;
+
     if (PQgetisnull(self->result, row, column))
         Py_RETURN_NONE;
-    return Poque_value(self,
-                       PQftype(self->result, column),
-                       PQfformat(self->result, column),
-                       PQgetvalue(self->result, row, column),
-                       PQgetlength(self->result, row, column));
+
+    reader = self->readers + column;
+
+	return read_value(PQgetvalue(self->result, row, column),
+					  PQgetlength(self->result, row, column),
+					  reader->read_func,
+					  reader->el_oid,
+					  self);
+
 }
 
 

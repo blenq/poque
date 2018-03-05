@@ -505,11 +505,7 @@ pyobj_long_attr(PyObject *mod, const char *attr, long *value) {
 }
 
 
-static pq_read
-get_read_func(Oid oid, int format, Oid *el_oid);
-
-
-static PyObject *
+PyObject *
 read_value(char *data, int len, pq_read read_func, Oid el_oid,
            PoqueResult *result)
 {
@@ -732,7 +728,7 @@ tid_strval(ValueCursor *crs)
     if (pend != crs_end(crs) - 1)
         PyErr_SetString(PoqueError, "Invalid tid value");
     *(crs_end(crs) - 1) = ')';
-    crs_advance_end(crs);
+    (crs)->idx = (crs)->len;
     if (bl_num == NULL) {
         Py_DECREF(tid);
         return NULL;
@@ -748,10 +744,12 @@ json_val(ValueCursor *crs)
 {
     PyObject *ret;
     int remaining;
+    char *data;
 
     remaining = crs_remaining(crs);
+    data = crs_advance_end(crs);
     ret = PyObject_CallFunction(
-            json_loads, "s#", crs_advance_end(crs), remaining);
+            json_loads, "s#", data, remaining);
     return ret;
 }
 
@@ -1019,8 +1017,9 @@ init_type_map(void) {
 }
 
 
-static pq_read
-get_read_func(Oid oid, int format, Oid *el_oid) {
+pq_read
+get_read_func(Oid oid, int format, Oid *el_oid)
+{
     size_t idx;
     PoqueTypeEntry *entry;
 
@@ -1036,18 +1035,4 @@ get_read_func(Oid oid, int format, Oid *el_oid) {
         }
     }
     return format ? bytea_binval : text_val;
-}
-
-
-PyObject *
-Poque_value(PoqueResult *result, Oid oid, int format, char *data, int len) {
-    pq_read read_func;
-    Oid el_oid = InvalidOid;
-
-    read_func = get_read_func(oid, format, &el_oid);
-    if (read_func == NULL) {
-        return NULL;
-    }
-
-    return read_value(data, len, read_func, el_oid, result);
 }

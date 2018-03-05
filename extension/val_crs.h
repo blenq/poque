@@ -3,13 +3,19 @@
 
 #include "poque.h"
 
-typedef struct {
+typedef struct _ValueCursor {
     char *data;
     int len;
     int idx;
     Oid el_oid;
     PoqueResult *result;
 } ValueCursor;
+
+#define crs_init(crs, d, l, e, r) (crs)->data = (d);\
+    (crs)->len = (l);\
+    (crs)->idx = 0;\
+    (crs)->el_oid = (e);\
+    (crs)->result = (r)
 
 
 #define crs_at_end(crs)	((crs)->len == (crs)->idx)
@@ -18,10 +24,10 @@ typedef struct {
 #define crs_remaining(crs) (crs)->len - (crs)->idx
 #define crs_el_oid(crs) (crs)->el_oid
 
-void crs_init(ValueCursor *crs, char *data, int len, Oid el_oid,
-              PoqueResult *result);
+#define crs_advance_end(crs) ((crs)->data + (crs)->idx); (crs)->idx = (crs)->len
+
+
 char * crs_advance(ValueCursor *crs, int len);
-char * crs_advance_end(ValueCursor *crs);
 int crs_read_char(ValueCursor *crs, char *value);
 #define crs_read_uchar(crs, value) crs_read_char(crs, (char *)value)
 int crs_read_uint16(ValueCursor *crs, poque_uint16 *value);

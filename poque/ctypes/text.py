@@ -59,8 +59,8 @@ def get_text_converters():
     return [
         (BPCHAROID, BPCHARARRAYOID, None, read_text),
         (VARCHAROID, VARCHARARRAYOID, None, read_text),
-        (TEXTOID, TEXTARRAYOID, None, read_text),
-        (NAMEOID, NAMEARRAYOID, None, read_text),
+        (TEXTOID, TEXTARRAYOID, read_text, read_text),
+        (NAMEOID, NAMEARRAYOID, read_text, read_text),
         (CSTRINGOID, CSTRINGARRAYOID, None, read_text),
         (CHAROID, CHARARRAYOID, read_bytes, read_bytes),
         (BYTEAOID, BYTEAARRAYOID, read_bytea_text,
