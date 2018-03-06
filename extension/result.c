@@ -22,7 +22,7 @@
 typedef struct {
     PyObject_HEAD
     PyObject *wr_list;
-	PoqueResult *result;
+    PoqueResult *result;
     char *data;
     int len;
 } PoqueValue;
@@ -31,18 +31,18 @@ typedef struct {
 static int
 PoqueValue_GetBuffer(PyObject *exporter, Py_buffer *view, int flags)
 {
-	/* fills in buffer from data pointer */
-	PoqueValue *self;
+    /* fills in buffer from data pointer */
+    PoqueValue *self;
 
-	self = (PoqueValue *)exporter;
-	return PyBuffer_FillInfo(
-			view, exporter, self->data, self->len, 1, flags);
+    self = (PoqueValue *)exporter;
+    return PyBuffer_FillInfo(
+            view, exporter, self->data, self->len, 1, flags);
 }
 
 
 static void
 PoqueValue_dealloc(PoqueValue *self) {
-	/* standard destructor, clear weakrefs, break ref chain and free */
+    /* standard destructor, clear weakrefs, break ref chain and free */
     if (self->wr_list != NULL)
         PyObject_ClearWeakRefs((PyObject *) self);
     Py_DECREF(self->result);
@@ -51,8 +51,8 @@ PoqueValue_dealloc(PoqueValue *self) {
 
 
 static PyBufferProcs PoqueValue_BufProcs = {
-		PoqueValue_GetBuffer,
-		NULL
+        PoqueValue_GetBuffer,
+        NULL
 };
 
 
@@ -89,19 +89,19 @@ PyTypeObject PoqueValueType = {
 static PoqueValue *
 PoqueValue_New(PoqueResult *result, char *data, int len)
 {
-	/* PoqueValue constructor */
-	PoqueValue *value;
+    /* PoqueValue constructor */
+    PoqueValue *value;
 
-	value = PyObject_New(PoqueValue, &PoqueValueType);
-	if (value == NULL) {
-		return NULL;
-	}
+    value = PyObject_New(PoqueValue, &PoqueValueType);
+    if (value == NULL) {
+        return NULL;
+    }
     value->wr_list = NULL;
-	Py_INCREF(result);
-	value->result = result;
-	value->data = data;
-	value->len = len;
-	return value;
+    Py_INCREF(result);
+    value->result = result;
+    value->data = data;
+    value->len = len;
+    return value;
 }
 
 
@@ -122,21 +122,21 @@ PoqueResult_New(PGresult *res, PoqueConn *conn) {
     result->conn = conn;
 
     nfields = PQnfields(res);
-	result->readers = NULL;
+    result->readers = NULL;
     if (nfields) {
-    	ResultValueReader *readers;
-    	int i;
+        ResultValueReader *readers;
+        int i;
 
-    	readers = PyMem_Malloc(nfields * sizeof(ResultValueReader));
-    	if (readers == NULL) {
-    		Py_DECREF(result);
-    		return NULL;
-    	}
-    	for (i = 0; i < nfields; i++) {
-    		readers[i].read_func = get_read_func(
-    			PQftype(res, i), PQfformat(res, i), &readers[i].el_oid);
-    	}
-    	result->readers = readers;
+        readers = PyMem_Malloc(nfields * sizeof(ResultValueReader));
+        if (readers == NULL) {
+            Py_DECREF(result);
+            return NULL;
+        }
+        for (i = 0; i < nfields; i++) {
+            readers[i].read_func = get_read_func(
+                PQftype(res, i), PQfformat(res, i), &readers[i].el_oid);
+        }
+        result->readers = readers;
     }
     return result;
 }
@@ -146,6 +146,9 @@ static void
 Result_dealloc(PoqueResult *self) {
     PQclear(self->result);
     Py_DECREF(self->conn);
+    if (self->readers) {
+        PyMem_Free(self->readers);
+    }
     if (self->wr_list != NULL)
         PyObject_ClearWeakRefs((PyObject *) self);
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -308,17 +311,17 @@ Result_colrow_args(PyObject *args, PyObject *kwds, int *row, int *column)
 PyObject *
 Result_getview(PoqueResult *self, char *data, int len)
 {
-	PyObject *view;
-	PoqueValue *value;
+    PyObject *view;
+    PoqueValue *value;
 
 
-	value = PoqueValue_New(self, data, len);
-	if (value == NULL) {
-		return NULL;
-	}
-	view = PyMemoryView_FromObject((PyObject *)value);
-	Py_DECREF(value);
-	return view;
+    value = PoqueValue_New(self, data, len);
+    if (value == NULL) {
+        return NULL;
+    }
+    view = PyMemoryView_FromObject((PyObject *)value);
+    Py_DECREF(value);
+    return view;
 }
 
 
@@ -372,12 +375,11 @@ _Result_value(PoqueResult *self, int row, int column)
 
     reader = self->readers + column;
 
-	return read_value(PQgetvalue(self->result, row, column),
-					  PQgetlength(self->result, row, column),
-					  reader->read_func,
-					  reader->el_oid,
-					  self);
-
+    return read_value(PQgetvalue(self->result, row, column),
+                      PQgetlength(self->result, row, column),
+                      reader->read_func,
+                      reader->el_oid,
+                      self);
 }
 
 

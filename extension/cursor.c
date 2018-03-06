@@ -7,6 +7,7 @@ typedef struct PoqueCursor {
     PoqueResult *result;
     int arraysize;
     int pos;
+    int ntuples;
 } PoqueCursor;
 
 
@@ -82,6 +83,7 @@ PoqueCursor_execute(PoqueCursor *self, PyObject *args, PyObject *kwds) {
     self->result = result;
     Py_XDECREF(tmp);
     self->pos = 0;
+    self->ntuples = PQntuples(res);
 
     /* and done */
     Py_RETURN_NONE;
@@ -344,7 +346,7 @@ PoqueCursor_FetchOne(PoqueCursor *self, PyObject *unused) {
     if (nfields == -1) {
         return NULL;
     }
-    if (PQntuples(self->result->result) == self->pos) {
+    if (self->ntuples == self->pos) {
         Py_RETURN_NONE;
     }
     return _PoqueCursor_FetchOne(self, nfields);
@@ -630,5 +632,6 @@ PoqueCursor_New(PoqueConn *conn)
     cursor->result = NULL;
     cursor->arraysize = 1;
     cursor->pos = 0;
+    cursor->ntuples = 0;
     return cursor;
 }
