@@ -87,23 +87,22 @@ bytea_fill_fromescape(char *data, char *end, char *dest) {
 
 
 static PyObject *
-bytea_strval(ValueCursor *crs)
+bytea_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     /* converts the textual representation of a bytea value to a Python
      * bytes value
      */
     int bytea_len;
-    char *data, *dest, *end;
+    char *dest, *end;
     PyObject *bytea = NULL;
     int (*fill_func)(char *, char *, char *);
 
-    data = crs_advance_end(crs);
-    end = crs_end(crs);
+    end = data + len;
 
     /* determine number of bytes and parse function based on format */
     if (strncmp(data, "\\x", 2) == 0) {
         /* hexadecimal format */
-        bytea_len = (crs_len(crs) - 2) / 2;
+        bytea_len = (len - 2) / 2;
         fill_func = bytea_fill_fromhex;
     } else {
         /* escape format */
@@ -150,14 +149,9 @@ bytea_strval(ValueCursor *crs)
 
 
 PyObject *
-bytea_binval(ValueCursor* crs)
+bytea_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    char *data;
-    int len;
-
-    len = crs_remaining(crs);
-    data = crs_advance_end(crs);
-    return Result_getview(crs->result, data, len);
+    return Result_getview(result, data, len);
 }
 
 
@@ -215,12 +209,9 @@ new_bytes_param_handler(int num_param) {
 /* ======== pg text types =================================================== */
 
 PyObject *
-text_val(ValueCursor* crs)
+text_val(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    char *data;
-
-    data = crs_advance_end(crs);
-    return PyUnicode_FromStringAndSize(data, crs_len(crs));
+    return PyUnicode_FromStringAndSize(data, len);
 }
 
 
@@ -425,13 +416,13 @@ new_object_param_handler(int num_params) {
 /* ======== pg char type ==================================================== */
 
 static PyObject *
-char_binval(ValueCursor* crs)
+char_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    char data;
-
-    if (crs_read_char(crs, &data) < 0)
+	if (len != 1) {
+        PyErr_SetString(PoqueError, "Invalid char value");
         return NULL;
-    return PyBytes_FromStringAndSize(&data, 1);
+	}
+    return PyBytes_FromStringAndSize(data, 1);
 }
 
 

@@ -2,13 +2,16 @@
 
 
 static int
-add_float_to_tuple(PyObject *tup, ValueCursor *crs, int idx)
+add_float_to_tuple(PyObject *tup, char *data, int idx)
 {
     double val;
     PyObject *float_val;
 
-    if (crs_read_double(crs, &val) < 0)
+    val = _PyFloat_Unpack8((unsigned char *)data, 0);
+    if (val == -1.0 && PyErr_Occurred()) {
         return -1;
+    }
+
     float_val = PyFloat_FromDouble(val);
     if (float_val == NULL) {
         return -1;
@@ -19,15 +22,20 @@ add_float_to_tuple(PyObject *tup, ValueCursor *crs, int idx)
 
 
 static PyObject *
-float_tuple_binval(ValueCursor *crs, int len) {
+float_tuple_binval(char *data, int len, int n) {
     PyObject *tup;
     int i;
 
-    tup = PyTuple_New(len);
+    if (len != 8 * n) {
+        PyErr_SetString(PoqueError, "Invalid geometric value");
+        return NULL;
+    }
+
+    tup = PyTuple_New(n);
     if (tup == NULL)
         return NULL;
-    for (i=0; i < len; i++) {
-        if (add_float_to_tuple(tup, crs, i) < 0) {
+    for (i=0; i < n; i++) {
+        if (add_float_to_tuple(tup, data + 8 * i, i) < 0) {
             Py_DECREF(tup);
             return NULL;
         }
@@ -36,28 +44,35 @@ float_tuple_binval(ValueCursor *crs, int len) {
 }
 
 static PyObject *
-point_binval(ValueCursor *crs) {
-    return float_tuple_binval(crs, 2);
+point_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+    return float_tuple_binval(data, len, 2);
 }
 
 
 static PyObject *
-line_binval(ValueCursor *crs) {
-    return float_tuple_binval(crs, 3);
+line_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+    return float_tuple_binval(data, len, 3);
 }
 
 
 static PyObject *
-lseg_binval(ValueCursor *crs)
+lseg_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PyObject *point, *lseg;
     int i;
+
+    if (len != 32) {
+        PyErr_SetString(PoqueError, "Invalid lseg value");
+        return NULL;
+    }
 
     lseg = PyTuple_New(2);
     if (lseg == NULL)
         return NULL;
     for (i = 0; i < 2; i++) {
-        point = float_tuple_binval(crs, 2);
+        point = float_tuple_binval(data + 16 * i, 16, 2);
         if (point == NULL) {
             Py_DECREF(lseg);
             return NULL;
@@ -69,22 +84,35 @@ lseg_binval(ValueCursor *crs)
 
 
 static PyObject *
-polygon_binval(ValueCursor *crs) {
+polygon_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
     PyObject *points;
     PY_INT32_T npoints, i;
 
-    if (crs_read_int32(crs, &npoints) < 0) {
+    if (len < 4) {
+        PyErr_SetString(PoqueError, "Invalid polygon value");
         return NULL;
     }
+
+    npoints = read_int32(data);
     if (npoints < 0) {
         PyErr_SetString(PoqueError, "Path length can not be less than zero");
         return NULL;
     }
+    if (len != 4 + npoints * 16) {
+        PyErr_SetString(PoqueError, "Invalid polygon value");
+        return NULL;
+    }
+
     points = PyList_New(npoints);
+    if (points == NULL) {
+        return NULL;
+    }
+    data += 4;
     for (i = 0; i < npoints; i++) {
         PyObject *point;
 
-        point = point_binval(crs);
+        point = point_binval(result, data + i * 16, 16, el_oid);
         if (point == NULL) {
             Py_DECREF(points);
             return NULL;
@@ -96,16 +124,17 @@ polygon_binval(ValueCursor *crs) {
 
 
 static PyObject *
-path_binval(ValueCursor *crs)
+path_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PyObject *path, *points, *closed;
-    char data;
 
-    if (crs_read_char(crs, &data) < 0)
+    if (len == 0) {
+        PyErr_SetString(PoqueError, "Invalid path value");
         return NULL;
-    closed = PyBool_FromLong(data);
+    }
+    closed = PyBool_FromLong(data[0]);
 
-    points = polygon_binval(crs);
+    points = polygon_binval(result, data + 1, len -1, el_oid);
     if (points == NULL) {
         Py_DECREF(closed);
         return NULL;
@@ -129,20 +158,26 @@ path_binval(ValueCursor *crs)
 
 
 static PyObject *
-circle_binval(ValueCursor *crs) {
+circle_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
     PyObject *circle, *center;
+
+    if (len != 24) {
+        PyErr_SetString(PoqueError, "Invalid circle value");
+        return NULL;
+    }
 
     circle = PyTuple_New(2);
     if (circle == NULL) {
         return NULL;
     }
-    center = point_binval(crs);
+    center = point_binval(result, data, 16, el_oid);
     if (center == NULL) {
         Py_DECREF(circle);
         return NULL;
     }
     PyTuple_SET_ITEM(circle, 0, center);
-    if (add_float_to_tuple(circle, crs, 1) < 0) {
+    if (add_float_to_tuple(circle, data + 16, 1) < 0) {
         Py_DECREF(circle);
         return NULL;
     }

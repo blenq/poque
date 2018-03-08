@@ -275,57 +275,59 @@ new_int_param_handler(int num_params) {
 
 
 static PyObject *
-int16_binval(ValueCursor *crs)
+int16_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    poque_int16 value;
-    if (crs_read_int16(crs, &value) < 0)
+	if (len != 2) {
+        PyErr_SetString(PoqueError, "Invalid int4 value");
         return NULL;
-    return PyLong_FromLong(value);
+	}
+    return PyLong_FromLong(read_int16(data));
 }
 
 
 static PyObject *
-uint32_binval(ValueCursor *crs)
+uint32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    PY_UINT32_T value;
-    if (crs_read_uint32(crs, &value) < 0)
+	if (len != 4) {
+        PyErr_SetString(PoqueError, "Invalid uint4 value");
         return NULL;
-    return PyLong_FromLongLong(value);
+	}
+    return PyLong_FromLongLong(read_uint32(data));
 }
 
 
 static PyObject *
-int32_binval(ValueCursor *crs)
+int32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    PY_INT32_T value;
-    if (crs_read_int32(crs, &value) < 0)
+	if (len != 4) {
+        PyErr_SetString(PoqueError, "Invalid int4 value");
         return NULL;
-    return PyLong_FromLong(value);
+	}
+    return PyLong_FromLong(read_int32(data));
 }
 
 
 static PyObject *
-int64_binval(ValueCursor *crs)
+int64_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    PY_INT64_T value;
-
-    if (crs_read_int64(crs, &value) < 0)
+	if (len != 8) {
+        PyErr_SetString(PoqueError, "Invalid int4 value");
         return NULL;
-    return PyLong_FromLongLong((PY_INT64_T)value);
+	}
+    return PyLong_FromLong(read_int64(data));
 }
 
 
 static PyObject *
-int_strval(ValueCursor *crs)
+int_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    char *data, *pend;
+    char *pend;
     PyObject *value;
 
-    data = crs_advance_end(crs);
-
     value = PyLong_FromString(data, &pend, 10);
-    if (value != NULL && pend != crs_end(crs)) {
+    if (value != NULL && pend != data + len) {
         PyErr_SetString(PoqueError, "Invalid value for text integer value");
+        Py_DECREF(value);
         return NULL;
     }
     return value;
@@ -333,22 +335,24 @@ int_strval(ValueCursor *crs)
 
 
 static PyObject *
-bool_binval(ValueCursor *crs) {
-    char data;
-
-    if (crs_read_char(crs, &data) < 0)
-    	return NULL;
-    return PyBool_FromLong(data);
+bool_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+	if (len != 1) {
+        PyErr_SetString(PoqueError, "Invalid bool value");
+        return NULL;
+	}
+    return PyBool_FromLong(*data);
 }
 
 
 static PyObject *
-bool_strval(ValueCursor *crs) {
-    char data;
-
-    if (crs_read_char(crs, &data) < 0)
-    	return NULL;
-    return PyBool_FromLong(data == 't');
+bool_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+	if (len != 1) {
+        PyErr_SetString(PoqueError, "Invalid bool value");
+        return NULL;
+	}
+    return PyBool_FromLong(*data == 't');
 }
 
 
@@ -385,37 +389,52 @@ new_bool_param_handler(int num_param) {
 
 
 static PyObject *
-float64_binval(ValueCursor *crs)
+float64_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     double val;
-    if (crs_read_double(crs, &val) < 0)
+
+    if (len != 8) {
+        PyErr_SetString(PoqueError, "Invalid float8 value");
         return NULL;
+	}
+
+    val = _PyFloat_Unpack8((unsigned char *)data, 0);
+    if (val == -1.0 && PyErr_Occurred()) {
+        return NULL;
+    }
     return PyFloat_FromDouble(val);
 }
 
 
 static PyObject *
-float32_binval(ValueCursor *crs)
+float32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
 	double val;
-	if (crs_read_float(crs, &val) < 0)
-		return NULL;
+
+	if (len != 4) {
+        PyErr_SetString(PoqueError, "Invalid float8 value");
+        return NULL;
+	}
+
+	val = _PyFloat_Unpack4((unsigned char *)data, 0);
+    if (val == -1.0 && PyErr_Occurred()) {
+        return NULL;
+    }
 	return PyFloat_FromDouble(val);
 }
 
 
 static PyObject *
-float_strval(ValueCursor *crs)
+float_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
 	double val;
-	char *data, *pend;
+	char *pend;
 
-	data = crs_advance_end(crs);
 	errno = 0;
 	val = PyOS_string_to_double(data, &pend, PoqueError);
 	if (val == -1.0 && PyErr_Occurred())
 		return NULL;
-	if (pend != crs_end(crs)) {
+	if (pend != data + len) {
 		PyErr_SetString(PoqueError, "Invalid floating point value");
 		return NULL;
 	}
@@ -748,12 +767,10 @@ new_decimal_param_handler(int num_params) {
 static PyObject *PyDecimal;
 
 static PyObject *
-numeric_strval(ValueCursor *crs) {
+numeric_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
     /* Create a Decimal from a text value */
-    char *data;
-
-    data = crs_advance_end(crs);
-    return PyObject_CallFunction(PyDecimal, "s#", data, crs_len(crs));
+     return PyObject_CallFunction(PyDecimal, "s#", data, len);
 }
 
 
@@ -773,7 +790,8 @@ numeric_set_digit(PyObject *digit_tuple, int val, Py_ssize_t idx) {
 
 
 static PyObject *
-numeric_binval(ValueCursor *crs) {
+numeric_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
     /* Create a Decimal from a pg numeric binary value
      *
      * PG numerics are not entirely the same as Python decimals, but they are
@@ -799,15 +817,19 @@ numeric_binval(ValueCursor *crs) {
     PyObject *digits, *ret=NULL, *zero=NULL;
     Py_ssize_t ndigits, j, i;
 
+    if (len < 8) {
+        PyErr_SetString(PoqueError, "Invalid numeric value");
+        return NULL;
+    }
     /* Get the field values */
-    if (crs_read_uint16(crs, &npg_digits) < 0)
+    npg_digits = read_uint16(data);
+    if (len != 8 + npg_digits * 2) {
+        PyErr_SetString(PoqueError, "Invalid numeric value");
         return NULL;
-    if (crs_read_int16(crs, &weight) < 0)
-        return NULL;
-    if (crs_read_uint16(crs, &sign) < 0)
-        return NULL;
-    if (crs_read_uint16(crs, &dscale) < 0)
-        return NULL;
+    }
+    weight = read_int16(data + 2);
+    sign = read_uint16(data + 4);
+    dscale = read_uint16(data + 6);
     /* TODO check valid scale like postgres does */
 
     /* Check sign */
@@ -832,13 +854,14 @@ numeric_binval(ValueCursor *crs) {
 
     /* fill the digits from pg digits */
     j = 0;
+    data += 8;
     for (i = 0; i < npg_digits; i++) {
         /* fill from postgres digits. A postgres digit contains 4 decimal
          * digits */
         poque_uint16 pg_digit;
 
-        if (crs_read_uint16(crs, &pg_digit) < 0)
-            goto end;
+        pg_digit = read_uint16(data + i * 2);
+
         if (pg_digit > 9999) {
             PyErr_SetString(PoqueError, "Invalid numeric value");
             goto end;

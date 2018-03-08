@@ -7,26 +7,18 @@ static PyTypeObject *PyUUID_Type;
 
 
 PyObject *
-uuid_binval(ValueCursor *crs)
+uuid_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    char *data;
-
-    data = crs_advance(crs, UUID_LEN);
-    if (data == NULL)
-        return NULL;
     return PyObject_CallFunction(
-        (PyObject *)PyUUID_Type, "sy#", NULL, data, UUID_LEN);
+        (PyObject *)PyUUID_Type, "sy#", NULL, data, len);
 }
 
 
 PyObject *
-uuid_strval(ValueCursor *crs)
+uuid_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    char *data;
-
-    data = crs_advance_end(crs);
     return PyObject_CallFunction(
-        (PyObject *)PyUUID_Type, "s#", data, crs_end(crs) - data);
+        (PyObject *)PyUUID_Type, "s#", data, len);
 }
 
 

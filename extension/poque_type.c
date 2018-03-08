@@ -509,20 +509,21 @@ PyObject *
 read_value(char *data, int len, pq_read read_func, Oid el_oid,
            PoqueResult *result)
 {
-    ValueCursor crs;
-    PyObject *val;
-
-    crs_init(&crs, data, len, el_oid, result);
-    val = read_func(&crs);
-    if (val == NULL)
-        return NULL;
-    if (crs_at_end(&crs)) {
-        return val;
-    }
-    /* read function has not consumed all the data */
-    Py_DECREF(val);
-    PyErr_SetString(PoqueError, "Invalid data format");
-    return NULL;
+	return read_func(result, data, len, el_oid);
+//    ValueCursor crs;
+//    PyObject *val;
+//
+//    crs_init(&crs, data, len, el_oid, result);
+//    val = read_func(&crs);
+//    if (val == NULL)
+//        return NULL;
+//    if (crs_at_end(&crs)) {
+//        return val;
+//    }
+//    /* read function has not consumed all the data */
+//    Py_DECREF(val);
+//    PyErr_SetString(PoqueError, "Invalid data format");
+//    return NULL;
 }
 
 
@@ -591,15 +592,19 @@ get_arr_value(ValueCursor *crs, PY_INT32_T *arraydims, pq_read read_func,
 
 
 PyObject *
-array_binval(ValueCursor *crs) {
+array_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
     unsigned int i;
     PY_UINT32_T dims;
     PY_INT32_T flags, arraydims[7];
     Oid elem_type, sub_elem_type=InvalidOid;
     pq_read read_func;
+    ValueCursor crs;
+    PyObject *val;
+
+    crs_init(&crs, data, len, el_oid, result);
 
     /* get number of dimensions */
-    if (crs_read_uint32(crs, &dims) < 0)
+    if (crs_read_uint32(&crs, &dims) < 0)
         return NULL;
     if (dims > 6) {
         PyErr_SetString(PoqueError, "Number of dimensions exceeded");
@@ -607,7 +612,7 @@ array_binval(ValueCursor *crs) {
     }
 
     /* get flags */
-    if (crs_read_int32(crs, &flags) < 0)
+    if (crs_read_int32(&crs, &flags) < 0)
         return NULL;
     if ((flags & 1) != flags) {
         PyErr_SetString(PoqueError, "Invalid value for array flags");
@@ -615,11 +620,11 @@ array_binval(ValueCursor *crs) {
     }
 
     /* get the element datatype */
-    if (crs_read_uint32(crs, &elem_type) < 0)
+    if (crs_read_uint32(&crs, &elem_type) < 0)
         return NULL;
 
     /* check if element type corresponds with array type */
-    if (elem_type != crs_el_oid(crs)) {
+    if (elem_type != crs_el_oid(&crs)) {
         PyErr_SetString(PoqueError, "Unexpected element type");
         return NULL;
     }
@@ -637,7 +642,7 @@ array_binval(ValueCursor *crs) {
     for (i = 0; i < dims; i++) {
         int arraydim;
 
-        if (crs_read_int32(crs, &arraydim) < 0)
+        if (crs_read_int32(&crs, &arraydim) < 0)
             return NULL;
         if (arraydim < 0) {
             PyErr_SetString(PoqueError, "Negative number of items");
@@ -645,25 +650,39 @@ array_binval(ValueCursor *crs) {
         }
         arraydims[i] = arraydim;
 
-        crs_advance(crs, 4); /* skip lower bounds */
+        crs_advance(&crs, 4); /* skip lower bounds */
     }
     arraydims[i] = -1;  /* terminate dimensions array */
 
     /* actually get the array */
-    return get_arr_value(crs, arraydims, read_func, sub_elem_type);
+    val = get_arr_value(&crs, arraydims, read_func, sub_elem_type);
+    if (val && !crs_at_end(&crs)) {
+		Py_DECREF(val);
+		PyErr_SetString(PoqueError, "Invalid data format");
+		return NULL;
+	}
+    return val;
 }
 
 
 static PyObject *
-tid_binval(ValueCursor *crs)
+tid_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PY_UINT32_T block_num;
     poque_uint16 offset;
     PyObject *tid, *tmp;
+    ValueCursor crs;
 
-    if (crs_read_uint32(crs, &block_num) < 0)
+    if (len != 6) {
+		PyErr_SetString(PoqueError, "Invalid data format");
+		return NULL;
+	}
+
+    crs_init(&crs, data, len, el_oid, result);
+
+    if (crs_read_uint32(&crs, &block_num) < 0)
         return NULL;
-    if (crs_read_uint16(crs, &offset) < 0)
+    if (crs_read_uint16(&crs, &offset) < 0)
         return NULL;
     tid = PyTuple_New(2);
     if (tid == NULL)
@@ -685,51 +704,51 @@ tid_binval(ValueCursor *crs)
 
 
 static PyObject *
-tid_strval(ValueCursor *crs)
+tid_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PyObject *tid, *bl_num;
-    char *dt, *bl_data, *pend;
+    char *pend, *tpos;
 
-    dt = crs_advance(crs, 1);
-    if (dt == NULL)
-        return NULL;
-    if (dt[0] != '(' || dt[crs_len(crs) - 1] != ')') {
+    if (len < 5) {
+		PyErr_SetString(PoqueError, "Invalid data format");
+		return NULL;
+	}
+
+    if (data[0] != '(' || data[len - 1] != ')') {
         PyErr_SetString(PoqueError, "Invalid tid value");
         return NULL;
     }
-    bl_data = dt + 1;
-    while (1) {
-        dt = crs_advance(crs, 1);
-        if (dt == NULL) {
-            PyErr_SetString(PoqueError, "Invalid tid value");
-            return NULL;
-        }
-        if (dt[0] == ',') {
-            break;
-        }
+    tpos = strstr(data, ",");
+    if (tpos == NULL) {
+		PyErr_SetString(PoqueError, "Invalid data format");
+		return NULL;
     }
+    tpos[0] = '\0';
+    data[len - 1] = '\0';
 
     tid = PyTuple_New(2);
     if (tid == NULL)
         return NULL;
 
-    dt[0] = '\0';
-    bl_num = PyLong_FromString(bl_data, &pend, 10);
-    if (pend != dt)
-        PyErr_SetString(PoqueError, "Invalid tid value");
-    dt[0] = ',';
+    bl_num = PyLong_FromString(data + 1, &pend, 10);
     if (bl_num == NULL) {
         Py_DECREF(tid);
         return NULL;
     }
+    if (pend != tpos) {
+		PyErr_SetString(PoqueError, "Invalid data format");
+        Py_DECREF(tid);
+		return NULL;
+    }
     PyTuple_SET_ITEM(tid, 0, bl_num);
-    *(crs_end(crs) - 1) = '\0';
-    bl_num = PyLong_FromString(dt + 1, &pend, 10);
-    if (pend != crs_end(crs) - 1)
-        PyErr_SetString(PoqueError, "Invalid tid value");
-    *(crs_end(crs) - 1) = ')';
-    (crs)->idx = (crs)->len;
+
+    bl_num = PyLong_FromString(tpos + 1, &pend, 10);
     if (bl_num == NULL) {
+        Py_DECREF(tid);
+        return NULL;
+    }
+    if (pend != data + len - 1) {
+        PyErr_SetString(PoqueError, "Invalid tid value");
         Py_DECREF(tid);
         return NULL;
     }
@@ -737,29 +756,22 @@ tid_strval(ValueCursor *crs)
     return tid;
 }
 
+
 static PyObject *json_loads;
 
 static PyObject *
-json_val(ValueCursor *crs)
+json_val(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    PyObject *ret;
-    int remaining;
-    char *data;
-
-    remaining = crs_remaining(crs);
-    data = crs_advance_end(crs);
-    ret = PyObject_CallFunction(
-            json_loads, "s#", data, remaining);
-    return ret;
+    return PyObject_CallFunction(json_loads, "s#", data, len);
 }
 
 
 static PyObject *
-jsonb_bin_val(ValueCursor *crs)
+jsonb_bin_val(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    if (crs_advance(crs, 1)[0] != 1)
+    if (data[0] != 1)
         PyErr_SetString(PoqueError, "Invalid jsonb version");
-    return json_val(crs);
+    return json_val(result, data + 1, len - 1, el_oid);
 }
 
 
@@ -781,8 +793,9 @@ inplace_op(PyObject *(*op)(PyObject *, PyObject *),
 
 
 static PyObject *
-bit_strval(ValueCursor *crs) {
+bit_strval(PoqueResult *result, char *data, int len, Oid el_oid) {
     PyObject *val, *one=NULL;
+    char *end;
 
     /* initialize return value */
     val = PyLong_FromLong(0);
@@ -798,7 +811,8 @@ bit_strval(ValueCursor *crs) {
     }
 
     /* interpret characters as bits */
-    while (!crs_at_end(crs)) {
+    end = data + len;
+    while (data < end) {
         char byte;
 
         /* new bit, shift the return value one bit to make space */
@@ -807,10 +821,7 @@ bit_strval(ValueCursor *crs) {
             goto error;
         }
 
-        /* Get the new bit as character */
-        if (crs_read_char(crs, &byte) < 0) {
-            goto error;
-        }
+        byte = *data;
 
         /* interpret bit */
         if (byte == '1') {
@@ -824,6 +835,7 @@ bit_strval(ValueCursor *crs) {
             PyErr_SetString(PoqueError, "Invalid character in bit string");
             goto error;
         }
+        data++;
     }
     Py_DECREF(one);
     return val;
@@ -836,7 +848,7 @@ error:
 
 
 static PyObject *
-bit_binval(ValueCursor *crs) {
+bit_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
     /* Reads a bitstring as a Python integer
 
     Format:
@@ -844,15 +856,29 @@ bit_binval(ValueCursor *crs) {
        * bytes: All the bits left aligned
 
     */
-    int bit_len, quot, rest, byte_len, i;
+    int bit_len, quot, rest, byte_len;
+    char *end;
     PyObject *val, *eight;
 
     /* first get the number of bits in the bit string */
-    if (crs_read_int32(crs, &bit_len) < 0)
+    if (len < 4) {
+        PyErr_SetString(PoqueError,
+                        "Invalid binary bit string");
         return NULL;
+    }
+    bit_len = read_int32((unsigned char *)data);
     if (bit_len < 0) {
         PyErr_SetString(PoqueError,
                         "Invalid length value in binary bit string");
+        return NULL;
+    }
+
+    quot = bit_len / 8;  /* number of bytes completely filled */
+    rest = bit_len % 8;  /* number of bits in remaining byte */
+    byte_len = quot + (rest > 0); /* total number of data bytes */
+    if (len != byte_len + 4) {
+        PyErr_SetString(PoqueError,
+                        "Invalid binary bit string");
         return NULL;
     }
 
@@ -868,13 +894,10 @@ bit_binval(ValueCursor *crs) {
         return NULL;
     }
 
-    quot = bit_len / 8;  /* number of bytes completely filled */
-    rest = bit_len % 8;  /* number of bits in remaining byte */
-    byte_len = quot + (rest > 0); /* total number of data bytes */
-
     /* add the value byte by byte, python ints have no upper limit, so this
      * works even for bitstrings longer than 64 bits */
-    for (i = 0; i < byte_len; i++) {
+    end = data + len;
+    for (data += 4; data < end; data++) {
         unsigned char byte;
         PyObject *byte_val;
 
@@ -886,9 +909,7 @@ bit_binval(ValueCursor *crs) {
         }
 
         /* read the new byte */
-        if (crs_read_uchar(crs, &byte) < 0) {
-            goto error;
-        }
+        byte = (unsigned char)*data;
         byte_val = PyLong_FromLong(byte);
         if (byte_val == NULL) {
             goto error;

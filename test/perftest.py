@@ -40,10 +40,11 @@ def test_large_result(cr):
     for i in range(100):
         cr.execute("INSERT INTO yo VALUES ({}, 'text{}')".format(i, i))
     ret = datetime.now()
-    cr.execute("SELECT * FROM yo t, yo a, yo f")
-    while True:
-        if cr.fetchone() is None:
-            break
+    for i in range(2):
+        cr.execute("SELECT * FROM yo t, yo a, yo f")
+        while True:
+            if cr.fetchone() is None:
+                break
     return ret
 
 
@@ -63,10 +64,10 @@ def main():
 
     psyco_cr = psyco_conn.cursor()
     poque_cr = poque_conn.cursor()
+    tester(psyco_cr, poque_cr, test_many_queries_int_text_param)
     tester(psyco_cr, poque_cr, test_large_result)
-#     tester(psyco_cr, poque_cr, test_many_queries_int_text_param)
-#     tester(psyco_cr, poque_cr, test_many_queries_int)
-#     tester(psyco_cr, poque_cr, test_many_queries_text)
+    tester(psyco_cr, poque_cr, test_many_queries_int)
+    tester(psyco_cr, poque_cr, test_many_queries_text)
 
 
 if __name__ == '__main__':

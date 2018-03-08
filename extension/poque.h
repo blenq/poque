@@ -46,7 +46,10 @@ typedef unsigned short poque_uint16;
 
 typedef struct _ValueCursor ValueCursor;
 
-typedef PyObject *(*pq_read)(ValueCursor *crs);
+typedef struct PoqueResult PoqueResult;
+
+typedef PyObject *(*pq_read)(
+		 PoqueResult *result, char *data, int len, Oid el_oid);
 
 pq_read get_read_func(Oid oid, int format, Oid *el_oid);
 

@@ -241,14 +241,19 @@ date_vals_from_int(PY_INT32_T jd, int *year, int *month, int *day)
 
 
 static PyObject *
-date_binval(ValueCursor *crs)
+date_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PY_INT32_T jd;
     int year, month, day;
     char *fmt;
+    unsigned char *cr;
 
-    if (crs_read_int32(crs, &jd) < 0)
+	if (len != 4) {
+        PyErr_SetString(PoqueError, "Invalid int4 value");
         return NULL;
+	}
+	cr = (unsigned char *)data;
+    jd = read_int32(cr);
 
     date_vals_from_int(jd, &year, &month, &day);
 
@@ -287,7 +292,7 @@ time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
 
 
 static PyObject *
-_time_binval(ValueCursor *crs, PY_INT64_T value, PyObject *tz)
+_time_binval(PY_INT64_T value, PyObject *tz)
 {
     int hour, minute, second, usec;
 
@@ -299,27 +304,33 @@ _time_binval(ValueCursor *crs, PY_INT64_T value, PyObject *tz)
 
 
 static PyObject *
-time_binval(ValueCursor *crs)
+time_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PY_INT64_T value;
 
-    if (crs_read_int64(crs, &value) < 0)
+	if (len != 8) {
+        PyErr_SetString(PoqueError, "Invalid time value");
         return NULL;
-    return _time_binval(crs, value, Py_None);
+	}
+    value = read_int64(data);
+    return _time_binval(value, Py_None);
 }
 
 
 static PyObject *
-timetz_binval(ValueCursor *crs)
+timetz_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PyObject *tz, *timedelta, *ret, *offset, *tzone;
     PY_INT64_T value;
     int seconds;
 
-    if (crs_read_int64(crs, &value) < 0)
+	if (len != 12) {
+        PyErr_SetString(PoqueError, "Invalid timetz value");
         return NULL;
-    if (crs_read_int32(crs, &seconds) < 0)
-        return NULL;
+	}
+
+	value = read_int64(data);
+	seconds = read_int32(data + 8);
 
     timedelta = load_python_object("datetime", "timedelta");
     if (timedelta == NULL)
@@ -340,22 +351,27 @@ timetz_binval(ValueCursor *crs)
     if (tzone == NULL)
         return NULL;
 
-    ret = _time_binval(crs, value, tzone);
+    ret = _time_binval(value, tzone);
     Py_DECREF(tzone);
     return ret;
 }
 
 
 static PyObject *
-_timestamp_binval(ValueCursor *crs, PyObject *tz)
+_timestamp_binval(char *data, int len, PyObject *tz)
 {
     PY_INT64_T value, time;
     PY_INT32_T date;
     int year, month, day, hour, minute, second, usec;
     char *fmt;
 
-    if (crs_read_int64(crs, &value) < 0)
+	if (len != 8) {
+        PyErr_SetString(PoqueError, "Invalid timestamp value");
         return NULL;
+	}
+
+	value = read_int64(data);
+
     if (value == PY_LLONG_MAX)
         return PyUnicode_FromString("infinity");
     if (value == PY_LLONG_MIN)
@@ -387,32 +403,35 @@ _timestamp_binval(ValueCursor *crs, PyObject *tz)
 
 
 static PyObject *
-timestamp_binval(ValueCursor *crs) {
-    return _timestamp_binval(crs, Py_None);
-}
-
-
-static PyObject *
-timestamptz_binval(ValueCursor *crs)
+timestamp_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    return _timestamp_binval(crs, utc);
+    return _timestamp_binval(data, len, Py_None);
 }
 
 
 static PyObject *
-interval_binval(ValueCursor *crs)
+timestamptz_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+    return _timestamp_binval(data, len, utc);
+}
+
+
+static PyObject *
+interval_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PY_INT64_T secs, usecs;
     PY_INT32_T days, months;
     PyObject *interval, *value;
 
-    if (crs_read_int64(crs, &usecs) < 0)
+	if (len != 16) {
+        PyErr_SetString(PoqueError, "Invalid interval value");
         return NULL;
-    if (crs_read_int32(crs, &days) < 0)
-        return NULL;
-    if (crs_read_int32(crs, &months) < 0)
-        return NULL;
-    interval = PyTuple_New(2);
+	}
+	usecs = read_int64(data);
+	days = read_int32(data + 8);
+	months = read_int32(data + 12);
+
+	interval = PyTuple_New(2);
     if (interval == NULL)
         return NULL;
     value = PyLong_FromLong(months);
@@ -434,13 +453,16 @@ interval_binval(ValueCursor *crs)
 
 
 static PyObject *
-abstime_binval(ValueCursor *crs)
+abstime_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PyObject *abstime, *seconds, *args;
     PY_INT32_T value;
 
-    if (crs_read_int32(crs, &value) < 0)
+    if (len != 4) {
+        PyErr_SetString(PoqueError, "Invalid abstime value");
         return NULL;
+    }
+    value = read_int32(data);
     seconds = PyLong_FromLong(value);
     if (seconds == NULL)
         return NULL;
@@ -457,27 +479,33 @@ abstime_binval(ValueCursor *crs)
 
 
 static PyObject *
-reltime_binval(ValueCursor *crs)
+reltime_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    PY_INT32_T value;
-
-    if (crs_read_int32(crs, &value) < 0)
+    if (len != 4) {
+        PyErr_SetString(PoqueError, "Invalid reltime value");
         return NULL;
-    return PyDelta_FromDSU(0, value, 0);
+    }
+    return PyDelta_FromDSU(0, read_int32(data), 0);
 }
 
 
 static PyObject *
-tinterval_binval(ValueCursor *crs) {
+tinterval_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
     PyObject *tinterval, *abstime;
     int i;
 
-    crs_advance(crs, 4);
+    if (len != 12) {
+        PyErr_SetString(PoqueError, "Invalid tinterval value");
+        return NULL;
+    }
+
+    data += 4;
     tinterval = PyTuple_New(2);
     if (tinterval == NULL)
         return NULL;
     for (i = 0; i < 2; i++) {
-        abstime = abstime_binval(crs);
+        abstime = abstime_binval(result, data + i * 4, 4, el_oid);
         if (abstime == NULL) {
             Py_DECREF(tinterval);
             return NULL;

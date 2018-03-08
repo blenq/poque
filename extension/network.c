@@ -2,28 +2,36 @@
 
 
 static PyObject *
-mac_binval(ValueCursor *crs)
+mac_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     poque_uint16 first;
     PY_UINT32_T second;
 
-    if (crs_read_uint16(crs, &first) < 0)
+    if (len != 6) {
+        PyErr_SetString(PoqueError, "Invalid mac address value");
         return NULL;
-    if (crs_read_uint32(crs, &second) < 0)
-        return NULL;
+    }
+
+    first = read_uint16(data);
+    second = read_uint32(data + 2);
     return PyLong_FromLongLong(((long long)first << 32) | second);
 }
 
 
 static PyObject *
-mac8_binval(ValueCursor *crs)
+mac8_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PY_UINT64_T val;
 
-    if (crs_read_uint64(crs, &val) < 0)
+    if (len != 8) {
+        PyErr_SetString(PoqueError, "Invalid mac8 address value");
         return NULL;
+    }
+
+    val = read_uint64(data);
     return PyLong_FromUnsignedLongLong(val);
 }
+
 
 static PyTypeObject *IPv4Network;
 static PyTypeObject *IPv4Interface;
@@ -40,12 +48,18 @@ static PyTypeObject *IPv6Interface;
 
 
 static PyObject *
-ip_binval(ValueCursor *crs, int cidr, PyTypeObject *v4_cls, PyTypeObject *v6_cls)
+ip_binval(
+    char *data, int len, int cidr, PyTypeObject *v4_cls, PyTypeObject *v6_cls)
 {
     unsigned char *cr;
     int mask, size, is_cidr, family;
 
-    cr = (unsigned char *)crs_advance(crs, 4);
+    if (len < 4) {
+        PyErr_SetString(PoqueError, "Invalid ip value");
+        return NULL;
+    }
+
+    cr = (unsigned char *)data;
     if (cr == NULL)
         return NULL;
     family = cr[0];
@@ -65,10 +79,13 @@ ip_binval(ValueCursor *crs, int cidr, PyTypeObject *v4_cls, PyTypeObject *v6_cls
             return NULL;
         }
 
-        /* get IP4 address as 4 byte integer */
-        if (crs_read_uint32(crs, &addr_data) < 0) {
+        if (len != 8) {
+            PyErr_SetString(PoqueError, "Invalid ip value");
             return NULL;
         }
+
+        /* get IP4 address as 4 byte integer */
+        addr_data = read_uint32(data + 4);
 
         /* instantiate class */
         return PyObject_CallFunction(
@@ -82,8 +99,13 @@ ip_binval(ValueCursor *crs, int cidr, PyTypeObject *v4_cls, PyTypeObject *v6_cls
             return NULL;
         }
 
+        if (len != 20) {
+            PyErr_SetString(PoqueError, "Invalid ip value");
+            return NULL;
+        }
+
         /* get IP6 address as 16 bytes */
-        addr_data = crs_advance(crs, 16);
+        addr_data = data + 4;
         if (addr_data == NULL) {
             return NULL;
         }
@@ -100,16 +122,16 @@ ip_binval(ValueCursor *crs, int cidr, PyTypeObject *v4_cls, PyTypeObject *v6_cls
 
 
 static PyObject *
-inet_binval(ValueCursor *crs)
+inet_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    return ip_binval(crs, 0, IPv4Interface, IPv6Interface);
+    return ip_binval(data, len, 0, IPv4Interface, IPv6Interface);
 }
 
 
 static PyObject *
-cidr_binval(ValueCursor *crs)
+cidr_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
-    return ip_binval(crs, 1, IPv4Network, IPv6Network);
+    return ip_binval(data, len, 1, IPv4Network, IPv6Network);
 }
 
 

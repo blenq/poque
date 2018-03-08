@@ -12,7 +12,7 @@ typedef struct _poqueTypeEntry {
     struct _poqueTypeEntry *next;
 } PoqueTypeEntry;
 
-PyObject *array_binval(ValueCursor *crs);
+PyObject *array_binval(PoqueResult *result, char *data, int len, Oid el_oid);
 PyObject *Result_getview(PoqueResult *self, char *data, int len);
 
 
