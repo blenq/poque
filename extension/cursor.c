@@ -315,10 +315,10 @@ static PyObject *
 _PoqueCursor_FetchOne(PoqueCursor *self, int n) {
     PoqueResult *result;
     int pos, i;
+    PyObject *row;
 
     result = self->result;
     pos = self->pos;
-    PyObject *row;
 
     row = PyTuple_New(n);
     if (row == NULL) {
@@ -341,15 +341,20 @@ _PoqueCursor_FetchOne(PoqueCursor *self, int n) {
 static PyObject *
 PoqueCursor_FetchOne(PoqueCursor *self, PyObject *unused) {
     int nfields;
+    PoqueResult *result;
 
-    nfields = PoqueCursor_CheckFetch(self);
-    if (nfields == -1) {
-        return NULL;
+    result = self->result;
+    if (result != NULL) {
+        nfields = PQnfields(result->result);
+        if (nfields) {
+            if (self->ntuples == self->pos) {
+                Py_RETURN_NONE;
+            }
+            return _PoqueCursor_FetchOne(self, nfields);
+        }
     }
-    if (self->ntuples == self->pos) {
-        Py_RETURN_NONE;
-    }
-    return _PoqueCursor_FetchOne(self, nfields);
+    PoqueCursor_CheckFetch(self);
+    return NULL;
 }
 
 

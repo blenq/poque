@@ -505,31 +505,15 @@ pyobj_long_attr(PyObject *mod, const char *attr, long *value) {
 }
 
 
-PyObject *
-read_value(char *data, int len, pq_read read_func, Oid el_oid,
-           PoqueResult *result)
-{
-	return read_func(result, data, len, el_oid);
-//    ValueCursor crs;
-//    PyObject *val;
-//
-//    crs_init(&crs, data, len, el_oid, result);
-//    val = read_func(&crs);
-//    if (val == NULL)
-//        return NULL;
-//    if (crs_at_end(&crs)) {
-//        return val;
-//    }
-//    /* read function has not consumed all the data */
-//    Py_DECREF(val);
-//    PyErr_SetString(PoqueError, "Invalid data format");
-//    return NULL;
-}
+typedef struct {
+    char *data;
+    int len;
+} data_crs;
 
 
 static PyObject *
-get_arr_value(ValueCursor *crs, PY_INT32_T *arraydims, pq_read read_func,
-              Oid el_oid)
+get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
+              Oid el_oid, PoqueResult *result)
 {
     /* Get multidimensional array as a nested list of item values
      * crs: The data cursor
@@ -542,12 +526,13 @@ get_arr_value(ValueCursor *crs, PY_INT32_T *arraydims, pq_read read_func,
     if (dim == -1) {
         /* At a leaf within the lists tree structure, add actual item */
         PY_INT32_T item_len;
-        char *data;
+        PyObject *val;
 
         /* get item length */
-        if (crs_read_int32(crs, &item_len) < 0) {
-            return NULL;
-        }
+        CHECK_LENGTH_LT(crs->len, 4, "array", NULL);
+        item_len = read_int32(crs->data);
+        ADVANCE_DATA(crs->data, crs->len, 4);
+
         /* -1 indicates NULL value */
         if (item_len == -1)
             Py_RETURN_NONE;
@@ -557,13 +542,10 @@ get_arr_value(ValueCursor *crs, PY_INT32_T *arraydims, pq_read read_func,
             return NULL;
         }
 
-        /* advance cursor past item */
-        data = crs_advance(crs, item_len);
-        if (data == NULL)
-            return NULL;
-
-        /* read the item, this will use its own cursor */
-        return read_value(data, item_len, read_func, el_oid, crs->result);
+        CHECK_LENGTH_LT(crs->len, item_len, "array", NULL);
+        val = read_func(result, crs->data, item_len, el_oid);
+        ADVANCE_DATA(crs->data, crs->len, item_len);
+        return val;
     }
     else {
         /* At a container level, create a list and fill with items
@@ -579,7 +561,8 @@ get_arr_value(ValueCursor *crs, PY_INT32_T *arraydims, pq_read read_func,
 
         /* fill the list with items */
         for (i = 0; i < dim; i++) {
-            new_item = get_arr_value(crs, arraydims + 1, read_func, el_oid);
+            new_item = get_arr_value(
+                crs, arraydims + 1, read_func, el_oid, result);
             if (new_item == NULL) {
                 Py_DECREF(lst);
                 return NULL;
@@ -598,69 +581,68 @@ array_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
     PY_INT32_T flags, arraydims[7];
     Oid elem_type, sub_elem_type=InvalidOid;
     pq_read read_func;
-    ValueCursor crs;
     PyObject *val;
+    data_crs crs;
 
-    crs_init(&crs, data, len, el_oid, result);
+    CHECK_LENGTH_LT(len, 12, "array", NULL);
 
-    /* get number of dimensions */
-    if (crs_read_uint32(&crs, &dims) < 0)
-        return NULL;
+    /* read header values */
+    dims = read_uint32(data);
+    flags = read_int32(data + 4);
+    elem_type = read_uint32(data + 8);
+
+    /* check header values */
     if (dims > 6) {
         PyErr_SetString(PoqueError, "Number of dimensions exceeded");
         return NULL;
     }
-
-    /* get flags */
-    if (crs_read_int32(&crs, &flags) < 0)
-        return NULL;
     if ((flags & 1) != flags) {
         PyErr_SetString(PoqueError, "Invalid value for array flags");
         return NULL;
     }
-
-    /* get the element datatype */
-    if (crs_read_uint32(&crs, &elem_type) < 0)
-        return NULL;
-
-    /* check if element type corresponds with array type */
-    if (elem_type != crs_el_oid(&crs)) {
+    if (elem_type != el_oid) {
         PyErr_SetString(PoqueError, "Unexpected element type");
         return NULL;
     }
 
     /* zero dimension array, just return an empty list */
-    if (dims == 0)
+    if (dims == 0) {
+        CHECK_LENGTH_EQ(len, 12, "array", NULL);
         return PyList_New(0);
+    }
 
     /* find corresponding read function */
     read_func = get_read_func(elem_type, 1, &sub_elem_type);
     if (read_func == NULL)
         return NULL;
 
+    ADVANCE_DATA(data, len, 12);
+    CHECK_LENGTH_LT(len, (int)dims * 8, "array", NULL);
+
     /* fill array with dimension lengths */
     for (i = 0; i < dims; i++) {
         int arraydim;
 
-        if (crs_read_int32(&crs, &arraydim) < 0)
-            return NULL;
+        arraydim = read_int32(data);
         if (arraydim < 0) {
             PyErr_SetString(PoqueError, "Negative number of items");
             return NULL;
         }
         arraydims[i] = arraydim;
-
-        crs_advance(&crs, 4); /* skip lower bounds */
+        ADVANCE_DATA(data, len, 8); /* skip lower bounds */
     }
     arraydims[i] = -1;  /* terminate dimensions array */
 
     /* actually get the array */
-    val = get_arr_value(&crs, arraydims, read_func, sub_elem_type);
-    if (val && !crs_at_end(&crs)) {
-		Py_DECREF(val);
-		PyErr_SetString(PoqueError, "Invalid data format");
-		return NULL;
-	}
+    crs.data = data;
+    crs.len = len;
+    val = get_arr_value(
+        &crs, arraydims, read_func, sub_elem_type, result);
+    if (crs.len != 0) {
+        Py_DECREF(val);
+        PyErr_SetString(PoqueError, "Invalid data format");
+        return NULL;
+    }
     return val;
 }
 
@@ -670,36 +652,16 @@ tid_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PY_UINT32_T block_num;
     poque_uint16 offset;
-    PyObject *tid, *tmp;
-    ValueCursor crs;
 
     if (len != 6) {
-		PyErr_SetString(PoqueError, "Invalid data format");
-		return NULL;
-	}
-
-    crs_init(&crs, data, len, el_oid, result);
-
-    if (crs_read_uint32(&crs, &block_num) < 0)
-        return NULL;
-    if (crs_read_uint16(&crs, &offset) < 0)
-        return NULL;
-    tid = PyTuple_New(2);
-    if (tid == NULL)
-        return NULL;
-    tmp = PyLong_FromLongLong(block_num);
-    if (tmp == NULL) {
-        Py_DECREF(tid);
+        PyErr_SetString(PoqueError, "Invalid data format");
         return NULL;
     }
-    PyTuple_SET_ITEM(tid, 0, tmp);
-    tmp = PyLong_FromLong(offset);
-    if (tmp == NULL) {
-        Py_DECREF(tid);
-        return NULL;
-    }
-    PyTuple_SET_ITEM(tid, 1, tmp);
-    return tid;
+
+    block_num = read_uint32(data);
+    offset = read_uint16(data + 4);
+
+    return Py_BuildValue("IH", block_num, offset);
 }
 
 
@@ -710,9 +672,9 @@ tid_strval(PoqueResult *result, char *data, int len, Oid el_oid)
     char *pend, *tpos;
 
     if (len < 5) {
-		PyErr_SetString(PoqueError, "Invalid data format");
-		return NULL;
-	}
+        PyErr_SetString(PoqueError, "Invalid data format");
+        return NULL;
+    }
 
     if (data[0] != '(' || data[len - 1] != ')') {
         PyErr_SetString(PoqueError, "Invalid tid value");
@@ -720,8 +682,8 @@ tid_strval(PoqueResult *result, char *data, int len, Oid el_oid)
     }
     tpos = strstr(data, ",");
     if (tpos == NULL) {
-		PyErr_SetString(PoqueError, "Invalid data format");
-		return NULL;
+        PyErr_SetString(PoqueError, "Invalid data format");
+        return NULL;
     }
     tpos[0] = '\0';
     data[len - 1] = '\0';
@@ -736,9 +698,9 @@ tid_strval(PoqueResult *result, char *data, int len, Oid el_oid)
         return NULL;
     }
     if (pend != tpos) {
-		PyErr_SetString(PoqueError, "Invalid data format");
+        PyErr_SetString(PoqueError, "Invalid data format");
         Py_DECREF(tid);
-		return NULL;
+        return NULL;
     }
     PyTuple_SET_ITEM(tid, 0, bl_num);
 

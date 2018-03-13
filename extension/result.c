@@ -130,7 +130,7 @@ PoqueResult_New(PGresult *res, PoqueConn *conn) {
         readers = PyMem_Malloc(nfields * sizeof(ResultValueReader));
         if (readers == NULL) {
             Py_DECREF(result);
-            return NULL;
+            return (PoqueResult*)PyErr_NoMemory();
         }
         for (i = 0; i < nfields; i++) {
             readers[i].read_func = get_read_func(
@@ -369,17 +369,17 @@ PyObject *
 _Result_value(PoqueResult *self, int row, int column)
 {
     ResultValueReader *reader;
+    PGresult *res;
 
-    if (PQgetisnull(self->result, row, column))
+    res = self->result;
+    if (PQgetisnull(res, row, column)) {
         Py_RETURN_NONE;
-
+    }
     reader = self->readers + column;
-
-    return read_value(PQgetvalue(self->result, row, column),
-                      PQgetlength(self->result, row, column),
-                      reader->read_func,
-                      reader->el_oid,
-                      self);
+    return reader->read_func(self,
+                             PQgetvalue(res, row, column),
+                             PQgetlength(res, row, column),
+                             reader->el_oid);
 }
 
 
