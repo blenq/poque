@@ -63,7 +63,7 @@ typedef struct PoqueResult {
     PGresult *result;
     PyObject *wr_list;
     PoqueConn *conn;
-    ResultValueReader *readers;
+    ResultValueReader readers[];
 } PoqueResult;
 
 PyObject *

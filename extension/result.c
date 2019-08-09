@@ -110,9 +110,10 @@ PoqueValue_New(PoqueResult *result, char *data, int len)
 PoqueResult *
 PoqueResult_New(PGresult *res, PoqueConn *conn) {
     PoqueResult *result;
-    int nfields;
+    int nfields, i;
 
-    result = PyObject_New(PoqueResult, &PoqueResultType);
+    nfields = PQnfields(res);
+    result = PyObject_NewVar(PoqueResult, &PoqueResultType, nfields);
     if (result == NULL) {
         return NULL;
     }
@@ -121,22 +122,9 @@ PoqueResult_New(PGresult *res, PoqueConn *conn) {
     Py_INCREF(conn);
     result->conn = conn;
 
-    nfields = PQnfields(res);
-    result->readers = NULL;
-    if (nfields) {
-        ResultValueReader *readers;
-        int i;
-
-        readers = PyMem_Malloc(nfields * sizeof(ResultValueReader));
-        if (readers == NULL) {
-            Py_DECREF(result);
-            return (PoqueResult*)PyErr_NoMemory();
-        }
-        for (i = 0; i < nfields; i++) {
-            readers[i].read_func = get_read_func(
-                PQftype(res, i), PQfformat(res, i), &readers[i].el_oid);
-        }
-        result->readers = readers;
+    for (i = 0; i < nfields; i++) {
+        result->readers[i].read_func = get_read_func(
+            PQftype(res, i), PQfformat(res, i), &result->readers[i].el_oid);
     }
     return result;
 }
@@ -146,9 +134,6 @@ static void
 Result_dealloc(PoqueResult *self) {
     PQclear(self->result);
     Py_DECREF(self->conn);
-    if (self->readers) {
-        PyMem_Free(self->readers);
-    }
     if (self->wr_list != NULL)
         PyObject_ClearWeakRefs((PyObject *) self);
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -368,18 +353,20 @@ Result_getlength(PoqueResult *self, PyObject *args, PyObject *kwds) {
 PyObject *
 _Result_value(PoqueResult *self, int row, int column)
 {
-    ResultValueReader *reader;
     PGresult *res;
 
     res = self->result;
     if (PQgetisnull(res, row, column)) {
         Py_RETURN_NONE;
     }
-    reader = self->readers + column;
-    return reader->read_func(self,
-                             PQgetvalue(res, row, column),
-                             PQgetlength(res, row, column),
-                             reader->el_oid);
+    else {
+        ResultValueReader *reader;
+        reader = self->readers + column;
+        return reader->read_func(self,
+                                 PQgetvalue(res, row, column),
+                                 PQgetlength(res, row, column),
+                                 reader->el_oid);
+    }
 }
 
 
@@ -484,8 +471,8 @@ static PyMethodDef Result_methods[] = {{
 PyTypeObject PoqueResultType = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "poque.Result",                             /* tp_name */
-    sizeof(PoqueResult),                       /* tp_basicsize */
-    0,                                          /* tp_itemsize */
+    sizeof(PoqueResult),                        /* tp_basicsize */
+    sizeof(ResultValueReader),                  /* tp_itemsize */
     (destructor)Result_dealloc,                 /* tp_dealloc */
     0,                                          /* tp_print */
     0,                                          /* tp_getattr */
