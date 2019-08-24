@@ -560,9 +560,10 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
             return NULL;
 
         /* fill the list with items */
+        arraydims++;
         for (i = 0; i < dim; i++) {
             new_item = get_arr_value(
-                crs, arraydims + 1, read_func, el_oid, result);
+                crs, arraydims, read_func, el_oid, result);
             if (new_item == NULL) {
                 Py_DECREF(lst);
                 return NULL;

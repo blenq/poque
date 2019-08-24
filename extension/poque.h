@@ -91,6 +91,7 @@ PyObject *Poque_value(PoqueResult *result, Oid oid, int format, char *data,
                       int len);
 
 
+#define FORMAT_AUTO         -1
 #define FORMAT_TEXT         0
 #define FORMAT_BINARY       1
 

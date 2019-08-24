@@ -19,6 +19,29 @@ mac_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
+mac_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+    unsigned int a, b, c, d, e, f;
+    int count;
+
+    if (len != 17) {
+        PyErr_SetString(PoqueError, "Invalid mac address value");
+        return NULL;
+    }
+
+    count = sscanf(data, "%2x:%2x:%2x:%2x:%2x:%2x", &a, &b, &c, &d, &e, &f);
+    if (count != 6) {
+        PyErr_SetString(PoqueError, "Invalid mac address value");
+        return NULL;
+    }
+    return PyLong_FromUnsignedLongLong(
+        (unsigned long long)a << 40 | (unsigned long long)b << 32 | c << 24 |
+		 d << 16 | e << 8 | f
+	);
+}
+
+
+static PyObject *
 mac8_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 {
     PY_UINT64_T val;
@@ -32,6 +55,31 @@ mac8_binval(PoqueResult *result, char *data, int len, Oid el_oid)
     return PyLong_FromUnsignedLongLong(val);
 }
 
+
+static PyObject *
+mac8_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+    unsigned int a, b, c, d, e, f, g, h;
+    int count;
+
+    if (len != 23) {
+        PyErr_SetString(PoqueError, "Invalid mac address value");
+        return NULL;
+    }
+
+    count = sscanf(
+        data, "%2x:%2x:%2x:%2x:%2x:%2x:%2x:%2x", &a, &b, &c, &d, &e, &f, &g, &h
+	);
+    if (count != 8) {
+        PyErr_SetString(PoqueError, "Invalid mac8 address value");
+        return NULL;
+    }
+    return PyLong_FromUnsignedLongLong(
+        (unsigned long long)a << 56 | (unsigned long long)b << 48 |
+		(unsigned long long)c << 40 | (unsigned long long)d << 32 | e << 24 |
+		f << 16 | g << 8 | h
+	);
+}
 
 static PyTypeObject *IPv4Network;
 static PyTypeObject *IPv4Interface;
@@ -127,6 +175,22 @@ inet_binval(PoqueResult *result, char *data, int len, Oid el_oid)
     return ip_binval(data, len, 0, IPv4Interface, IPv6Interface);
 }
 
+static PyObject *
+inet_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+	PyTypeObject *inet_cls;
+
+	if (memchr(data, ':', len) == NULL)
+	{
+		inet_cls = IPv4Interface;
+	}
+	else
+	{
+		inet_cls = IPv6Interface;
+	}
+	return PyObject_CallFunction((PyObject *)inet_cls, "s#", data, len);
+}
+
 
 static PyObject *
 cidr_binval(PoqueResult *result, char *data, int len, Oid el_oid)
@@ -134,6 +198,22 @@ cidr_binval(PoqueResult *result, char *data, int len, Oid el_oid)
     return ip_binval(data, len, 1, IPv4Network, IPv6Network);
 }
 
+
+static PyObject *
+cidr_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+{
+	PyTypeObject *inet_cls;
+
+	if (memchr(data, ':', len) == NULL)
+	{
+		inet_cls = IPv4Network;
+	}
+	else
+	{
+		inet_cls = IPv6Network;
+	}
+	return PyObject_CallFunction((PyObject *)inet_cls, "s#", data, len);
+}
 
 /* ==== ip interface and ip network parameter handlers ====================== */
 
@@ -276,10 +356,10 @@ new_ip_network_param_handler(int num_param) {
 /* ======== initialization ================================================== */
 
 static PoqueTypeEntry network_value_handlers[] = {
-    {MACADDROID, mac_binval, NULL, InvalidOid, NULL},
-    {MACADDR8OID, mac8_binval, NULL, InvalidOid, NULL},
-    {INETOID, inet_binval, NULL, InvalidOid, NULL},
-    {CIDROID, cidr_binval, NULL, InvalidOid, NULL},
+    {MACADDROID, mac_binval, mac_strval, InvalidOid, NULL},
+    {MACADDR8OID, mac8_binval, mac8_strval, InvalidOid, NULL},
+    {INETOID, inet_binval, inet_strval, InvalidOid, NULL},
+    {CIDROID, cidr_binval, cidr_strval, InvalidOid, NULL},
 
     {MACADDRARRAYOID, array_binval, NULL, MACADDROID, NULL},
     {MACADDR8ARRAYOID, array_binval, NULL, MACADDR8OID, NULL},

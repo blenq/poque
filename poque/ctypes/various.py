@@ -1,4 +1,6 @@
-from ipaddress import IPv4Interface, IPv6Interface, IPv4Network, IPv6Network
+from ipaddress import (
+    IPv4Interface, IPv6Interface, IPv4Network, IPv6Network, ip_network,
+    ip_interface)
 import json
 from struct import calcsize
 from uuid import UUID
@@ -71,7 +73,7 @@ def check_address_size(size, correct_size):
         raise InterfaceError("Invalid address size")
 
 
-def read_ip_bin(crs, cidr, v4_cls, v6_cls):
+def read_ip_bin(crs, cidr, cons):
     family, mask, is_cidr, size = crs.advance_struct_format("4B")
 
     if is_cidr != cidr:
@@ -79,28 +81,48 @@ def read_ip_bin(crs, cidr, v4_cls, v6_cls):
 
     if family == PGSQL_AF_INET:
         check_address_size(size, 4)
-        cls = v4_cls
         addr_data = crs.advance_single("I")
     elif family == PGSQL_AF_INET6:
         check_address_size(size, 16)
-        cls = v6_cls
         addr_data = crs.advance_bytes(16)
     else:
         raise InterfaceError("Invalid address family")
-    return cls((addr_data, mask))
+    return cons((addr_data, mask))
 
 
 def read_inet_bin(crs):
-    return read_ip_bin(crs, 0, IPv4Interface, IPv6Interface)
+    return read_ip_bin(crs, 0, ip_interface)
+
+
+def read_inet_str(crs):
+    return ip_interface(crs.advance_text())
 
 
 def read_cidr_bin(crs):
-    return read_ip_bin(crs, 1, IPv4Network, IPv6Network)
+    return read_ip_bin(crs, 1, ip_network)
+
+
+def read_cidr_str(crs):
+    return ip_network(crs.advance_text())
 
 
 def _read_mac_bin(crs):
     mac1, mac2 = crs.advance_struct_format("HI")
     return (mac1 << 32) + mac2
+
+
+def _read_mac_str(crs):
+    mac = crs.advance_text()
+    if len(mac) != 17:
+        raise InterfaceError("Invalid mac address value")
+    return int(''.join(mac.split(':')), 16)
+
+
+def _read_mac8_str(crs):
+    mac = crs.advance_text()
+    if len(mac) != 23:
+        raise InterfaceError("Invalid mac8 address value")
+    return int(''.join(mac.split(':')), 16)
 
 
 def _read_json_bin(crs):
@@ -172,10 +194,11 @@ def get_various_converters():
         (POLYGONOID, POLYGONARRAYOID, None, _read_polygon_bin),
         (PATHOID, PATHARRAYOID, None, _read_path_bin),
         (CIRCLEOID, CIRCLEARRAYOID, None, _read_circle_bin),
-        (CIDROID, CIDRARRAYOID, None, read_cidr_bin),
-        (INETOID, INETARRAYOID, None, read_inet_bin),
-        (MACADDROID, MACADDRARRAYOID, None, _read_mac_bin),
-        (MACADDR8OID, MACADDR8ARRAYOID, None, get_single_reader("Q")),
+        (CIDROID, CIDRARRAYOID, read_cidr_str, read_cidr_bin),
+        (INETOID, INETARRAYOID, read_inet_str, read_inet_bin),
+        (MACADDROID, MACADDRARRAYOID, _read_mac_str, _read_mac_bin),
+        (MACADDR8OID, MACADDR8ARRAYOID, _read_mac8_str,
+         get_single_reader("Q")),
         (JSONOID, JSONARRAYOID, _read_json_bin, _read_json_bin),
         (JSONBOID, JSONBARRAYOID, _read_json_bin, _read_jsonb_bin),
         (LINEOID, LINEARRAYOID, None, _read_line_bin),

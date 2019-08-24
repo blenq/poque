@@ -213,7 +213,7 @@ Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_p
 	}
 
 	for (i = 0; i < num_params; i++) {
-		param = PySequence_ITEM(parameters, i);
+		param = PySequence_Fast_GET_ITEM(parameters, i);
 		param_formats[i] = FORMAT_BINARY;
 		if (param == Py_None) {
 			/* Special case: NULL values */
@@ -304,7 +304,7 @@ static PyObject *
 Conn_execute(PoqueConn *self, PyObject *args, PyObject *kwds) {
     char *sql;
     PyObject *parameters = NULL;
-    int format = FORMAT_BINARY;
+    int format = FORMAT_AUTO;
     PGresult *res;
 
     static char *kwlist[] = {"command", "parameters", "result_format", NULL};
@@ -325,14 +325,24 @@ _Conn_execute(PoqueConn *self, char *sql, PyObject *parameters, int format) {
     ExecStatusType res_status;
     Py_ssize_t num_params = 0;
 
-    if (format)
-        format = FORMAT_BINARY;
     if (parameters != NULL) {
-    	if (!PySequence_Check(parameters)) {
-			PyErr_SetString(PoqueError, "parameters must be a sequence");
-			return NULL;
-		}
-    	num_params = PySequence_Length(parameters);
+        parameters = PySequence_Fast(
+            parameters, "parameters must be a sequence");
+        if (parameters == NULL) {
+            return NULL;
+        }
+        num_params = PySequence_Fast_GET_SIZE(parameters);
+    }
+
+    if (format == FORMAT_AUTO) {
+        if (num_params == 0) {
+            format = FORMAT_TEXT;
+        } else {
+            format = FORMAT_BINARY;
+        }
+
+    } else if (format) {
+        format = FORMAT_BINARY;
     }
 
     if (num_params == 0) {
@@ -348,6 +358,7 @@ _Conn_execute(PoqueConn *self, char *sql, PyObject *parameters, int format) {
     } else {
     	res = Conn_exec_params(self->conn, sql, parameters, num_params, format);
     }
+    Py_XDECREF(parameters);
 	if (res == NULL) {
         return NULL;
     }
