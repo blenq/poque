@@ -512,8 +512,8 @@ typedef struct {
 
 
 static PyObject *
-get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
-              Oid el_oid, PoqueResult *result)
+get_arr_value(data_crs *crs, PY_INT32_T *arraydims, PoqueTypeEntry *el_entry,
+              PoqueResult *result)
 {
     /* Get multidimensional array as a nested list of item values
      * crs: The data cursor
@@ -543,7 +543,8 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
         }
 
         CHECK_LENGTH_LT(crs->len, item_len, "array", NULL);
-        val = read_func(result, crs->data, item_len, el_oid);
+        val = el_entry->readers[FORMAT_BINARY](
+                result, crs->data, item_len, el_entry);
         ADVANCE_DATA(crs->data, crs->len, item_len);
         return val;
     }
@@ -563,7 +564,7 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
         arraydims++;
         for (i = 0; i < dim; i++) {
             new_item = get_arr_value(
-                crs, arraydims, read_func, el_oid, result);
+                crs, arraydims, el_entry, result);
             if (new_item == NULL) {
                 Py_DECREF(lst);
                 return NULL;
@@ -576,12 +577,12 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, pq_read read_func,
 
 
 PyObject *
-array_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
+array_binval(
+        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry) {
     unsigned int i;
     PY_UINT32_T dims;
     PY_INT32_T flags, arraydims[7];
-    Oid elem_type, sub_elem_type=InvalidOid;
-    pq_read read_func;
+    Oid elem_type;
     PyObject *val;
     data_crs crs;
 
@@ -601,7 +602,7 @@ array_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
         PyErr_SetString(PoqueError, "Invalid value for array flags");
         return NULL;
     }
-    if (elem_type != el_oid) {
+    if (elem_type != type_entry->el_oid) {
         PyErr_SetString(PoqueError, "Unexpected element type");
         return NULL;
     }
@@ -611,11 +612,6 @@ array_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
         CHECK_LENGTH_EQ(len, 12, "array", NULL);
         return PyList_New(0);
     }
-
-    /* find corresponding read function */
-    read_func = get_read_func(elem_type, 1, &sub_elem_type);
-    if (read_func == NULL)
-        return NULL;
 
     ADVANCE_DATA(data, len, 12);
     CHECK_LENGTH_LT(len, (int)dims * 8, "array", NULL);
@@ -638,7 +634,7 @@ array_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
     crs.data = data;
     crs.len = len;
     val = get_arr_value(
-        &crs, arraydims, read_func, sub_elem_type, result);
+        &crs, arraydims, type_entry->el_entry, result);
     if (crs.len != 0) {
         Py_DECREF(val);
         PyErr_SetString(PoqueError, "Invalid data format");
@@ -649,7 +645,7 @@ array_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
 
 
 static PyObject *
-tid_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+tid_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 {
     PY_UINT32_T block_num;
     poque_uint16 offset;
@@ -667,7 +663,7 @@ tid_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-tid_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+tid_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 {
     PyObject *tid, *bl_num;
     char *pend, *tpos;
@@ -723,18 +719,19 @@ tid_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 static PyObject *json_loads;
 
 static PyObject *
-json_val(PoqueResult *result, char *data, int len, Oid el_oid)
+json_val(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 {
     return PyObject_CallFunction(json_loads, "s#", data, len);
 }
 
 
 static PyObject *
-jsonb_bin_val(PoqueResult *result, char *data, int len, Oid el_oid)
+jsonb_bin_val(
+        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 {
     if (data[0] != 1)
         PyErr_SetString(PoqueError, "Invalid jsonb version");
-    return json_val(result, data + 1, len - 1, el_oid);
+    return json_val(result, data + 1, len - 1, NULL);
 }
 
 
@@ -756,7 +753,8 @@ inplace_op(PyObject *(*op)(PyObject *, PyObject *),
 
 
 static PyObject *
-bit_strval(PoqueResult *result, char *data, int len, Oid el_oid) {
+bit_strval(
+        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry) {
     PyObject *val, *one=NULL;
     char *end;
 
@@ -811,7 +809,8 @@ error:
 
 
 static PyObject *
-bit_binval(PoqueResult *result, char *data, int len, Oid el_oid) {
+bit_binval(
+        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry) {
     /* Reads a bitstring as a Python integer
 
     Format:
@@ -914,20 +913,20 @@ error:
 
 /* static definition of types with value converters */
 static PoqueTypeEntry type_table[] = {
-    {INT2VECTOROID, array_binval, NULL, INT2OID, NULL},
-    {TIDOID, tid_binval, tid_strval, InvalidOid, NULL},
-    {OIDVECTOROID, array_binval, NULL, OIDOID, NULL},
-    {JSONOID, json_val, json_val, InvalidOid, NULL},
-    {JSONBOID, jsonb_bin_val, json_val, InvalidOid, NULL},
-    {JSONARRAYOID, array_binval, NULL, JSONOID, NULL},
-    {JSONBARRAYOID, array_binval, NULL, JSONBOID, NULL},
-    {INT2VECTORARRAYOID, array_binval, NULL, INT2VECTOROID, NULL},
-    {TIDARRAYOID, array_binval, NULL, TIDOID, NULL},
-    {OIDVECTORARRAYOID, array_binval, NULL, OIDVECTOROID, NULL},
-    {BITOID, bit_binval, bit_strval, InvalidOid, NULL},
-    {BITARRAYOID, array_binval, NULL, BITOID, NULL},
-    {VARBITOID, bit_binval, bit_strval, InvalidOid, NULL},
-    {VARBITARRAYOID, array_binval, NULL, VARBITOID, NULL},
+    {INT2VECTOROID, INT2OID, ',', {text_val, array_binval}, NULL},
+    {TIDOID, InvalidOid, ',', {tid_strval, tid_binval}, NULL},
+    {OIDVECTOROID, OIDOID, ',', {text_val, array_binval}, NULL},
+    {JSONOID, InvalidOid, ',', {json_val, json_val}, NULL},
+    {JSONBOID, InvalidOid, ',', {json_val, jsonb_bin_val}, NULL},
+    {JSONARRAYOID, JSONOID, ',', {text_val, array_binval}, NULL},
+    {JSONBARRAYOID, JSONBOID, ',', {text_val, array_binval}, NULL},
+    {INT2VECTORARRAYOID, INT2VECTOROID, ',', {text_val, array_binval}, NULL},
+    {TIDARRAYOID, TIDOID, ',', {text_val, array_binval}, NULL},
+    {OIDVECTORARRAYOID, OIDVECTOROID, ',', {text_val, array_binval}, NULL},
+    {BITOID, InvalidOid, ',', {bit_strval, bit_binval}, NULL},
+    {BITARRAYOID, BITOID, ',', {text_val, array_binval}, NULL},
+    {VARBITOID, InvalidOid, ',', {bit_strval, bit_binval}, NULL},
+    {VARBITARRAYOID, VARBITOID, ',', {text_val, array_binval}, NULL},
     {InvalidOid}
 };
 
@@ -959,16 +958,17 @@ void
 register_value_handler_table(PoqueTypeEntry *table) {
     PoqueTypeEntry *entry;
 
-    entry = table;
-    while (entry->oid != InvalidOid) {
+    for (entry = table; entry->oid != InvalidOid; entry++) {
         register_value_handler(entry);
-        entry++;
     }
 }
 
 
 int
 init_type_map(void) {
+
+    int i;
+    PoqueTypeEntry *entry;
 
     if (init_numeric() < 0) {
         return -1;
@@ -997,26 +997,32 @@ init_type_map(void) {
 
     /* initialize hash table of value converters */
     register_value_handler_table(type_table);
+
+    /* fill element type entries from element Oid */
+    for (i = 0; i < TYPEMAP_SIZE; i++) {
+        for (entry = type_map[i]; entry; entry = entry->next) {
+            if (entry->el_oid != InvalidOid) {
+                entry->el_entry = get_read_entry(entry->el_oid);
+            }
+        }
+    }
     return 0;
 }
 
 
-pq_read
-get_read_func(Oid oid, int format, Oid *el_oid)
+PoqueTypeEntry *
+get_read_entry(Oid oid)
 {
-    size_t idx;
+    static PoqueTypeEntry fallback_entry = {
+        InvalidOid, InvalidOid, ',', {text_val, bytea_binval}, NULL
+    };
     PoqueTypeEntry *entry;
 
-    idx = oid % TYPEMAP_SIZE;
-    for (entry = type_map[idx]; entry; entry = entry->next) {
-        if (entry->oid != oid)
-            continue;
-        *el_oid = entry->el_oid;
-        if (format == 1) {
-            return entry->binval ? entry->binval : bytea_binval;
-        } else {
-            return entry->strval ? entry->strval : text_val;
-        }
+    entry = type_map[oid % TYPEMAP_SIZE];
+    while(entry) {
+        if (entry->oid == oid)
+            return entry;
+        entry = entry->next;
     }
-    return format ? bytea_binval : text_val;
+    return &fallback_entry;
 }

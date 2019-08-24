@@ -1,4 +1,5 @@
 #include "poque_type.h"
+#include "text.h"
 
 #define UUID_LEN    16
 
@@ -7,7 +8,7 @@ static PyTypeObject *PyUUID_Type;
 
 
 PyObject *
-uuid_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+uuid_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     return PyObject_CallFunction(
         (PyObject *)PyUUID_Type, "sy#", NULL, data, len);
@@ -15,7 +16,7 @@ uuid_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 PyObject *
-uuid_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+uuid_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     return PyObject_CallFunction(
         (PyObject *)PyUUID_Type, "s#", data, len);
@@ -60,8 +61,8 @@ new_uuid_param_handler(int num_param) {
 
 
 static PoqueTypeEntry uuid_value_handlers[] = {
-    {UUIDOID, uuid_binval, uuid_strval, InvalidOid, NULL},
-    {UUIDARRAYOID, array_binval, NULL, UUIDOID, NULL},
+    {UUIDOID, InvalidOid, ',', {uuid_strval, uuid_binval}, NULL},
+    {UUIDARRAYOID, UUIDOID, ',', {text_val, array_binval}, NULL},
     {InvalidOid}
 };
 

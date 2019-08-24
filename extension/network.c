@@ -1,8 +1,8 @@
 #include "poque_type.h"
-
+#include "text.h"
 
 static PyObject *
-mac_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+mac_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     poque_uint16 first;
     PY_UINT32_T second;
@@ -19,7 +19,7 @@ mac_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-mac_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+mac_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     unsigned int a, b, c, d, e, f;
     int count;
@@ -42,7 +42,7 @@ mac_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-mac8_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+mac8_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     PY_UINT64_T val;
 
@@ -57,7 +57,7 @@ mac8_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-mac8_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+mac8_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     unsigned int a, b, c, d, e, f, g, h;
     int count;
@@ -170,13 +170,13 @@ ip_binval(
 
 
 static PyObject *
-inet_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+inet_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     return ip_binval(data, len, 0, IPv4Interface, IPv6Interface);
 }
 
 static PyObject *
-inet_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+inet_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
 	PyTypeObject *inet_cls;
 
@@ -193,14 +193,14 @@ inet_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-cidr_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+cidr_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     return ip_binval(data, len, 1, IPv4Network, IPv6Network);
 }
 
 
 static PyObject *
-cidr_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+cidr_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
 	PyTypeObject *inet_cls;
 
@@ -356,15 +356,15 @@ new_ip_network_param_handler(int num_param) {
 /* ======== initialization ================================================== */
 
 static PoqueTypeEntry network_value_handlers[] = {
-    {MACADDROID, mac_binval, mac_strval, InvalidOid, NULL},
-    {MACADDR8OID, mac8_binval, mac8_strval, InvalidOid, NULL},
-    {INETOID, inet_binval, inet_strval, InvalidOid, NULL},
-    {CIDROID, cidr_binval, cidr_strval, InvalidOid, NULL},
+    {MACADDROID, InvalidOid, ',', {mac_strval, mac_binval}, NULL},
+    {MACADDR8OID, InvalidOid, ',', {mac8_strval, mac8_binval}, NULL},
+    {INETOID, InvalidOid, ',', {inet_strval, inet_binval}, NULL},
+    {CIDROID, InvalidOid, ',', {cidr_strval, cidr_binval}, NULL},
 
-    {MACADDRARRAYOID, array_binval, NULL, MACADDROID, NULL},
-    {MACADDR8ARRAYOID, array_binval, NULL, MACADDR8OID, NULL},
-    {INETARRAYOID, array_binval, NULL, INETOID, NULL},
-    {CIDRARRAYOID, array_binval, NULL, CIDROID, NULL},
+    {MACADDRARRAYOID, MACADDROID, ',', {text_val, array_binval}, NULL},
+    {MACADDR8ARRAYOID, MACADDR8OID, ',', {text_val, array_binval}, NULL},
+    {INETARRAYOID, INETOID, ',', {text_val, array_binval}, NULL},
+    {CIDRARRAYOID, CIDROID, ',', {text_val, array_binval}, NULL},
 
     {InvalidOid}
 };

@@ -1,4 +1,5 @@
 #include "poque_type.h"
+#include "text.h"
 #include <datetime.h>
 
 static long min_year;
@@ -241,7 +242,7 @@ date_vals_from_int(PY_INT32_T jd, int *year, int *month, int *day)
 
 
 static PyObject *
-date_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+date_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     PY_INT32_T jd;
     int year, month, day;
@@ -304,7 +305,7 @@ _time_binval(PY_INT64_T value, PyObject *tz)
 
 
 static PyObject *
-time_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+time_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     PY_INT64_T value;
 
@@ -318,7 +319,7 @@ time_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-timetz_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+timetz_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     PyObject *tz, *timedelta, *ret, *offset, *tzone;
     PY_INT64_T value;
@@ -403,21 +404,23 @@ _timestamp_binval(char *data, int len, PyObject *tz)
 
 
 static PyObject *
-timestamp_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+timestamp_binval(
+    PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     return _timestamp_binval(data, len, Py_None);
 }
 
 
 static PyObject *
-timestamptz_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+timestamptz_binval(
+    PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     return _timestamp_binval(data, len, utc);
 }
 
 
 static PyObject *
-interval_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+interval_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     PY_INT64_T secs, usecs;
     PY_INT32_T days, months;
@@ -453,7 +456,7 @@ interval_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-abstime_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+abstime_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     PyObject *abstime, *seconds, *args;
     PY_INT32_T value;
@@ -479,7 +482,7 @@ abstime_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-reltime_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+reltime_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     if (len != 4) {
         PyErr_SetString(PoqueError, "Invalid reltime value");
@@ -490,7 +493,8 @@ reltime_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-tinterval_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+tinterval_binval(
+        PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     PyObject *tinterval, *abstime;
     int i;
@@ -505,7 +509,7 @@ tinterval_binval(PoqueResult *result, char *data, int len, Oid el_oid)
     if (tinterval == NULL)
         return NULL;
     for (i = 0; i < 2; i++) {
-        abstime = abstime_binval(result, data + i * 4, 4, el_oid);
+        abstime = abstime_binval(result, data + i * 4, 4, NULL);
         if (abstime == NULL) {
             Py_DECREF(tinterval);
             return NULL;
@@ -516,24 +520,24 @@ tinterval_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 }
 
 static PoqueTypeEntry dt_value_handlers[] = {
-    {DATEOID, date_binval, NULL, InvalidOid, NULL},
-    {TIMEOID, time_binval, NULL, InvalidOid, NULL},
-    {TIMETZOID, timetz_binval, NULL, InvalidOid, NULL},
-    {TIMESTAMPOID, timestamp_binval, NULL, InvalidOid, NULL},
-    {TIMESTAMPTZOID, timestamptz_binval, NULL, InvalidOid, NULL},
-    {DATEARRAYOID, array_binval, NULL, DATEOID, NULL},
-    {TIMESTAMPARRAYOID, array_binval, NULL, TIMESTAMPOID, NULL},
-    {TIMESTAMPTZARRAYOID, array_binval, NULL, TIMESTAMPTZOID, NULL},
-    {TIMEARRAYOID, array_binval, NULL, TIMEOID, NULL},
-    {TIMETZARRAYOID, array_binval, NULL, TIMETZOID, NULL},
-    {INTERVALOID, interval_binval, NULL, InvalidOid, NULL},
-    {INTERVALARRAYOID, array_binval, NULL, INTERVALOID, NULL},
-    {ABSTIMEOID, abstime_binval, NULL, InvalidOid, NULL},
-    {RELTIMEOID, reltime_binval, NULL, InvalidOid, NULL},
-    {TINTERVALOID, tinterval_binval, NULL, InvalidOid, NULL},
-    {ABSTIMEARRAYOID, array_binval, NULL, ABSTIMEOID, NULL},
-    {RELTIMEARRAYOID, array_binval, NULL, RELTIMEOID, NULL},
-    {TINTERVALARRAYOID, array_binval, NULL, TINTERVALOID, NULL},
+    {DATEOID, InvalidOid, ',', {text_val, date_binval}, NULL},
+    {TIMEOID, InvalidOid, ',', {text_val, time_binval}, NULL},
+    {TIMETZOID, InvalidOid, ',', {text_val, timetz_binval}, NULL},
+    {TIMESTAMPOID, InvalidOid, ',', {text_val, timestamp_binval}, NULL},
+    {TIMESTAMPTZOID, InvalidOid, ',', {text_val, timestamptz_binval}, NULL},
+    {INTERVALOID, InvalidOid, ',', {text_val, interval_binval}, NULL},
+    {DATEARRAYOID, DATEOID, ',', {text_val, array_binval}, NULL},
+    {TIMESTAMPARRAYOID, TIMESTAMPOID, ',', {text_val, array_binval}, NULL},
+    {TIMESTAMPTZARRAYOID, TIMESTAMPTZOID, ',', {text_val, array_binval}, NULL},
+    {TIMEARRAYOID, TIMEOID, ',', {text_val, array_binval}, NULL},
+    {TIMETZARRAYOID, TIMETZOID, ',', {text_val, array_binval}, NULL},
+    {INTERVALARRAYOID, INTERVALOID, ',', {text_val, array_binval}, NULL},
+    {ABSTIMEOID, InvalidOid, ',', {text_val, abstime_binval}, NULL},
+    {RELTIMEOID, InvalidOid, ',', {text_val, reltime_binval}, NULL},
+    {TINTERVALOID, InvalidOid, ',', {text_val, tinterval_binval}, NULL},
+    {ABSTIMEARRAYOID, ABSTIMEOID, ',', {text_val, array_binval}, NULL},
+    {RELTIMEARRAYOID, RELTIMEOID, ',', {text_val, array_binval}, NULL},
+    {TINTERVALARRAYOID, TINTERVALOID, ',', {text_val, array_binval}, NULL},
     {InvalidOid}
 };
 

@@ -4,15 +4,20 @@
 #include "poque.h"
 #include "val_crs.h"
 
+
 typedef struct _poqueTypeEntry {
     Oid oid;
-    pq_read binval;
-    pq_read strval;
     Oid el_oid;        /* type of subelement for array_binval converter */
-    struct _poqueTypeEntry *next;
+    char delim;        /* delimeter for arrays of this type */
+    pq_read readers[2];
+    PoqueTypeEntry *el_entry;
+    PoqueTypeEntry *next;
 } PoqueTypeEntry;
 
-PyObject *array_binval(PoqueResult *result, char *data, int len, Oid el_oid);
+PoqueTypeEntry *get_read_entry(Oid oid);
+
+PyObject *array_binval(
+    PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry);
 PyObject *Result_getview(PoqueResult *self, char *data, int len);
 
 

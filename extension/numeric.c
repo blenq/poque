@@ -1,4 +1,5 @@
 #include "poque_type.h"
+#include "text.h"
 
 
 /* ==== int parameter handler =============================================== */
@@ -275,7 +276,7 @@ new_int_param_handler(int num_params) {
 
 
 static PyObject *
-int16_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+int16_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	if (len != 2) {
         PyErr_SetString(PoqueError, "Invalid int4 value");
@@ -286,7 +287,7 @@ int16_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-uint32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+uint32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	if (len != 4) {
         PyErr_SetString(PoqueError, "Invalid uint4 value");
@@ -297,7 +298,7 @@ uint32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-int32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+int32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	if (len != 4) {
         PyErr_SetString(PoqueError, "Invalid int4 value");
@@ -308,7 +309,7 @@ int32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-int64_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+int64_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	if (len != 8) {
         PyErr_SetString(PoqueError, "Invalid int4 value");
@@ -319,7 +320,7 @@ int64_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-int_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+int_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     char *pend;
     PyObject *value;
@@ -335,7 +336,7 @@ int_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-bool_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+bool_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	if (len != 1) {
         PyErr_SetString(PoqueError, "Invalid bool value");
@@ -346,7 +347,7 @@ bool_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-bool_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+bool_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	if (len != 1) {
         PyErr_SetString(PoqueError, "Invalid bool value");
@@ -389,7 +390,7 @@ new_bool_param_handler(int num_param) {
 
 
 static PyObject *
-float64_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+float64_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     double val;
 
@@ -407,7 +408,7 @@ float64_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-float32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+float32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	double val;
 
@@ -425,7 +426,7 @@ float32_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-float_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+float_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	double val;
 	char *pend;
@@ -767,7 +768,7 @@ new_decimal_param_handler(int num_params) {
 static PyObject *PyDecimal;
 
 static PyObject *
-numeric_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+numeric_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     /* Create a Decimal from a text value */
      return PyObject_CallFunction(PyDecimal, "s#", data, len);
@@ -790,7 +791,7 @@ numeric_set_digit(PyObject *digit_tuple, int val, Py_ssize_t idx) {
 
 
 static PyObject *
-numeric_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+numeric_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     /* Create a Decimal from a pg numeric binary value
      *
@@ -913,31 +914,31 @@ end:
 }
 
 static PoqueTypeEntry numeric_value_handlers[] = {
-    {INT4OID, int32_binval, int_strval, InvalidOid, NULL},
-    {INT8OID, int64_binval, int_strval, InvalidOid, NULL},
-    {FLOAT8OID, float64_binval, float_strval, InvalidOid, NULL},
-    {INT2OID, int16_binval, int_strval, InvalidOid, NULL},
-    {BOOLOID, bool_binval, bool_strval, InvalidOid, NULL},
-    {NUMERICOID, numeric_binval, numeric_strval, InvalidOid, NULL},
-    {FLOAT4OID, float32_binval, float_strval, InvalidOid, NULL},
-    {CASHOID, int64_binval, NULL, InvalidOid, NULL},
-    {OIDOID, uint32_binval, int_strval, InvalidOid, NULL},
-    {XIDOID, uint32_binval, int_strval, InvalidOid, NULL},
-    {CIDOID, uint32_binval, int_strval, InvalidOid, NULL},
-    {REGPROCOID, uint32_binval, NULL, InvalidOid, NULL},
+    {INT4OID, InvalidOid, ',', {int_strval, int32_binval}, NULL},
+    {INT8OID, InvalidOid, ',', {int_strval, int64_binval}, NULL},
+    {FLOAT8OID, InvalidOid, ',', {float_strval, float64_binval}, NULL},
+    {INT2OID, InvalidOid, ',', {int_strval, int16_binval}, NULL},
+    {BOOLOID, InvalidOid, ',', {bool_strval, bool_binval}, InvalidOid, NULL},
+    {NUMERICOID, InvalidOid, ',', {numeric_strval, numeric_binval}, NULL},
+    {FLOAT4OID, InvalidOid, ',', {float_strval, float32_binval}, NULL},
+    {CASHOID, InvalidOid, ',', {text_val, int64_binval}, NULL},
+    {OIDOID, InvalidOid, ',', {int_strval, uint32_binval}, NULL},
+    {XIDOID, InvalidOid, ',', {int_strval, uint32_binval}, NULL},
+    {CIDOID, InvalidOid, ',', {int_strval, uint32_binval}, NULL},
+    {REGPROCOID, InvalidOid, ',', {text_val, uint32_binval}, NULL},
 
-    {INT4ARRAYOID, array_binval, NULL, INT4OID, NULL},
-    {INT8ARRAYOID, array_binval, NULL, INT8OID, NULL},
-    {FLOAT8ARRAYOID, array_binval, NULL, FLOAT8OID, NULL},
-    {INT2ARRAYOID, array_binval, NULL, INT2OID, NULL},
-    {BOOLARRAYOID, array_binval, NULL, BOOLOID, NULL},
-    {NUMERICARRAYOID, array_binval, NULL, NUMERICOID, NULL},
-    {FLOAT4ARRAYOID, array_binval, NULL, FLOAT4OID, NULL},
-    {CASHARRAYOID, array_binval, NULL, CASHOID, NULL},
-    {OIDARRAYOID, array_binval, NULL, OIDOID, NULL},
-    {XIDARRAYOID, array_binval, NULL, XIDOID, NULL},
-    {CIDARRAYOID, array_binval, NULL, CIDOID, NULL},
-    {REGPROCARRAYOID, array_binval, NULL, REGPROCOID, NULL},
+    {INT4ARRAYOID, INT4OID, ',', {text_val, array_binval}, NULL},
+    {INT8ARRAYOID, INT8OID, ',', {text_val, array_binval}, NULL},
+    {FLOAT8ARRAYOID, FLOAT8OID, ',', {text_val, array_binval}, NULL},
+    {INT2ARRAYOID, INT2OID, ',', {text_val, array_binval}, NULL},
+    {BOOLARRAYOID, BOOLOID, ',', {text_val, array_binval}, NULL},
+    {NUMERICARRAYOID, NUMERICOID, ',', {text_val, array_binval}, NULL},
+    {FLOAT4ARRAYOID, FLOAT4OID, ',', {text_val, array_binval}, NULL},
+    {CASHARRAYOID, CASHOID, ',', {text_val, array_binval}, NULL},
+    {OIDARRAYOID, OIDOID, ',', {text_val, array_binval}, NULL},
+    {XIDARRAYOID, XIDOID, ',', {text_val, array_binval}, NULL},
+    {CIDARRAYOID, CIDOID, ',', {text_val, array_binval}, NULL},
+    {REGPROCARRAYOID, REGPROCOID, ',', {text_val, array_binval}, NULL},
     {InvalidOid}
 };
 

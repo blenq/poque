@@ -1,4 +1,5 @@
 #include "poque_type.h"
+#include "text.h"
 
 
 static int
@@ -44,21 +45,21 @@ float_tuple_binval(char *data, int len, int n) {
 }
 
 static PyObject *
-point_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+point_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     return float_tuple_binval(data, len, 2);
 }
 
 
 static PyObject *
-line_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+line_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     return float_tuple_binval(data, len, 3);
 }
 
 
 static PyObject *
-lseg_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+lseg_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     PyObject *point, *lseg;
     int i;
@@ -84,7 +85,7 @@ lseg_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-polygon_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+polygon_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     PyObject *points;
     PY_INT32_T npoints, i;
@@ -112,7 +113,7 @@ polygon_binval(PoqueResult *result, char *data, int len, Oid el_oid)
     for (i = 0; i < npoints; i++) {
         PyObject *point;
 
-        point = point_binval(result, data + i * 16, 16, el_oid);
+        point = point_binval(result, data + i * 16, 16, NULL);
         if (point == NULL) {
             Py_DECREF(points);
             return NULL;
@@ -124,7 +125,7 @@ polygon_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-path_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+path_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     PyObject *path, *points, *closed;
 
@@ -134,7 +135,7 @@ path_binval(PoqueResult *result, char *data, int len, Oid el_oid)
     }
     closed = PyBool_FromLong(data[0]);
 
-    points = polygon_binval(result, data + 1, len -1, el_oid);
+    points = polygon_binval(result, data + 1, len -1, NULL);
     if (points == NULL) {
         Py_DECREF(closed);
         return NULL;
@@ -158,7 +159,7 @@ path_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PyObject *
-circle_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+circle_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 {
     PyObject *circle, *center;
 
@@ -171,7 +172,7 @@ circle_binval(PoqueResult *result, char *data, int len, Oid el_oid)
     if (circle == NULL) {
         return NULL;
     }
-    center = point_binval(result, data, 16, el_oid);
+    center = point_binval(result, data, 16, NULL);
     if (center == NULL) {
         Py_DECREF(circle);
         return NULL;
@@ -186,21 +187,21 @@ circle_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 static PoqueTypeEntry geometric_value_handlers[] = {
-    {POINTOID, point_binval, NULL, InvalidOid, NULL},
-    {LINEOID, line_binval, NULL, InvalidOid, NULL},
-    {LSEGOID, lseg_binval, NULL, InvalidOid, NULL},
-    {PATHOID, path_binval, NULL, InvalidOid, NULL},
-    {BOXOID, lseg_binval, NULL, InvalidOid, NULL},
-    {POLYGONOID, polygon_binval, NULL, InvalidOid, NULL},
-    {CIRCLEOID, circle_binval, NULL, InvalidOid, NULL},
+    {POINTOID, InvalidOid, ',', {text_val, point_binval}, NULL},
+    {LINEOID, InvalidOid, ',', {text_val, line_binval}, NULL},
+    {LSEGOID, InvalidOid, ',', {text_val, lseg_binval}, NULL},
+    {PATHOID, InvalidOid, ',', {text_val, path_binval}, NULL},
+    {BOXOID, InvalidOid, ';', {text_val, lseg_binval}, NULL},
+    {POLYGONOID, InvalidOid, ',', {text_val, polygon_binval}, NULL},
+    {CIRCLEOID, InvalidOid, ',', {text_val, circle_binval}, NULL},
 
-    {POINTARRAYOID, array_binval, NULL, POINTOID, NULL},
-    {LSEGARRAYOID, array_binval, NULL, LSEGOID, NULL},
-    {PATHARRAYOID, array_binval, NULL, PATHOID, NULL},
-    {BOXARRAYOID, array_binval, NULL, BOXOID, NULL},
-    {POLYGONARRAYOID, array_binval, NULL, POLYGONOID, NULL},
-    {LINEARRAYOID, array_binval, NULL, LINEOID, NULL},
-    {CIRCLEARRAYOID, array_binval, NULL, CIRCLEOID, NULL},
+    {POINTARRAYOID, POINTOID, ',', {text_val, array_binval}, NULL},
+    {LSEGARRAYOID, LSEGOID, ',', {text_val, array_binval}, NULL},
+    {PATHARRAYOID, PATHOID, ',', {text_val, array_binval}, NULL},
+    {BOXARRAYOID, BOXOID, ';', {text_val, array_binval}, NULL},
+    {POLYGONARRAYOID, POLYGONOID, ',', {text_val, array_binval}, NULL},
+    {LINEARRAYOID, LINEOID, ',', {text_val, array_binval}, NULL},
+    {CIRCLEARRAYOID, CIRCLEOID, ',', {text_val, array_binval}, NULL},
 
     {InvalidOid}
 };

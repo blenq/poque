@@ -87,7 +87,7 @@ bytea_fill_fromescape(char *data, char *end, char *dest) {
 
 
 static PyObject *
-bytea_strval(PoqueResult *result, char *data, int len, Oid el_oid)
+bytea_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     /* converts the textual representation of a bytea value to a Python
      * bytes value
@@ -149,7 +149,7 @@ bytea_strval(PoqueResult *result, char *data, int len, Oid el_oid)
 
 
 PyObject *
-bytea_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+bytea_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
     return Result_getview(result, data, len);
 }
@@ -209,7 +209,7 @@ new_bytes_param_handler(int num_param) {
 /* ======== pg text types =================================================== */
 
 PyObject *
-text_val(PoqueResult *result, char *data, int len, Oid el_oid)
+text_val(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 {
     return PyUnicode_FromStringAndSize(data, len);
 }
@@ -416,7 +416,7 @@ new_object_param_handler(int num_params) {
 /* ======== pg char type ==================================================== */
 
 static PyObject *
-char_binval(PoqueResult *result, char *data, int len, Oid el_oid)
+char_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
 	if (len != 1) {
         PyErr_SetString(PoqueError, "Invalid char value");
@@ -429,23 +429,23 @@ char_binval(PoqueResult *result, char *data, int len, Oid el_oid)
 /* ======== initialization ================================================== */
 
 static PoqueTypeEntry text_value_handlers[] = {
-    {VARCHAROID, text_val, NULL, InvalidOid, NULL},
-    {TEXTOID, text_val, NULL, InvalidOid, NULL},
-    {BYTEAOID, bytea_binval, bytea_strval, InvalidOid, NULL},
-    {XMLOID, text_val, text_val, InvalidOid, NULL},
-    {NAMEOID, text_val, NULL, InvalidOid, NULL},
-    {CHAROID, char_binval, char_binval, InvalidOid, NULL},
-    {CSTRINGOID, text_val, NULL, InvalidOid, NULL},
-    {BPCHAROID, text_val, NULL, InvalidOid, NULL},
+    {VARCHAROID, InvalidOid, ',', {text_val, text_val}, NULL},
+    {TEXTOID, InvalidOid, ',', {text_val, text_val}, NULL},
+    {BYTEAOID, InvalidOid, ',', {bytea_strval, bytea_binval}, NULL},
+    {XMLOID, InvalidOid, ',', {text_val, text_val}, NULL},
+    {NAMEOID, InvalidOid, ',', {text_val, text_val}, NULL},
+    {CHAROID, InvalidOid, ',', {char_binval, char_binval}, NULL},
+    {CSTRINGOID, InvalidOid, ',', {text_val, text_val}, NULL},
+    {BPCHAROID, InvalidOid, ',', {text_val, text_val}, NULL},
 
-    {VARCHARARRAYOID, array_binval, NULL, VARCHAROID, NULL},
-    {TEXTARRAYOID, array_binval, NULL, TEXTOID, NULL},
-    {BYTEAARRAYOID, array_binval, NULL, BYTEAOID, NULL},
-    {XMLARRAYOID, array_binval, NULL, XMLOID, NULL},
-    {NAMEARRAYOID, array_binval, NULL, NAMEOID, NULL},
-    {CHARARRAYOID, array_binval, NULL, CHAROID, NULL},
-    {CSTRINGARRAYOID, array_binval, NULL, CSTRINGOID, NULL},
-    {BPCHARARRAYOID, array_binval, NULL, BPCHAROID, NULL},
+    {VARCHARARRAYOID, VARCHAROID, ',', {text_val, array_binval}, NULL},
+    {TEXTARRAYOID, TEXTOID, ',', {text_val, array_binval}, NULL},
+    {BYTEAARRAYOID, BYTEAOID, ',', {text_val, array_binval}, NULL},
+    {XMLARRAYOID, XMLOID, ',', {text_val, array_binval}, NULL},
+    {NAMEARRAYOID, NAMEOID, ',', {text_val, array_binval}, NULL},
+    {CHARARRAYOID, CHAROID, ',', {text_val, array_binval}, NULL},
+    {CSTRINGARRAYOID, CSTRINGOID, ',', {text_val, array_binval}, NULL},
+    {BPCHARARRAYOID, BPCHAROID, ',', {text_val, array_binval}, NULL},
 
     {InvalidOid}
 };

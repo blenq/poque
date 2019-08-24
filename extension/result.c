@@ -1,4 +1,4 @@
-#include "poque.h"
+#include "poque_type.h"
 #include "val_crs.h"
 
 /* ===== PoqueValue ========================================================= */
@@ -123,8 +123,9 @@ PoqueResult_New(PGresult *res, PoqueConn *conn) {
     result->conn = conn;
 
     for (i = 0; i < nfields; i++) {
-        result->readers[i].read_func = get_read_func(
-            PQftype(res, i), PQfformat(res, i), &result->readers[i].el_oid);
+        PoqueTypeEntry *type_entry = get_read_entry(PQftype(res, i));
+        result->readers[i].read_func = type_entry->readers[PQfformat(res, i)];
+        result->readers[i].type_entry = type_entry;
     }
     return result;
 }
@@ -365,7 +366,7 @@ _Result_value(PoqueResult *self, int row, int column)
         return reader->read_func(self,
                                  PQgetvalue(res, row, column),
                                  PQgetlength(res, row, column),
-                                 reader->el_oid);
+                                 reader->type_entry);
     }
 }
 

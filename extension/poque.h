@@ -48,14 +48,14 @@ typedef struct _ValueCursor ValueCursor;
 
 typedef struct PoqueResult PoqueResult;
 
-typedef PyObject *(*pq_read)(
-		 PoqueResult *result, char *data, int len, Oid el_oid);
+typedef struct _poqueTypeEntry PoqueTypeEntry;
 
-pq_read get_read_func(Oid oid, int format, Oid *el_oid);
+typedef PyObject *(*pq_read)(
+         PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry);
 
 typedef struct _ResultValueReader {
 	pq_read read_func;
-	Oid el_oid;
+	PoqueTypeEntry *type_entry;
 } ResultValueReader;
 
 typedef struct PoqueResult {
