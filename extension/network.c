@@ -361,10 +361,10 @@ static PoqueTypeEntry network_value_handlers[] = {
     {INETOID, InvalidOid, ',', {inet_strval, inet_binval}, NULL},
     {CIDROID, InvalidOid, ',', {cidr_strval, cidr_binval}, NULL},
 
-    {MACADDRARRAYOID, MACADDROID, ',', {text_val, array_binval}, NULL},
-    {MACADDR8ARRAYOID, MACADDR8OID, ',', {text_val, array_binval}, NULL},
-    {INETARRAYOID, INETOID, ',', {text_val, array_binval}, NULL},
-    {CIDRARRAYOID, CIDROID, ',', {text_val, array_binval}, NULL},
+    {MACADDRARRAYOID, MACADDROID, ',', {array_strval, array_binval}, NULL},
+    {MACADDR8ARRAYOID, MACADDR8OID, ',', {array_strval, array_binval}, NULL},
+    {INETARRAYOID, INETOID, ',', {array_strval, array_binval}, NULL},
+    {CIDRARRAYOID, CIDROID, ',', {array_strval, array_binval}, NULL},
 
     {InvalidOid}
 };

@@ -116,8 +116,9 @@ class ResultTestValues():
 
     def _test_value_and_type(self, command, value, type_oid, result_format):
         res = self.cn.execute(command, result_format=result_format)
-        self.assertEqual(res.getvalue(0, 0), value)
         self.assertEqual(res.ftype(0), type_oid)
+        self.assertEqual(res.fformat(0), result_format)
+        self.assertEqual(res.getvalue(0, 0), value)
 
     def _test_value_and_type_bin(self, command, value, type_oid):
         self._test_value_and_type(command, value, type_oid,
@@ -1086,6 +1087,13 @@ class ResultTestValues():
         self.assertEqual(v, val)
         self.assertEqual(res.ftype(0), self.poque.UUIDOID)
 
+    def test_uuid_array_value_bin(self):
+        val = uuid4()
+        self._test_value_and_type_bin(
+            "SELECT '{12345678123456781234567800345678, %s}'::uuid[]" % val,
+            [UUID(hex='12345678123456781234567800345678'), val],
+            self.poque.UUIDARRAYOID)
+
     def test_date_value_bin(self):
         self._test_value_and_type_bin("SELECT '2014-03-01'::date",
                                       datetime.date(2014, 3, 1),
@@ -1193,7 +1201,174 @@ class ResultTestValues():
 
 class ResultTestValuesExtension(
         BaseExtensionTest, ResultTestValues, unittest.TestCase):
-    pass
+
+    def test_int4_array_value_text(self):
+        self._test_value_and_type_str(
+            "SELECT '{{1,NULL,3},{4,5,6}}'::int4[][]",
+            [[1, None, 3], [4, 5, 6]],
+            self.poque.INT4ARRAYOID)
+
+    def test_int2_array_value_str(self):
+        self._test_value_and_type_str("SELECT '{6, NULL, -4}'::int2[]",
+                                      [6, None, -4], self.poque.INT2ARRAYOID)
+
+    def test_int8_array_value_str(self):
+        self._test_value_and_type_str("SELECT '{6, NULL, -1}'::int8[]",
+                                      [6, None, -1], self.poque.INT8ARRAYOID)
+
+    def test_bit_array_value_str(self):
+        self._test_value_and_type_str("SELECT ARRAY[23::BIT(8), 200::BIT(8)]",
+                                      [23, 200], self.poque.BITARRAYOID)
+
+    def test_varbit_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT ARRAY[23::BIT(16)::VARBIT, 200::BIT(16)::VARBIT]",
+            [23, 200], self.poque.VARBITARRAYOID)
+
+    def test_numeric_array_value_str(self):
+        res = self.cn.execute(
+            command="SELECT '{123.456, NULL, "
+                    "123456789012345678901234567890}'::numeric[]",
+            result_format=0)
+        self.assertEqual(res.getvalue(0, 0), [
+            Decimal('123.456'), None,
+            Decimal('123456789012345678901234567890')])
+
+    def test_bool_array_value_str(self):
+        self._test_value_and_type_str("SELECT '{true, NULL, false}'::bool[]",
+                                      [True, None, False],
+                                      self.poque.BOOLARRAYOID)
+
+    def test_bytea_array_value_str(self):
+        self._test_value_and_type_str(
+            r"SELECT '{\\x2020, NULL, \\x2020}'::bytea[]",
+            [b'  ', None, b'  '], self.poque.BYTEAARRAYOID)
+
+    def test_char_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{a, b}'::\"char\"[]",
+            [b'a', b'b'],
+            self.poque.CHARARRAYOID)
+
+    def test_name_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{hello, hi}'::name[]", ['hello', 'hi'],
+            self.poque.NAMEARRAYOID)
+
+    def test_regproc_array_value_str(self):
+        res = self.cn.execute("""
+            SELECT oid::regproc, ARRAY[oid::regproc, NULL, oid::regproc]
+            FROM pg_catalog.pg_proc
+            WHERE proname='int4recv'""", result_format=0)
+        val = res.getvalue(0, 0)
+        self.assertEqual(res.getvalue(0, 1), [val, None, val])
+        self.assertEqual(res.ftype(1), self.poque.REGPROCARRAYOID)
+
+    def test_text_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT ARRAY['hello', NULL, 'hi']::text[]",
+            ['hello', None, 'hi'], self.poque.TEXTARRAYOID)
+
+    def test_bpchar_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{hello, NULL, hi}'::char(4)[];",
+            ['hell', None, 'hi  '], self.poque.BPCHARARRAYOID)
+
+    def test_varchar_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{hello, NULL, hi}'::varchar(6)[]", ['hello', None, 'hi'],
+            self.poque.VARCHARARRAYOID)
+
+    def test_cstring_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT ARRAY['hello'::cstring]", ['hello'],
+            self.poque.CSTRINGARRAYOID)
+
+    def test_oid_array_value_str(self):
+        self._test_value_and_type_str("SELECT ARRAY[NULL, 3, 4]::oid[]",
+                                      [None, 3, 4], self.poque.OIDARRAYOID)
+
+    def test_tid_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{\"(3, 4)\", NULL, \"(6, 2)\"}'::tid[];",
+            [(3, 4), None, (6, 2)], self.poque.TIDARRAYOID)
+
+    def test_xid_array_value_str(self):
+        self._test_value_and_type_str("SELECT '{2147483648, NULL, 3}'::xid[];",
+                                      [2147483648, None, 3],
+                                      self.poque.XIDARRAYOID)
+
+    def test_cid_array_value_str(self):
+        self._test_value_and_type_str("SELECT '{2147483648, NULL, 3}'::cid[];",
+                                      [2147483648, None, 3],
+                                      self.poque.CIDARRAYOID)
+
+    def test_float8_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{1.4, NULL, 3, -2.5}'::float8[]", [1.4, None, 3.0, -2.5],
+            self.poque.FLOAT8ARRAYOID)
+
+    def test_float4_array_value_bin(self):
+        self._test_value_and_type_str(
+            "SELECT '{1.4, NULL, 3, -2.5}'::float4[]", [1.4, None, 3.0, -2.5],
+            self.poque.FLOAT4ARRAYOID)
+
+    def test_json_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{\"{\\\"hi\\\": 23}\",\"[3, 4]\"}'::json[];",
+            [{"hi": 23}, [3, 4]], self.poque.JSONARRAYOID)
+
+    def test_jsonb_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{\"{\\\"hi\\\": 23}\",\"[3, 4]\"}'::jsonb[];",
+            [{"hi": 23}, [3, 4]], self.poque.JSONBARRAYOID)
+
+    def test_xml_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT E'{<el>\n1</el>, <el>2</el>}'::xml[];",
+            ['<el>\n1</el>', '<el>2</el>'], self.poque.XMLARRAYOID)
+
+    def test_mac_addr_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT ARRAY['24:0a:64:dd:58:c4'::macaddr];", [0x240a64dd58c4],
+            self.poque.MACADDRARRAYOID)
+
+    def test_mac_addr8_array_value_str(self):
+        if self.cn.server_version >= 100000:
+            self._test_value_and_type_str(
+                "SELECT ARRAY['24:0a:64:dd:58:c4'::macaddr8];",
+                [0x240a64fffedd58c4],
+                self.poque.MACADDR8ARRAYOID)
+
+    def test_ipv4_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT ARRAY['192.168.0.1'::inet, NULL]",
+            [IPv4Interface('192.168.0.1'), None], self.poque.INETARRAYOID)
+
+    def test_ipv6_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT ARRAY[NULL, '2001:db8:85a3:0:0:8a2e:370:7334'::inet]",
+            [None, IPv6Interface('2001:db8:85a3:0:0:8a2e:370:7334')],
+            self.poque.INETARRAYOID)
+
+    def test_cidrv4_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '[6:6]={192.168.0.0/24}'::cidr[]",
+            [IPv4Network('192.168.0.0/24')], self.poque.CIDRARRAYOID)
+
+    def test_cidr_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{192.168.0.0/24, 2001:db8:85a3:0:0:8a2e:0:0/96}'::cidr[]",
+            [IPv4Network('192.168.0.0/24'),
+             IPv6Network('2001:db8:85a3:0:0:8a2e:0:0/96')],
+            self.poque.CIDRARRAYOID)
+
+    def test_uuid_array_value_str(self):
+        val = uuid4()
+        self._test_value_and_type_str(
+            "SELECT '{12345678123456781234567800345678, %s}'::uuid[]" % val,
+            [UUID(hex='12345678123456781234567800345678'), val],
+            self.poque.UUIDARRAYOID)
 
 
 class ResultTestValuesCtypes(

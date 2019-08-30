@@ -18,6 +18,8 @@ PoqueTypeEntry *get_read_entry(Oid oid);
 
 PyObject *array_binval(
     PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry);
+PyObject *array_strval(
+    PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry);
 PyObject *Result_getview(PoqueResult *self, char *data, int len);
 
 

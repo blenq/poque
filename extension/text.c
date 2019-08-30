@@ -438,14 +438,14 @@ static PoqueTypeEntry text_value_handlers[] = {
     {CSTRINGOID, InvalidOid, ',', {text_val, text_val}, NULL},
     {BPCHAROID, InvalidOid, ',', {text_val, text_val}, NULL},
 
-    {VARCHARARRAYOID, VARCHAROID, ',', {text_val, array_binval}, NULL},
-    {TEXTARRAYOID, TEXTOID, ',', {text_val, array_binval}, NULL},
-    {BYTEAARRAYOID, BYTEAOID, ',', {text_val, array_binval}, NULL},
-    {XMLARRAYOID, XMLOID, ',', {text_val, array_binval}, NULL},
-    {NAMEARRAYOID, NAMEOID, ',', {text_val, array_binval}, NULL},
-    {CHARARRAYOID, CHAROID, ',', {text_val, array_binval}, NULL},
-    {CSTRINGARRAYOID, CSTRINGOID, ',', {text_val, array_binval}, NULL},
-    {BPCHARARRAYOID, BPCHAROID, ',', {text_val, array_binval}, NULL},
+    {VARCHARARRAYOID, VARCHAROID, ',', {array_strval, array_binval}, NULL},
+    {TEXTARRAYOID, TEXTOID, ',', {array_strval, array_binval}, NULL},
+    {BYTEAARRAYOID, BYTEAOID, ',', {array_strval, array_binval}, NULL},
+    {XMLARRAYOID, XMLOID, ',', {array_strval, array_binval}, NULL},
+    {NAMEARRAYOID, NAMEOID, ',', {array_strval, array_binval}, NULL},
+    {CHARARRAYOID, CHAROID, ',', {array_strval, array_binval}, NULL},
+    {CSTRINGARRAYOID, CSTRINGOID, ',', {array_strval, array_binval}, NULL},
+    {BPCHARARRAYOID, BPCHAROID, ',', {array_strval, array_binval}, NULL},
 
     {InvalidOid}
 };

@@ -62,7 +62,7 @@ new_uuid_param_handler(int num_param) {
 
 static PoqueTypeEntry uuid_value_handlers[] = {
     {UUIDOID, InvalidOid, ',', {uuid_strval, uuid_binval}, NULL},
-    {UUIDARRAYOID, UUIDOID, ',', {text_val, array_binval}, NULL},
+    {UUIDARRAYOID, UUIDOID, ',', {array_strval, array_binval}, NULL},
     {InvalidOid}
 };
 

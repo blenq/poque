@@ -644,6 +644,246 @@ array_binval(
 }
 
 
+static int
+array_strvalue(
+        PoqueResult *result, PyObject *lst, char *data, char *end, int escaped,
+        PoqueTypeEntry *el_entry) {
+
+    // converts an array item value into the proper Python object
+
+    PyObject *val;
+
+    if (escaped) {
+        // unescape value in new buffer
+        char *data_pos = data, *copy_pos;
+
+        // allocate buffer for unescaped value
+        data = PyMem_Malloc(end - data);
+        if (data == NULL) {
+            PyErr_SetNone(PyExc_MemoryError);
+            return -1;
+        }
+
+        copy_pos = data;
+        while (data_pos < end) {
+            if (data_pos[0] == '\\') {
+                // skip escape char
+                data_pos++;
+            }
+
+            // copy character into unescaped value
+            copy_pos[0] = data_pos[0];
+
+            copy_pos++;
+            data_pos++;
+        }
+        end = copy_pos;
+    }
+
+    // get the array item value
+    val = el_entry->readers[FORMAT_TEXT](result, data, end - data, el_entry);
+    if (escaped)
+        PyMem_Free(data);
+    if (val) {
+        return PyList_Append(lst, val);
+    }
+    return -1;
+}
+
+
+static char *
+array_quoted_item(
+        PoqueResult *result, PyObject *lst, char *data, char *end,
+        PoqueTypeEntry *el_entry)
+{
+    int escaped = 0;
+    char *pos;
+
+    data++;
+    pos = data;
+    while (pos < end) {
+        if (pos[0] == '\0') {
+            PyErr_SetString(PoqueError, "Invalid array format");
+            return NULL;
+        }
+        else if (pos[0] == '\\') {
+            escaped = 1;
+            pos++;
+            if (pos == end) {
+                PyErr_SetString(PoqueError, "Invalid array format");
+                return NULL;
+            }
+        }
+        else if (pos[0] == '"') {
+            if (array_strvalue(
+                    result, lst, data, pos, escaped, el_entry) < 0)
+                return NULL;
+            return pos + 1;
+        }
+        pos++;
+    }
+    PyErr_SetString(PoqueError, "Invalid array format");
+    return NULL;
+}
+
+static char *
+array_str_item(
+        PoqueResult *result, PyObject *lst, char *data, char *end,
+        PoqueTypeEntry *el_entry)
+{
+    char *pos = data,
+         kar;
+    int escaped = 0;
+
+    while (pos < end) {
+        kar = pos[0];
+        if (kar == '\0') {
+            PyErr_SetString(PoqueError, "Invalid array format");
+            return NULL;
+        }
+        else if (kar == '\\') {
+            escaped = 1;
+            pos++;
+            if (pos == end) {
+                PyErr_SetString(PoqueError, "Invalid array format");
+                return NULL;
+            }
+        }
+        if (kar == '}' || kar == el_entry->delim) {
+            if (strncmp("NULL", data, 4) == 0) {
+                if (PyList_Append(lst, Py_None) == -1) {
+                    return NULL;
+                }
+            }
+            else if (array_strvalue(
+                        result, lst, data, pos, escaped, el_entry) < 0) {
+                return NULL;
+            }
+            return pos;
+        }
+        pos++;
+    }
+    PyErr_SetString(PoqueError, "Invalid array format");
+    return NULL;
+}
+
+
+static char *
+array_strcontents(
+        PoqueResult *result, PyObject *lst, char *data, char *end,
+        PoqueTypeEntry *el_entry)
+{
+    data++;
+
+    while (data < end) {
+
+        // invalid characters
+        if (data[0] == '\0' || data[0] == ',') {
+            PyErr_SetString(PoqueError, "Invalid array format");
+            return NULL;
+        }
+
+        // check first character
+        if (data[0] == '{') {
+            // nested array
+            int ok;
+            PyObject *val;
+
+            // create new list for nested array and append to existing one
+            val = PyList_New(0);
+            if (val == NULL) {
+                return NULL;
+            }
+            ok = PyList_Append(lst, val);
+            Py_DECREF(val);
+            if (ok == -1) {
+                return NULL;
+            }
+
+            // parse nested array using newly created list
+            data = array_strcontents(result, val, data, end, el_entry);
+        }
+        else if (data[0] == '"') {
+            // parse quoted value
+            data = array_quoted_item(result, lst, data, end, el_entry);
+        }
+        else if (data[0] != '}') {
+            // parse unquqoted value
+            data = array_str_item(result, lst, data, end, el_entry);
+        }
+
+        if (data == NULL) {
+            // something went wrong parsing
+            return NULL;
+        }
+
+        if (data == end) {
+            PyErr_SetString(PoqueError, "Invalid array format");
+            return NULL;
+        }
+
+        if (data[0] == '}') {
+            // done
+            return data + 1;
+        }
+
+        if (data[0] == el_entry->delim) {
+            // delimiter found, position after delimiter
+            data++;
+            if (data == end) {
+                PyErr_SetString(PoqueError, "Invalid array format");
+                return NULL;
+            }
+            if (data[0] == '}') {
+                // should not happen after a delimiter (mostly comma)
+                PyErr_SetString(PoqueError, "Invalid array format");
+                return NULL;
+            }
+        }
+        else {
+            // character should have been a '}' or delimiter
+            PyErr_SetString(PoqueError, "Invalid array format");
+            return NULL;
+        }
+    }
+    PyErr_SetString(PoqueError, "Invalid array format");
+    return NULL;
+}
+
+
+PyObject *
+array_strval(
+        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
+{
+    char *pos;
+    PyObject *lst;
+
+    pos = memchr(data, '{', len);
+    if (pos == NULL) {
+        PyErr_SetString(PoqueError, "Invalid array format");
+        return NULL;
+    }
+    lst = PyList_New(0);
+    if (lst == NULL) {
+        return NULL;
+    }
+
+    pos = array_strcontents(result, lst, pos, data + len, type_entry->el_entry);
+    if (pos != data + len) {
+        // if pos is NULL an error has been set by the array parser
+        if (pos != NULL) {
+            // not at end of string
+            PyErr_SetString(PoqueError, "Invalid array format");
+        }
+        Py_DECREF(lst);
+        return NULL;
+    }
+    return lst;
+}
+
+
+
+
 static PyObject *
 tid_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 {
@@ -918,15 +1158,15 @@ static PoqueTypeEntry type_table[] = {
     {OIDVECTOROID, OIDOID, ',', {text_val, array_binval}, NULL},
     {JSONOID, InvalidOid, ',', {json_val, json_val}, NULL},
     {JSONBOID, InvalidOid, ',', {json_val, jsonb_bin_val}, NULL},
-    {JSONARRAYOID, JSONOID, ',', {text_val, array_binval}, NULL},
-    {JSONBARRAYOID, JSONBOID, ',', {text_val, array_binval}, NULL},
+    {JSONARRAYOID, JSONOID, ',', {array_strval, array_binval}, NULL},
+    {JSONBARRAYOID, JSONBOID, ',', {array_strval, array_binval}, NULL},
     {INT2VECTORARRAYOID, INT2VECTOROID, ',', {text_val, array_binval}, NULL},
-    {TIDARRAYOID, TIDOID, ',', {text_val, array_binval}, NULL},
+    {TIDARRAYOID, TIDOID, ',', {array_strval, array_binval}, NULL},
     {OIDVECTORARRAYOID, OIDVECTOROID, ',', {text_val, array_binval}, NULL},
     {BITOID, InvalidOid, ',', {bit_strval, bit_binval}, NULL},
-    {BITARRAYOID, BITOID, ',', {text_val, array_binval}, NULL},
+    {BITARRAYOID, BITOID, ',', {array_strval, array_binval}, NULL},
     {VARBITOID, InvalidOid, ',', {bit_strval, bit_binval}, NULL},
-    {VARBITARRAYOID, VARBITOID, ',', {text_val, array_binval}, NULL},
+    {VARBITARRAYOID, VARBITOID, ',', {array_strval, array_binval}, NULL},
     {InvalidOid}
 };
 

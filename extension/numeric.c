@@ -322,10 +322,17 @@ int64_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 static PyObject *
 int_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 {
-    char *pend;
+    char *pend, delim;
     PyObject *value;
 
-    value = PyLong_FromString(data, &pend, 10);
+    delim = data[len];
+    if (delim != '\0') {
+        data[len] = '\0';
+        value = PyLong_FromString(data, &pend, 10);
+        data[len] = delim;
+    } else {
+        value = PyLong_FromString(data, &pend, 10);
+    }
     if (value != NULL && pend != data + len) {
         PyErr_SetString(PoqueError, "Invalid value for text integer value");
         Py_DECREF(value);
@@ -431,7 +438,6 @@ float_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 	double val;
 	char *pend;
 
-	errno = 0;
 	val = PyOS_string_to_double(data, &pend, PoqueError);
 	if (val == -1.0 && PyErr_Occurred())
 		return NULL;
@@ -927,18 +933,18 @@ static PoqueTypeEntry numeric_value_handlers[] = {
     {CIDOID, InvalidOid, ',', {int_strval, uint32_binval}, NULL},
     {REGPROCOID, InvalidOid, ',', {text_val, uint32_binval}, NULL},
 
-    {INT4ARRAYOID, INT4OID, ',', {text_val, array_binval}, NULL},
-    {INT8ARRAYOID, INT8OID, ',', {text_val, array_binval}, NULL},
-    {FLOAT8ARRAYOID, FLOAT8OID, ',', {text_val, array_binval}, NULL},
-    {INT2ARRAYOID, INT2OID, ',', {text_val, array_binval}, NULL},
-    {BOOLARRAYOID, BOOLOID, ',', {text_val, array_binval}, NULL},
-    {NUMERICARRAYOID, NUMERICOID, ',', {text_val, array_binval}, NULL},
-    {FLOAT4ARRAYOID, FLOAT4OID, ',', {text_val, array_binval}, NULL},
+    {INT4ARRAYOID, INT4OID, ',', {array_strval, array_binval}, NULL},
+    {INT8ARRAYOID, INT8OID, ',', {array_strval, array_binval}, NULL},
+    {FLOAT8ARRAYOID, FLOAT8OID, ',', {array_strval, array_binval}, NULL},
+    {INT2ARRAYOID, INT2OID, ',', {array_strval, array_binval}, NULL},
+    {BOOLARRAYOID, BOOLOID, ',', {array_strval, array_binval}, NULL},
+    {NUMERICARRAYOID, NUMERICOID, ',', {array_strval, array_binval}, NULL},
+    {FLOAT4ARRAYOID, FLOAT4OID, ',', {array_strval, array_binval}, NULL},
     {CASHARRAYOID, CASHOID, ',', {text_val, array_binval}, NULL},
-    {OIDARRAYOID, OIDOID, ',', {text_val, array_binval}, NULL},
-    {XIDARRAYOID, XIDOID, ',', {text_val, array_binval}, NULL},
-    {CIDARRAYOID, CIDOID, ',', {text_val, array_binval}, NULL},
-    {REGPROCARRAYOID, REGPROCOID, ',', {text_val, array_binval}, NULL},
+    {OIDARRAYOID, OIDOID, ',', {array_strval, array_binval}, NULL},
+    {XIDARRAYOID, XIDOID, ',', {array_strval, array_binval}, NULL},
+    {CIDARRAYOID, CIDOID, ',', {array_strval, array_binval}, NULL},
+    {REGPROCARRAYOID, REGPROCOID, ',', {array_strval, array_binval}, NULL},
     {InvalidOid}
 };
 
