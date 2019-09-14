@@ -57,7 +57,7 @@ date_encode_at(
     }
 
     /* write ordinal as parameter value */
-    write_uint32(&loc, ordinal);
+    write_uint32(&loc, (PY_UINT32_T)ordinal);
 
     /* 4 bytes further */
     return 4;

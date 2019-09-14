@@ -1,3 +1,5 @@
+#include <arpa/inet.h>
+
 #include "poque.h"
 #include "poque_type.h"
 
@@ -188,38 +190,177 @@ Conn_fileno(PoqueConn *self, PyObject *unused)
 }
 
 
+static inline int
+text_encode(PyObject *param, char **pg_param, int *len) {
+    Py_ssize_t size;
+
+    *pg_param = PyUnicode_AsUTF8AndSize(param, &size);
+    if (*pg_param == NULL) {
+        return -1;
+    }
+#if SIZEOF_SIZE_T > SIZEOF_INT
+    if (size > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError,
+                        "String too long for postgresql");
+        return -1;
+    }
+#endif
+    *len = (int)size;
+    return 0;
+}
+
+static int
+long_encode_text(PyObject *param, Oid *oid, char **pg_param, int *len) {
+    char *val;
+    Py_ssize_t size;
+
+    /* execute equivalent of "str(param)" */
+    param = PyObject_Str(param);
+    if (param == NULL) {
+        return -1;
+    }
+
+    /* get access to raw UTF 8 pointer and size in bytes */
+    val = PyUnicode_AsUTF8AndSize(param, &size);
+    if (val == NULL) {
+        Py_DECREF(param);
+        return -1;
+    }
+
+#if SIZEOF_SIZE_T > SIZEOF_INT
+    if (size > INT_MAX) {
+        Py_DECREF(param);
+        PyErr_SetString(PyExc_ValueError,
+                        "String too long for postgresql");
+        return -1;
+    }
+#endif
+
+    /* set parameter values */
+    *pg_param = PyMem_Malloc(size);
+    if (*pg_param == NULL) {
+        Py_DECREF(param);
+        PyErr_SetNone(PyExc_MemoryError);
+        return -1;
+    }
+    memcpy(*pg_param, val, size);
+    Py_DECREF(param);
+    *oid = TEXTOID;
+    *len = size;
+
+    return 0;
+}
+
+static int
+long_encode_8(PyObject *param, Oid *oid, char **pg_param, int *len) {
+    long long val;
+    int overflow;
+    char *char_val;
+
+    val = PyLong_AsLongLongAndOverflow(param, &overflow);
+    if (overflow) {
+        /* value does not fit into 64 bits integer, use text */
+        return long_encode_text(param, oid, pg_param, len);
+    }
+    char_val = PyMem_Malloc(8);
+    if (char_val == NULL) {
+        PyErr_SetNone(PyExc_MemoryError);
+        return -1;
+    }
+    *pg_param = char_val;
+    write_uint64(&char_val, (PY_UINT64_T) val);
+    *oid = INT8OID;
+    *len = 8;
+
+    return 0;
+}
+
+
+static inline int
+long_encode(PyObject *param, Oid *oid, char **pg_param, int *len) {
+    long val;
+    int overflow;
+    PY_UINT32_T *uval;
+
+    val = PyLong_AsLongAndOverflow(param, &overflow);
+#if SIZEOF_LONG == 4    /* for example on windows or 32 bits linux */
+    if (overflow) {
+        /* value does not fit in 32 bits, try with 64 bit integer instead */
+        return long_encode_8(param, oid, pg_param, len);
+    }
+#else                   /* for example 64 bits linux */
+    if (overflow) {
+        /* value does not fit in 64 bits, use text instead */
+        return long_encode_text(param, oid, pg_param, len);
+    }
+    if (val < INT32_MIN || val > INT32_MAX) {
+        /* value outside 32 bit range, use 64 bit integer instead */
+        return long_encode_8(param, oid, pg_param, len);
+    }
+#endif
+    /* value fits in 32 bits, set up parameter */
+    uval = PyMem_Malloc(sizeof(PY_UINT32_T));
+    if (uval == NULL) {
+        PyErr_SetNone(PyExc_MemoryError);
+        return -1;
+    }
+    *uval = htonl((PY_UINT32_T) val);
+    *pg_param = (char *)uval;
+    *oid = INT4OID;
+    *len = 4;
+    return 0;
+}
+
 static PGresult *
 Conn_exec_params(PGconn *conn, char *sql, PyObject *parameters, Py_ssize_t num_params, int format)
 {
-    param_handler **param_handlers;
-	Oid *param_types;
-	char **param_values, **clean_up;
-	int *param_lengths, *param_formats;
+    param_handler **param_handlers=NULL;
+	Oid *param_types=NULL;
+	char **param_values=NULL, **clean_up;
+	int *param_lengths=NULL, *param_formats;
 	PyObject *param;
 	int i, clean_up_count = 0, handler_count = 0;
 	PGresult *res = NULL;
+	PyObject **param_list;
 
 	param_handlers = PyMem_Malloc(num_params * sizeof(param_handler *));
-	param_types = PyMem_Calloc(num_params, sizeof(Oid));
-	param_values = PyMem_Calloc(num_params, sizeof(char *));
-	param_lengths = PyMem_Calloc(num_params, sizeof(int));
-	param_formats = PyMem_Calloc(num_params, sizeof(int));
-	clean_up = PyMem_Calloc(num_params, sizeof(char *));
+	param_types = PyMem_Malloc(num_params * sizeof(Oid));
+	param_values = PyMem_Calloc(2 * num_params, sizeof(char *));
+	param_lengths = PyMem_Calloc(2 * num_params, sizeof(int));
 	if (param_handlers == NULL || param_types == NULL || param_values == NULL ||
-			param_lengths == NULL || param_formats == NULL ||
-			clean_up == NULL) {
+			param_lengths == NULL) {
 		PyErr_SetNone(PyExc_MemoryError);
 		goto end;
 	}
+    param_formats = param_lengths + num_params;
+    clean_up = param_values + num_params;
+    param_list = PySequence_Fast_ITEMS(parameters);
 
 	for (i = 0; i < num_params; i++) {
-		param = PySequence_Fast_GET_ITEM(parameters, i);
+		param = param_list[i];
 		param_formats[i] = FORMAT_BINARY;
 		if (param == Py_None) {
 			/* Special case: NULL values */
-			param_types[i] = TEXTOID;
+			param_types[i] = 0;
 			param_values[i] = NULL;
 			param_lengths[i] = 0;
+		}
+        else if (PyLong_CheckExact(param)) {
+            if (long_encode(
+                        param, &param_types[i], &param_values[i],
+                        &param_lengths[i]
+                    ) == -1) {
+                goto end;
+            }
+            clean_up[clean_up_count++] = param_values[i];
+            continue;
+        }
+		else if (PyUnicode_CheckExact(param)) {
+		    if (text_encode(param, &param_values[i], &param_lengths[i]) == -1) {
+		        goto end;
+		    }
+		    param_types[i] = TEXTOID;
+		    continue;
 		}
 		else {
 			int size;
@@ -293,9 +434,9 @@ end:
 	PyMem_Free(param_types);
 	PyMem_Free(param_values);
 	PyMem_Free(param_lengths);
-	PyMem_Free(param_formats);
+//	PyMem_Free(param_formats);
 	PyMem_Free(param_handlers);
-	PyMem_Free(clean_up);
+//	PyMem_Free(clean_up);
 	return res;
 }
 
@@ -317,6 +458,9 @@ Conn_execute(PoqueConn *self, PyObject *args, PyObject *kwds) {
     }
     return (PyObject *)PoqueResult_New(res, self);
 }
+
+
+#define PG_UTF8 6
 
 PGresult *
 _Conn_execute(PoqueConn *self, char *sql, PyObject *parameters, int format) {
@@ -360,6 +504,12 @@ _Conn_execute(PoqueConn *self, char *sql, PyObject *parameters, int format) {
     }
     Py_XDECREF(parameters);
 	if (res == NULL) {
+        return NULL;
+    }
+
+    if (PQclientEncoding(self->conn) != PG_UTF8) {
+        PyErr_SetString(PoqueError, "Invalid client encoding, must be UTF-8");
+        PQclear(res);
         return NULL;
     }
 

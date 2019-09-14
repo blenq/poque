@@ -244,7 +244,8 @@ int_examine(IntParamHandler *handler, PyObject *param) {
 static int
 int_encode_at(IntParamHandler *handler, PyObject *param, char *loc)
 {
-    write_uint32(&loc, (current_encode_param(handler))->value.int4);
+    write_uint32(
+        &loc, (PY_UINT32_T)(current_encode_param(handler))->value.int4);
     return 4;
 }
 
@@ -293,7 +294,7 @@ uint32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
         PyErr_SetString(PoqueError, "Invalid uint4 value");
         return NULL;
 	}
-    return PyLong_FromLongLong(read_uint32(data));
+    return PyLong_FromUnsignedLong(read_uint32(data));
 }
 
 
@@ -319,26 +320,67 @@ int64_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 }
 
 
-static PyObject *
-int_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+static inline int
+_check_int_strval(char *data, int len, char *pend)
 {
-    char *pend, delim;
-    PyObject *value;
-
-    delim = data[len];
-    if (delim != '\0') {
-        data[len] = '\0';
-        value = PyLong_FromString(data, &pend, 10);
-        data[len] = delim;
-    } else {
-        value = PyLong_FromString(data, &pend, 10);
+    if (errno) {
+        PyErr_SetFromErrno(PoqueError);
+        return -1;
     }
-    if (value != NULL && pend != data + len) {
+    if (pend != data + len) {
         PyErr_SetString(PoqueError, "Invalid value for text integer value");
-        Py_DECREF(value);
+        return -1;
+    }
+    return 0;
+}
+
+static PyObject *
+long_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+{
+    char *pend;
+    long val;
+
+    errno = 0;
+    val = strtol(data, &pend, 10);
+    if (errno) {
+        PyErr_SetFromErrno(PoqueError);
         return NULL;
     }
-    return value;
+    if (pend != data + len) {
+        PyErr_SetString(PoqueError, "Invalid value for text integer value");
+        return NULL;
+    }
+    return PyLong_FromLong(val);
+}
+
+
+static PyObject *
+ulong_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+{
+    char *pend;
+    unsigned long val;
+
+    errno = 0;
+    val = strtoul(data, &pend, 10);
+    if (_check_int_strval(data, len, pend) == -1) {
+        return NULL;
+    }
+    return PyLong_FromUnsignedLong(val);
+}
+
+
+static PyObject *
+longlong_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+{
+    char *pend;
+    long long val;
+
+    errno = 0;
+    val = strtoll(data, &pend, 10);
+    if (_check_int_strval(data, len, pend) == -1) {
+        return NULL;
+    }
+    return PyLong_FromLongLong(val);
 }
 
 
@@ -920,17 +962,17 @@ end:
 }
 
 static PoqueTypeEntry numeric_value_handlers[] = {
-    {INT4OID, InvalidOid, ',', {int_strval, int32_binval}, NULL},
-    {INT8OID, InvalidOid, ',', {int_strval, int64_binval}, NULL},
+    {INT4OID, InvalidOid, ',', {long_strval, int32_binval}, NULL},
+    {INT8OID, InvalidOid, ',', {longlong_strval, int64_binval}, NULL},
     {FLOAT8OID, InvalidOid, ',', {float_strval, float64_binval}, NULL},
-    {INT2OID, InvalidOid, ',', {int_strval, int16_binval}, NULL},
+    {INT2OID, InvalidOid, ',', {long_strval, int16_binval}, NULL},
     {BOOLOID, InvalidOid, ',', {bool_strval, bool_binval}, InvalidOid, NULL},
     {NUMERICOID, InvalidOid, ',', {numeric_strval, numeric_binval}, NULL},
     {FLOAT4OID, InvalidOid, ',', {float_strval, float32_binval}, NULL},
     {CASHOID, InvalidOid, ',', {text_val, int64_binval}, NULL},
-    {OIDOID, InvalidOid, ',', {int_strval, uint32_binval}, NULL},
-    {XIDOID, InvalidOid, ',', {int_strval, uint32_binval}, NULL},
-    {CIDOID, InvalidOid, ',', {int_strval, uint32_binval}, NULL},
+    {OIDOID, InvalidOid, ',', {ulong_strval, uint32_binval}, NULL},
+    {XIDOID, InvalidOid, ',', {ulong_strval, uint32_binval}, NULL},
+    {CIDOID, InvalidOid, ',', {ulong_strval, uint32_binval}, NULL},
     {REGPROCOID, InvalidOid, ',', {text_val, uint32_binval}, NULL},
 
     {INT4ARRAYOID, INT4OID, ',', {array_strval, array_binval}, NULL},

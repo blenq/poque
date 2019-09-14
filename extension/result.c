@@ -355,19 +355,17 @@ PyObject *
 _Result_value(PoqueResult *self, int row, int column)
 {
     PGresult *res;
+    ResultValueReader *reader;
 
     res = self->result;
     if (PQgetisnull(res, row, column)) {
         Py_RETURN_NONE;
     }
-    else {
-        ResultValueReader *reader;
-        reader = self->readers + column;
-        return reader->read_func(self,
-                                 PQgetvalue(res, row, column),
-                                 PQgetlength(res, row, column),
-                                 reader->type_entry);
-    }
+    reader = self->readers + column;
+    return reader->read_func(self,
+                             PQgetvalue(res, row, column),
+                             PQgetlength(res, row, column),
+                             reader->type_entry);
 }
 
 

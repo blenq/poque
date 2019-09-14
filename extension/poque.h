@@ -59,7 +59,7 @@ typedef struct _ResultValueReader {
 } ResultValueReader;
 
 typedef struct PoqueResult {
-    PyObject_HEAD
+    PyObject_VAR_HEAD
     PGresult *result;
     PyObject *wr_list;
     PoqueConn *conn;

@@ -1181,6 +1181,7 @@ register_value_handler(PoqueTypeEntry *entry)
 {
     size_t idx = entry->oid % TYPEMAP_SIZE;
     PoqueTypeEntry *prev = type_map[idx];
+
     if (prev == NULL) {
         type_map[idx] = entry;
     }
@@ -1258,11 +1259,9 @@ get_read_entry(Oid oid)
     };
     PoqueTypeEntry *entry;
 
-    entry = type_map[oid % TYPEMAP_SIZE];
-    while(entry) {
+    for(entry = type_map[oid % TYPEMAP_SIZE]; entry; entry = entry->next) {
         if (entry->oid == oid)
             return entry;
-        entry = entry->next;
     }
     return &fallback_entry;
 }
