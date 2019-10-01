@@ -277,7 +277,8 @@ new_int_param_handler(int num_params) {
 
 
 static PyObject *
-int16_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+int16_binval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	if (len != 2) {
         PyErr_SetString(PoqueError, "Invalid int4 value");
@@ -288,7 +289,8 @@ int16_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-uint32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+uint32_binval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	if (len != 4) {
         PyErr_SetString(PoqueError, "Invalid uint4 value");
@@ -299,7 +301,8 @@ uint32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-int32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+int32_binval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	if (len != 4) {
         PyErr_SetString(PoqueError, "Invalid int4 value");
@@ -310,7 +313,8 @@ int32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-int64_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+int64_binval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	if (len != 8) {
         PyErr_SetString(PoqueError, "Invalid int4 value");
@@ -335,7 +339,8 @@ _check_int_strval(char *data, int len, char *pend)
 }
 
 static PyObject *
-long_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+long_strval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     char *pend;
     long val;
@@ -355,7 +360,8 @@ long_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-ulong_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+ulong_strval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     char *pend;
     unsigned long val;
@@ -370,7 +376,7 @@ ulong_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-longlong_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+longlong_strval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     char *pend;
     long long val;
@@ -385,7 +391,8 @@ longlong_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-bool_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+bool_binval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	if (len != 1) {
         PyErr_SetString(PoqueError, "Invalid bool value");
@@ -396,7 +403,8 @@ bool_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-bool_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+bool_strval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	if (len != 1) {
         PyErr_SetString(PoqueError, "Invalid bool value");
@@ -439,7 +447,8 @@ new_bool_param_handler(int num_param) {
 
 
 static PyObject *
-float64_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+float64_binval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     double val;
 
@@ -457,7 +466,8 @@ float64_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-float32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+float32_binval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	double val;
 
@@ -475,7 +485,8 @@ float32_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-float_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+float_strval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	double val;
 	char *pend;
@@ -816,7 +827,8 @@ new_decimal_param_handler(int num_params) {
 static PyObject *PyDecimal;
 
 static PyObject *
-numeric_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+numeric_strval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     /* Create a Decimal from a text value */
      return PyObject_CallFunction(PyDecimal, "s#", data, len);
@@ -839,7 +851,8 @@ numeric_set_digit(PyObject *digit_tuple, int val, Py_ssize_t idx) {
 
 
 static PyObject *
-numeric_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+numeric_binval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     /* Create a Decimal from a pg numeric binary value
      *
@@ -961,34 +974,41 @@ end:
     return ret;
 }
 
-static PoqueTypeEntry numeric_value_handlers[] = {
-    {INT4OID, InvalidOid, ',', {long_strval, int32_binval}, NULL},
-    {INT8OID, InvalidOid, ',', {longlong_strval, int64_binval}, NULL},
-    {FLOAT8OID, InvalidOid, ',', {float_strval, float64_binval}, NULL},
-    {INT2OID, InvalidOid, ',', {long_strval, int16_binval}, NULL},
-    {BOOLOID, InvalidOid, ',', {bool_strval, bool_binval}, InvalidOid, NULL},
-    {NUMERICOID, InvalidOid, ',', {numeric_strval, numeric_binval}, NULL},
-    {FLOAT4OID, InvalidOid, ',', {float_strval, float32_binval}, NULL},
-    {CASHOID, InvalidOid, ',', {text_val, int64_binval}, NULL},
-    {OIDOID, InvalidOid, ',', {ulong_strval, uint32_binval}, NULL},
-    {XIDOID, InvalidOid, ',', {ulong_strval, uint32_binval}, NULL},
-    {CIDOID, InvalidOid, ',', {ulong_strval, uint32_binval}, NULL},
-    {REGPROCOID, InvalidOid, ',', {text_val, uint32_binval}, NULL},
+PoqueValueHandler int2_val_handler = {{long_strval, int16_binval}, ',', NULL};
+PoqueValueHandler int4_val_handler = {{long_strval, int32_binval}, ',', NULL};
+PoqueValueHandler int8_val_handler = {
+        {longlong_strval, int64_binval}, ',', NULL};
+PoqueValueHandler float4_val_handler = {
+        {float_strval, float32_binval}, ',', NULL};
+PoqueValueHandler float8_val_handler = {
+        {float_strval, float64_binval}, ',', NULL};
+PoqueValueHandler bool_val_handler = {{bool_strval, bool_binval}, ',', NULL};
+PoqueValueHandler numeric_val_handler = {
+        {numeric_strval, numeric_binval}, ',', NULL};
+PoqueValueHandler cash_val_handler = {{text_val, int64_binval}, ',', NULL};
+PoqueValueHandler id_val_handler = {{ulong_strval, uint32_binval}, ',', NULL};
+PoqueValueHandler regproc_val_handler = {{text_val, uint32_binval}, ',', NULL};
 
-    {INT4ARRAYOID, INT4OID, ',', {array_strval, array_binval}, NULL},
-    {INT8ARRAYOID, INT8OID, ',', {array_strval, array_binval}, NULL},
-    {FLOAT8ARRAYOID, FLOAT8OID, ',', {array_strval, array_binval}, NULL},
-    {INT2ARRAYOID, INT2OID, ',', {array_strval, array_binval}, NULL},
-    {BOOLARRAYOID, BOOLOID, ',', {array_strval, array_binval}, NULL},
-    {NUMERICARRAYOID, NUMERICOID, ',', {array_strval, array_binval}, NULL},
-    {FLOAT4ARRAYOID, FLOAT4OID, ',', {array_strval, array_binval}, NULL},
-    {CASHARRAYOID, CASHOID, ',', {text_val, array_binval}, NULL},
-    {OIDARRAYOID, OIDOID, ',', {array_strval, array_binval}, NULL},
-    {XIDARRAYOID, XIDOID, ',', {array_strval, array_binval}, NULL},
-    {CIDARRAYOID, CIDOID, ',', {array_strval, array_binval}, NULL},
-    {REGPROCARRAYOID, REGPROCOID, ',', {array_strval, array_binval}, NULL},
-    {InvalidOid}
-};
+PoqueValueHandler int2array_val_handler = {
+        {array_strval, array_binval}, ',', &int2_val_handler};
+PoqueValueHandler int4array_val_handler = {
+        {array_strval, array_binval}, ',', &int4_val_handler};
+PoqueValueHandler int8array_val_handler = {
+        {array_strval, array_binval}, ',', &int8_val_handler};
+PoqueValueHandler float4array_val_handler = {
+        {array_strval, array_binval}, ',', &float4_val_handler};
+PoqueValueHandler float8array_val_handler = {
+        {array_strval, array_binval}, ',', &float8_val_handler};
+PoqueValueHandler boolarray_val_handler = {
+        {array_strval, array_binval}, ',', &bool_val_handler};
+PoqueValueHandler numericarray_val_handler = {
+        {array_strval, array_binval}, ',', &numeric_val_handler};
+PoqueValueHandler casharray_val_handler = {
+        {array_strval, array_binval}, ',', &cash_val_handler};
+PoqueValueHandler idarray_val_handler = {
+        {array_strval, array_binval}, ',', &id_val_handler};
+PoqueValueHandler regprocarray_val_handler = {
+        {array_strval, array_binval}, ',', &regproc_val_handler};
 
 int
 init_numeric(void) {
@@ -996,8 +1016,6 @@ init_numeric(void) {
     PyDecimal = load_python_object("decimal", "Decimal");
     if (PyDecimal == NULL)
         return -1;
-
-    register_value_handler_table(numeric_value_handlers);
 
     register_parameter_handler(&PyLong_Type, new_int_param_handler);
     register_parameter_handler(&PyFloat_Type, new_float_param_handler);

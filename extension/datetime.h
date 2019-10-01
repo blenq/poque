@@ -3,4 +3,24 @@
 
 int init_datetime(void);
 
+extern PoqueValueHandler date_val_handler;
+extern PoqueValueHandler time_val_handler;
+extern PoqueValueHandler timetz_val_handler;
+extern PoqueValueHandler timestamp_val_handler;
+extern PoqueValueHandler timestamptz_val_handler;
+extern PoqueValueHandler interval_val_handler;
+extern PoqueValueHandler abstime_val_handler;
+extern PoqueValueHandler reltime_val_handler;
+extern PoqueValueHandler tinterval_val_handler;
+
+extern PoqueValueHandler datearray_val_handler;
+extern PoqueValueHandler timearray_val_handler;
+extern PoqueValueHandler timetzarray_val_handler;
+extern PoqueValueHandler timestamparray_val_handler;
+extern PoqueValueHandler timestamptzarray_val_handler;
+extern PoqueValueHandler intervalarray_val_handler;
+extern PoqueValueHandler abstimearray_val_handler;
+extern PoqueValueHandler reltimearray_val_handler;
+extern PoqueValueHandler tintervalarray_val_handler;
+
 #endif

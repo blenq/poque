@@ -235,6 +235,10 @@ class TestConnectionClosed():
         with self.assertRaises(self.InterfaceError):
             self.cn.execute("SELECT 1")
 
+    def test_execute_param(self):
+        with self.assertRaises(self.InterfaceError):
+            self.cn.execute("SELECT $1", (1,))
+
     def test_finish(self):
         self.assertEqual(self.cn.status, self.poque.CONNECTION_BAD)
         self.cn.finish()

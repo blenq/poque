@@ -14,6 +14,9 @@
 typedef struct {
     PyObject_HEAD
     PGconn *conn;
+    PyObject *last_command;
+    Oid *last_oids;
+    Py_ssize_t last_oids_len;
     PyObject *wr_list;
     char *warning_msg;
     char autocommit;
@@ -48,15 +51,17 @@ typedef struct _ValueCursor ValueCursor;
 
 typedef struct PoqueResult PoqueResult;
 
-typedef struct _poqueTypeEntry PoqueTypeEntry;
+typedef struct _poqueValueHandler PoqueValueHandler;
 
 typedef PyObject *(*pq_read)(
-         PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry);
+    PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler);
 
-typedef struct _ResultValueReader {
-	pq_read read_func;
-	PoqueTypeEntry *type_entry;
+
+typedef struct _resultValueReader {
+    pq_read read_func;
+    PoqueValueHandler *el_handler;
 } ResultValueReader;
+
 
 typedef struct PoqueResult {
     PyObject_VAR_HEAD
@@ -81,7 +86,7 @@ extern PyTypeObject PoqueValueType;
 extern PyTypeObject PoqueCursorType;
 
 PGresult *_Conn_execute(
-    PoqueConn *self, char *sql, PyObject *parameters, int format);
+    PoqueConn *self, PyObject *command, PyObject *parameters, int format);
 
 PoqueResult *PoqueResult_New(PGresult *res, PoqueConn *conn);
 PyObject *_Result_value(PoqueResult *self, int row, int column);

@@ -595,6 +595,7 @@ class ResultTestValues():
     def test_tid_value_str(self):
         res = self.cn.execute("SELECT '(3, 4)'::tid", result_format=0)
         self.assertEqual(res.getvalue(0, 0), (3, 4))
+        self.assertEqual(res.getvalue(0, 0), (3, 4))
         self.assertEqual(res.ftype(0), self.poque.TIDOID)
         res = self.cn.execute("SELECT '(3, 4)'::tid", result_format=0)
         self.assertEqual(res.getvalue(0, 0), (3, 4))
@@ -1106,6 +1107,12 @@ class ResultTestValues():
                                       datetime.date.min, self.poque.DATEOID)
         self._test_value_and_type_bin("SELECT '0001-12-31 BC'::date",
                                       '0001-12-31 BC', self.poque.DATEOID)
+        self._test_value_and_type_bin("SELECT '5874897-01-01'::date",
+                                      '5874897-01-01', self.poque.DATEOID)
+        self._test_value_and_type_bin("SELECT 'infinity'::date",
+                                      'infinity', self.poque.DATEOID)
+        self._test_value_and_type_bin("SELECT '-infinity'::date",
+                                      '-infinity', self.poque.DATEOID)
 
     def test_date_array_value_bin(self):
         self._test_value_and_type_bin(
@@ -1115,6 +1122,18 @@ class ResultTestValues():
     def test_time_value_bin(self):
         self._test_value_and_type_bin(
             "SELECT '13:09:25.123'::time", datetime.time(13, 9, 25, 123000),
+            self.poque.TIMEOID)
+        self._test_value_and_type_bin(
+            "SELECT '24:00'::time", datetime.time(0),
+            self.poque.TIMEOID)
+        self._test_value_and_type_bin(
+            "SELECT '14:10'::time", datetime.time(14, 10, 0, 0),
+            self.poque.TIMEOID)
+        self._test_value_and_type_bin(
+            "SELECT '14:10:34'::time", datetime.time(14, 10, 34, 0),
+            self.poque.TIMEOID)
+        self._test_value_and_type_bin(
+            "SELECT '14:10:34.00'::time", datetime.time(14, 10, 34, 0),
             self.poque.TIMEOID)
 
     def test_time_array_value_bin(self):
@@ -1129,16 +1148,20 @@ class ResultTestValues():
             self.poque.TIMESTAMPOID)
         self._test_value_and_type_bin(
             "SELECT '500-04-02 13:09:25.123 BC'::timestamp",
-            "0500-04-02 13:09:25.123000 BC", self.poque.TIMESTAMPOID)
+            "0500-04-02 13:09:25.123 BC", self.poque.TIMESTAMPOID)
         self._test_value_and_type_bin(
             "SELECT '20130-04-02 13:09:25.123'::timestamp",
-            "20130-04-02 13:09:25.123000",
+            "20130-04-02 13:09:25.123",
             self.poque.TIMESTAMPOID)
         self._test_value_and_type_bin(
             "SELECT 'infinity'::timestamp", "infinity",
             self.poque.TIMESTAMPOID)
         self._test_value_and_type_bin(
             "SELECT '-infinity'::timestamp", "-infinity",
+            self.poque.TIMESTAMPOID)
+        self._test_value_and_type_bin(
+            "SELECT '20130-04-02 13:09:25.123'::timestamp",
+            '20130-04-02 13:09:25.123',
             self.poque.TIMESTAMPOID)
 
     def test_timestamp_array_value_bin(self):
@@ -1152,6 +1175,15 @@ class ResultTestValues():
             "SELECT '14:12+00:30'::timetz",
             datetime.time(14, 12, tzinfo=datetime.timezone(
                 datetime.timedelta(seconds=1800))),
+            self.poque.TIMETZOID)
+
+        self._test_value_and_type_bin(
+            "SELECT '14:12+00:30:30'::timetz",
+            '14:12:00+00:30:30',
+            self.poque.TIMETZOID)
+        self._test_value_and_type_bin(
+            "SELECT '14:02:10.12-00:30:30'::timetz",
+            '14:02:10.12-00:30:30',
             self.poque.TIMETZOID)
 
         self._test_value_and_type_bin(
@@ -1169,9 +1201,17 @@ class ResultTestValues():
 
     def test_timestamptz_value_bin(self):
         self._test_value_and_type_bin(
-            "SELECT '2013-04-02 13:09:25.123 +3'::timestamptz",
+            "SELECT '2013-04-02 13:09:0 +3'::timestamptz",
             datetime.datetime(
-                2013, 4, 2, 10, 9, 25, 123000, tzinfo=datetime.timezone.utc),
+                2013, 4, 2, 10, 9, 0, 0, tzinfo=datetime.timezone.utc),
+            self.poque.TIMESTAMPTZOID)
+        self._test_value_and_type_bin(
+            "SELECT '20130-04-02 13:09:25.12300 +3'::timestamptz",
+            '20130-04-02 10:09:25.123+00',
+            self.poque.TIMESTAMPTZOID)
+        self._test_value_and_type_bin(
+            "SELECT '-infinity'::timestamptz",
+            '-infinity',
             self.poque.TIMESTAMPTZOID)
 
     def test_timestamptz_array_value_bin(self):
@@ -1215,6 +1255,20 @@ class ResultTestValuesExtension(
     def test_int8_array_value_str(self):
         self._test_value_and_type_str("SELECT '{6, NULL, -1}'::int8[]",
                                       [6, None, -1], self.poque.INT8ARRAYOID)
+
+    def test_int2vector_value_str(self):
+        res = self.cn.execute(command="SELECT '6 8'::int2vector",
+                              result_format=0)
+        self.assertEqual(res.getvalue(0, 0), [6, 8])
+        self.assertEqual(res.ftype(0), self.poque.INT2VECTOROID)
+        self._test_value_and_type_str("SELECT ''::int2vector",
+                                      [], self.poque.INT2VECTOROID)
+
+    def test_int2vector_array_value_str(self):
+        res = self.cn.execute(
+            "SELECT '{1 2 6, NULL, 3 4}'::int2vector[];", result_format=0)
+        self.assertEqual(res.getvalue(0, 0), [[1, 2, 6], None, [3, 4]])
+        self.assertEqual(res.ftype(0), self.poque.INT2VECTORARRAYOID)
 
     def test_bit_array_value_str(self):
         self._test_value_and_type_str("SELECT ARRAY[23::BIT(8), 200::BIT(8)]",
@@ -1284,6 +1338,16 @@ class ResultTestValuesExtension(
             "SELECT ARRAY['hello'::cstring]", ['hello'],
             self.poque.CSTRINGARRAYOID)
 
+    def test_oidvector_value_str(self):
+        self._test_value_and_type_str("SELECT '3 8 2147483648'::oidvector",
+                                      [3, 8, 2147483648],
+                                      self.poque.OIDVECTOROID)
+
+    def test_oidvector_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '{3 8 2147483648, NULL, 7 3}'::oidvector[]",
+            [[3, 8, 2147483648], None, [7, 3]], self.poque.OIDVECTORARRAYOID)
+
     def test_oid_array_value_str(self):
         self._test_value_and_type_str("SELECT ARRAY[NULL, 3, 4]::oid[]",
                                       [None, 3, 4], self.poque.OIDARRAYOID)
@@ -1312,6 +1376,52 @@ class ResultTestValuesExtension(
         self._test_value_and_type_str(
             "SELECT '{1.4, NULL, 3, -2.5}'::float4[]", [1.4, None, 3.0, -2.5],
             self.poque.FLOAT4ARRAYOID)
+
+    def test_time_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT '13:09:25.123'::time", datetime.time(13, 9, 25, 123000),
+            self.poque.TIMEOID)
+        self._test_value_and_type_str(
+            "SELECT '24:00'::time", datetime.time(0),
+            self.poque.TIMEOID)
+        self._test_value_and_type_str(
+            "SELECT '14:10'::time", datetime.time(14, 10, 0, 0),
+            self.poque.TIMEOID)
+        self._test_value_and_type_str(
+            "SELECT '14:10:34'::time", datetime.time(14, 10, 34, 0),
+            self.poque.TIMEOID)
+        self._test_value_and_type_str(
+            "SELECT '00:10:34.00'::time", datetime.time(0, 10, 34, 0),
+            self.poque.TIMEOID)
+
+    def test_time_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT ARRAY[NULL, '13:09:25.123'::time]",
+            [None, datetime.time(13, 9, 25, 123000)], self.poque.TIMEARRAYOID)
+
+    def test_date_value_str(self):
+        self._test_value_and_type_str("SELECT '2014-03-01'::date",
+                                      datetime.date(2014, 3, 1),
+                                      self.poque.DATEOID)
+        self._test_value_and_type_str("SELECT '20140-03-01'::date",
+                                      '20140-03-01', self.poque.DATEOID)
+        self._test_value_and_type_str("SELECT '500-03-01 BC'::date",
+                                      '0500-03-01 BC', self.poque.DATEOID)
+        self._test_value_and_type_str("SELECT '0001-01-01'::date",
+                                      datetime.date.min, self.poque.DATEOID)
+        self._test_value_and_type_str("SELECT '0001-12-31 BC'::date",
+                                      '0001-12-31 BC', self.poque.DATEOID)
+        self._test_value_and_type_str("SELECT '5874897-01-01'::date",
+                                      '5874897-01-01', self.poque.DATEOID)
+        self._test_value_and_type_str("SELECT 'infinity'::date",
+                                      'infinity', self.poque.DATEOID)
+        self._test_value_and_type_str("SELECT '-infinity'::date",
+                                      '-infinity', self.poque.DATEOID)
+
+    def test_date_array_value_str(self):
+        self._test_value_and_type_str(
+            "SELECT ARRAY['2014-03-01'::date]", [datetime.date(2014, 3, 1)],
+            self.poque.DATEARRAYOID)
 
     def test_json_array_value_str(self):
         self._test_value_and_type_str(

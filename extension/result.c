@@ -123,9 +123,9 @@ PoqueResult_New(PGresult *res, PoqueConn *conn) {
     result->conn = conn;
 
     for (i = 0; i < nfields; i++) {
-        PoqueTypeEntry *type_entry = get_read_entry(PQftype(res, i));
-        result->readers[i].read_func = type_entry->readers[PQfformat(res, i)];
-        result->readers[i].type_entry = type_entry;
+        PoqueValueHandler *handler = get_value_handler(PQftype(res, i));
+        result->readers[i].read_func = handler->readers[PQfformat(res, i)];
+        result->readers[i].el_handler = handler->el_handler;
     }
     return result;
 }
@@ -284,13 +284,11 @@ Result_fsize(PoqueResult *self, PyObject *args, PyObject *keywds)
 }
 
 
-static int
+static inline int
 Result_colrow_args(PyObject *args, PyObject *kwds, int *row, int *column)
 {
     static char *kwlist[] = {"row_number", "column_number", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "ii", kwlist, row, column))
-        return -1;
-    return 0;
+    return PyArg_ParseTupleAndKeywords(args, kwds, "ii", kwlist, row, column);
 }
 
 
@@ -318,7 +316,7 @@ Result_getvalue(PoqueResult *self, PyObject *args, PyObject *kwds)
     char *data;
     int len;
 
-    if (Result_colrow_args(args, kwds, &row, &column) == -1) {
+    if (!Result_colrow_args(args, kwds, &row, &column)) {
         return NULL;
     }
 
@@ -340,7 +338,7 @@ static PyObject *
 Result_getlength(PoqueResult *self, PyObject *args, PyObject *kwds) {
     int row, column, length;
 
-    if (Result_colrow_args(args, kwds, &row, &column) == -1) {
+    if (!Result_colrow_args(args, kwds, &row, &column)) {
         return NULL;
     }
     length = PQgetlength(self->result, row, column);
@@ -354,18 +352,19 @@ Result_getlength(PoqueResult *self, PyObject *args, PyObject *kwds) {
 PyObject *
 _Result_value(PoqueResult *self, int row, int column)
 {
-    PGresult *res;
+    PGresult *res = self->result;
     ResultValueReader *reader;
 
-    res = self->result;
     if (PQgetisnull(res, row, column)) {
         Py_RETURN_NONE;
     }
-    reader = self->readers + column;
-    return reader->read_func(self,
-                             PQgetvalue(res, row, column),
-                             PQgetlength(res, row, column),
-                             reader->type_entry);
+    reader = &self->readers[column];
+
+    return reader->read_func(
+        self,
+        PQgetvalue(res, row, column),
+        PQgetlength(res, row, column),
+        reader->el_handler);
 }
 
 
@@ -374,7 +373,7 @@ Result_value(PoqueResult *self, PyObject *args, PyObject *kwds)
 {
     int row, column;
 
-    if (Result_colrow_args(args, kwds, &row, &column) == -1) {
+    if (!Result_colrow_args(args, kwds, &row, &column)) {
         return NULL;
     }
     return _Result_value(self, row, column);
@@ -386,7 +385,7 @@ Result_isnull(PoqueResult *self, PyObject *args, PyObject *kwds)
 {
     int row, column;
 
-    if (Result_colrow_args(args, kwds, &row, &column) == -1) {
+    if (!Result_colrow_args(args, kwds, &row, &column)) {
         return NULL;
     }
     if (PQgetisnull(self->result, row, column))

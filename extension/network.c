@@ -2,7 +2,7 @@
 #include "text.h"
 
 static PyObject *
-mac_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+mac_binval(PoqueResult *result, char *data, int len,PoqueValueHandler *unused)
 {
     poque_uint16 first;
     PY_UINT32_T second;
@@ -19,7 +19,7 @@ mac_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 
 
 static PyObject *
-mac_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+mac_strval(PoqueResult *result, char *data, int len,PoqueValueHandler *unused)
 {
     unsigned int a, b, c, d, e, f;
     int count;
@@ -42,7 +42,7 @@ mac_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 
 
 static PyObject *
-mac8_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+mac8_binval(PoqueResult *result, char *data, int len,PoqueValueHandler *unused)
 {
     PY_UINT64_T val;
 
@@ -57,7 +57,7 @@ mac8_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 
 
 static PyObject *
-mac8_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+mac8_strval(PoqueResult *result, char *data, int len,PoqueValueHandler *unused)
 {
     unsigned int a, b, c, d, e, f, g, h;
     int count;
@@ -170,13 +170,13 @@ ip_binval(
 
 
 static PyObject *
-inet_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+inet_binval(PoqueResult *result, char *data, int len,PoqueValueHandler *unused)
 {
     return ip_binval(data, len, 0, IPv4Interface, IPv6Interface);
 }
 
 static PyObject *
-inet_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+inet_strval(PoqueResult *result, char *data, int len,PoqueValueHandler *unused)
 {
 	PyTypeObject *inet_cls;
 
@@ -193,14 +193,14 @@ inet_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 
 
 static PyObject *
-cidr_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+cidr_binval(PoqueResult *result, char *data, int len,PoqueValueHandler *unused)
 {
     return ip_binval(data, len, 1, IPv4Network, IPv6Network);
 }
 
 
 static PyObject *
-cidr_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+cidr_strval(PoqueResult *result, char *data, int len,PoqueValueHandler *unused)
 {
 	PyTypeObject *inet_cls;
 
@@ -355,19 +355,19 @@ new_ip_network_param_handler(int num_param) {
 
 /* ======== initialization ================================================== */
 
-static PoqueTypeEntry network_value_handlers[] = {
-    {MACADDROID, InvalidOid, ',', {mac_strval, mac_binval}, NULL},
-    {MACADDR8OID, InvalidOid, ',', {mac8_strval, mac8_binval}, NULL},
-    {INETOID, InvalidOid, ',', {inet_strval, inet_binval}, NULL},
-    {CIDROID, InvalidOid, ',', {cidr_strval, cidr_binval}, NULL},
+PoqueValueHandler mac_val_handler = {{mac_strval, mac_binval}, ',', NULL};
+PoqueValueHandler mac8_val_handler = {{mac8_strval, mac8_binval}, ',', NULL};
+PoqueValueHandler inet_val_handler = {{inet_strval, inet_binval}, ',', NULL};
+PoqueValueHandler cidr_val_handler = {{cidr_strval, cidr_binval}, ',', NULL};
 
-    {MACADDRARRAYOID, MACADDROID, ',', {array_strval, array_binval}, NULL},
-    {MACADDR8ARRAYOID, MACADDR8OID, ',', {array_strval, array_binval}, NULL},
-    {INETARRAYOID, INETOID, ',', {array_strval, array_binval}, NULL},
-    {CIDRARRAYOID, CIDROID, ',', {array_strval, array_binval}, NULL},
-
-    {InvalidOid}
-};
+PoqueValueHandler macarray_val_handler = {
+        {array_strval, array_binval}, ',', &mac_val_handler};
+PoqueValueHandler mac8array_val_handler = {
+        {array_strval, array_binval}, ',', &mac8_val_handler};
+PoqueValueHandler inetarray_val_handler = {
+        {array_strval, array_binval}, ',', &inet_val_handler};
+PoqueValueHandler cidrarray_val_handler = {
+        {array_strval, array_binval}, ',', &cidr_val_handler};
 
 
 int
@@ -378,7 +378,6 @@ init_network(void)
     IPv6Network = load_python_type("ipaddress", "IPv6Network");
     IPv6Interface = load_python_type("ipaddress", "IPv6Interface");
 
-    register_value_handler_table(network_value_handlers);
     register_parameter_handler(IPv4Interface, new_ip_interface_param_handler);
     register_parameter_handler(IPv6Interface, new_ip_interface_param_handler);
     register_parameter_handler(IPv4Network, new_ip_network_param_handler);

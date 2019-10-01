@@ -5,21 +5,18 @@
 #include "val_crs.h"
 
 
-typedef struct _poqueTypeEntry {
-    Oid oid;
-    Oid el_oid;        /* type of subelement for array_binval converter */
-    char delim;        /* delimeter for arrays of this type */
+typedef struct _poqueValueHandler {
     pq_read readers[2];
-    PoqueTypeEntry *el_entry;
-    PoqueTypeEntry *next;
-} PoqueTypeEntry;
+    char delim;        /* delimeter for arrays of this type */
+    struct _poqueValueHandler *el_handler;
+} PoqueValueHandler;
 
-PoqueTypeEntry *get_read_entry(Oid oid);
+PoqueValueHandler *get_value_handler(Oid oid);
 
 PyObject *array_binval(
-    PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry);
+    PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler);
 PyObject *array_strval(
-    PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry);
+    PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler);
 PyObject *Result_getview(PoqueResult *self, char *data, int len);
 
 
@@ -65,7 +62,6 @@ void write_uint16(char **p, poque_uint16 val);
 void write_uint32(char **p, PY_UINT32_T val);
 void write_uint64(char **p, PY_UINT64_T val);
 
-void register_value_handler_table(PoqueTypeEntry *table);
 void register_parameter_handler(PyTypeObject *typ, ph_new constructor);
 void register_compatible_param(PyTypeObject *typ1, PyTypeObject *typ2);
 

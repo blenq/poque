@@ -242,11 +242,29 @@ date_vals_from_int(PY_INT32_T jd, int *year, int *month, int *day)
 
 
 static PyObject *
-date_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+date_fromymd(int year, int month, int day) {
+    char *fmt;
+
+    /* if outside python date range convert to a string */
+    if (year < min_year || year > max_year) {
+        if (year > 0) {
+            fmt = "%i-%02i-%02i";
+        }
+        else {
+            fmt = "%04i-%02i-%02i BC";
+            year = -1 * (year - 1);
+        }
+        return PyUnicode_FromFormat(fmt, year, month, day);
+    }
+    return PyDate_FromDate(year, month, day);
+}
+
+
+static PyObject *
+date_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     PY_INT32_T jd;
     int year, month, day;
-    char *fmt;
     unsigned char *cr;
 
 	if (len != 4) {
@@ -256,18 +274,44 @@ date_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 	cr = (unsigned char *)data;
     jd = read_int32(cr);
 
+    if (jd == 0x7FFFFFFF) {
+        return PyUnicode_FromString("infinity");
+    }
+    if (jd == -0x80000000) {
+        return PyUnicode_FromString("-infinity");
+    }
     date_vals_from_int(jd, &year, &month, &day);
 
-    /* if outside python date range convert to a string */
-    if (year > max_year)
-        fmt = "%i-%02i-%02i";
-    else if (year < min_year) {
-        fmt = "%04i-%02i-%02i BC";
-        year = -1 * (year - 1);  /* There is no year zero */
+    return date_fromymd(year, month, day);
+}
+
+
+static PyObject *
+date_strval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
+{
+    int count, year, month, day, pos;
+
+    // special values
+    if (strncmp(data, "infinity", len) == 0 ||
+            strncmp(data, "-infinity", len) == 0) {
+        return PyUnicode_FromStringAndSize(data, len);
     }
-    else
-        return PyDate_FromDate(year, month, day);
-    return PyUnicode_FromFormat(fmt, year, month, day);
+
+    count = sscanf(data, "%7d-%2d-%2d%n", &year, &month, &day, &pos);
+    if (count != 3) {
+        printf("%s\n", PQparameterStatus(result->conn->conn, "DateStyle"));
+        PyErr_SetString(PoqueError, "Invalid date value");
+        return NULL;
+    }
+
+    if (pos < len) {
+        if (strcmp(" BC", data + pos) != 0) {
+            PyErr_SetString(PoqueError, "Invalid date value");
+            return NULL;
+        }
+        return PyUnicode_FromStringAndSize(data, len);
+    }
+    return date_fromymd(year, month, day);
 }
 
 
@@ -278,11 +322,11 @@ time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
     PY_INT64_T hr;
 
     hr = (int)(tm / USECS_PER_HOUR);
-    if (tm < 0 || hr > 23) {
+    if (tm < 0 || hr > 24) {
         PyErr_SetString(PoqueError, "Invalid time value");
         return -1;
     }
-    *hour = (int)hr;
+    *hour = (int)hr % 24;
     tm -= hr * USECS_PER_HOUR;
     *minute = (int)(tm / USECS_PER_MINUTE);
     tm -= *minute * USECS_PER_MINUTE;
@@ -293,20 +337,9 @@ time_vals_from_int(PY_INT64_T tm, int *hour, int *minute, int *second,
 
 
 static PyObject *
-_time_binval(PY_INT64_T value, PyObject *tz)
+time_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     int hour, minute, second, usec;
-
-    if (time_vals_from_int(value, &hour, &minute, &second, &usec) < 0)
-        return NULL;
-    return PyDateTimeAPI->Time_FromTime(hour, minute, second, usec, tz,
-                                        PyDateTimeAPI->TimeType);
-}
-
-
-static PyObject *
-time_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
-{
     PY_INT64_T value;
 
 	if (len != 8) {
@@ -314,16 +347,103 @@ time_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
         return NULL;
 	}
     value = read_int64(data);
-    return _time_binval(value, Py_None);
+
+    if (time_vals_from_int(value, &hour, &minute, &second, &usec) < 0)
+        return NULL;
+    return PyDateTimeAPI->Time_FromTime(hour, minute, second, usec, Py_None,
+                                       PyDateTimeAPI->TimeType);
 }
 
 
 static PyObject *
-timetz_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+time_strval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
-    PyObject *tz, *timedelta, *ret, *offset, *tzone;
+    int count, pos;
+    unsigned int hour, minute, second, usec=0;
+    char *end;
+    PyObject *tz_type, *tz, *time_val;
+
+    count = sscanf(data, "%2u:%2u:%2u%n", &hour, &minute, &second, &pos);
+    if (pos != 8 || count != 3 || hour > 24 || minute > 59 || second > 59) {
+        PyErr_SetString(PoqueError, "Invalid time value");
+        return NULL;
+    }
+
+    end = data + len;
+
+    data += pos;
+
+    if (data[0] == '.') {
+        // read microseconds (max 6 digits)
+        count = sscanf(data, ".%6u%n", &usec, &pos);
+        if (count != 1) {
+            PyErr_SetString(PoqueError, "Invalid time value");
+            return NULL;
+        }
+        for (int i = pos; i < 7; i++) {
+            // multiply by 10 for every missing digit
+            usec *= 10;
+        }
+        data += pos;
+    }
+
+    if (data[0] == '+' || data[0] == '-') {
+        // read timezone
+        unsigned int tz_hour, tz_minute=0, tz_second=0;
+
+        data++;
+
+        PyObject *tz_offset;
+        count = sscanf(
+                data, "%2u:%2u:%2u%n", &tz_hour, &tz_minute, &tz_second, &pos);
+        if (count == 0 || tz_hour > 24 || tz_minute > 59 || tz_second > 59) {
+            PyErr_SetString(PoqueError, "Invalid time value");
+            return NULL;
+        }
+        tz_second = tz_hour * 3600 + tz_minute * 60 + tz_second;
+        if (data[0] == '+') {
+            tz_second = -(tz_second);
+        }
+        tz_offset = PyDelta_FromDSU(0, tz_second, 0);
+        if (tz_offset == NULL)
+            return NULL;
+        tz_type = load_python_object("datetime", "timezone");
+        if (tz_type == NULL) {
+            Py_DECREF(tz_offset);
+            return NULL;
+        }
+        tz = PyObject_CallFunctionObjArgs(tz_type, tz_offset, NULL);
+        Py_DECREF(tz_offset);
+        Py_DECREF(tz_type);
+        if (tz == NULL)
+            return NULL;
+        data += pos;
+    }
+    else {
+        tz = Py_None;
+        Py_INCREF(tz);
+    }
+
+    if (end != data) {
+        PyErr_SetString(PoqueError, "Invalid time value");
+        Py_DECREF(tz);
+        return NULL;
+    }
+    hour = hour % 24;
+    time_val = PyDateTimeAPI->Time_FromTime(hour, minute, second, usec, tz,
+                                            PyDateTimeAPI->TimeType);
+    Py_DECREF(tz);
+    return time_val;
+}
+
+
+static PyObject *
+timetz_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
+{
+    int hour, minute, second, usec;
+    PyObject *tz, *ret, *offset, *tzone;
     PY_INT64_T value;
-    int seconds;
+    int tz_seconds;
 
 	if (len != 12) {
         PyErr_SetString(PoqueError, "Invalid timetz value");
@@ -331,13 +451,37 @@ timetz_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 	}
 
 	value = read_int64(data);
-	seconds = read_int32(data + 8);
-
-    timedelta = load_python_object("datetime", "timedelta");
-    if (timedelta == NULL)
+    if (time_vals_from_int(value, &hour, &minute, &second, &usec) < 0) {
         return NULL;
-    offset = PyObject_CallFunction(timedelta, "ii", 0, -seconds);
-    Py_DECREF(timedelta);
+    }
+
+	tz_seconds = read_int32(data + 8);
+	if (tz_seconds % 60 != 0) {
+	    // Python timezone only accepts offset in whole minutes, Return string
+	    // instead
+	    char usec_str[8] = "";
+	    int tz_hour, tz_sign;
+
+	    if (usec) {
+	        while (usec % 10 == 0) {
+	            usec /= 10;
+	        }
+	        sprintf(usec_str, ".%d", usec);
+	    }
+	    tz_sign = (tz_seconds < 0) ? '+': '-';
+	    tz_seconds = abs(tz_seconds);
+	    tz_hour = tz_seconds / 3600;
+        if (tz_hour > 23) {
+            PyErr_SetString(PoqueError, "Invalid time value");
+            return NULL;
+        }
+	    tz_seconds %= 3600;
+        return PyUnicode_FromFormat(
+            "%02i:%02i:%02i%s%c%02i:%02i:%02i", hour, minute, second, usec_str,
+            tz_sign, tz_hour, tz_seconds / 60, tz_seconds % 60);
+	}
+
+    offset = PyDelta_FromDSU(0, -tz_seconds, 0);
     if (offset == NULL)
         return NULL;
 
@@ -352,7 +496,8 @@ timetz_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
     if (tzone == NULL)
         return NULL;
 
-    ret = _time_binval(value, tzone);
+    ret = PyDateTimeAPI->Time_FromTime(hour, minute, second, usec, tzone,
+                                       PyDateTimeAPI->TimeType);
     Py_DECREF(tzone);
     return ret;
 }
@@ -364,7 +509,7 @@ _timestamp_binval(char *data, int len, PyObject *tz)
     PY_INT64_T value, time;
     PY_INT32_T date;
     int year, month, day, hour, minute, second, usec;
-    char *fmt;
+    char usec_str[8], *bc_str, *tz_str;
 
 	if (len != 8) {
         PyErr_SetString(PoqueError, "Invalid timestamp value");
@@ -387,25 +532,50 @@ _timestamp_binval(char *data, int len, PyObject *tz)
     date_vals_from_int(date, &year, &month, &day);
     if (time_vals_from_int(time, &hour, &minute, &second, &usec) < 0)
         return NULL;
+
     if (year > max_year) {
-        fmt = "%i-%02i-%02i %02i:%02i:%02i.%06i";
+        bc_str = "";
     }
     else if (year < min_year) {
         year = -1 * (year - 1);  /* There is no year zero */
-        fmt = "%04i-%02i-%02i %02i:%02i:%02i.%06i BC";
+        bc_str = " BC";
     }
-    else
+    else {
+        // Timestamp falls within Python datetime range, return datetime
         return PyDateTimeAPI->DateTime_FromDateAndTime(
             year, month, day, hour, minute, second, usec, tz,
             PyDateTimeAPI->DateTimeType);
-    return PyUnicode_FromFormat(fmt, year, month, day, hour, minute, second,
-                                usec);
+    }
+
+    // Timestamp is outside Python datetime range. Create string similar to
+    // postgres.
+
+    // strip trailing millisecond zeroes
+    while (usec && usec % 10 == 0) {
+        usec = usec / 10;
+    }
+
+    if (usec)
+        sprintf(usec_str, ".%i", usec);
+    else
+        usec_str[0] = '\0';
+
+    if (tz == Py_None) {
+        tz_str = "";
+    }
+    else {
+        tz_str = "+00";
+    }
+
+    return PyUnicode_FromFormat(
+        "%04i-%02i-%02i %02i:%02i:%02i%s%s%s", year, month, day, hour, minute,
+        second, usec_str, tz_str, bc_str);
 }
 
 
 static PyObject *
 timestamp_binval(
-    PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+    PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     return _timestamp_binval(data, len, Py_None);
 }
@@ -413,14 +583,14 @@ timestamp_binval(
 
 static PyObject *
 timestamptz_binval(
-    PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+    PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     return _timestamp_binval(data, len, utc);
 }
 
 
 static PyObject *
-interval_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+interval_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     PY_INT64_T secs, usecs;
     PY_INT32_T days, months;
@@ -456,7 +626,7 @@ interval_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-abstime_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+abstime_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     PyObject *abstime, *seconds, *args;
     PY_INT32_T value;
@@ -482,7 +652,7 @@ abstime_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 static PyObject *
-reltime_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+reltime_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     if (len != 4) {
         PyErr_SetString(PoqueError, "Invalid reltime value");
@@ -494,7 +664,7 @@ reltime_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 static PyObject *
 tinterval_binval(
-        PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     PyObject *tinterval, *abstime;
     int i;
@@ -519,27 +689,40 @@ tinterval_binval(
     return tinterval;
 }
 
-static PoqueTypeEntry dt_value_handlers[] = {
-    {DATEOID, InvalidOid, ',', {text_val, date_binval}, NULL},
-    {TIMEOID, InvalidOid, ',', {text_val, time_binval}, NULL},
-    {TIMETZOID, InvalidOid, ',', {text_val, timetz_binval}, NULL},
-    {TIMESTAMPOID, InvalidOid, ',', {text_val, timestamp_binval}, NULL},
-    {TIMESTAMPTZOID, InvalidOid, ',', {text_val, timestamptz_binval}, NULL},
-    {INTERVALOID, InvalidOid, ',', {text_val, interval_binval}, NULL},
-    {DATEARRAYOID, DATEOID, ',', {text_val, array_binval}, NULL},
-    {TIMESTAMPARRAYOID, TIMESTAMPOID, ',', {text_val, array_binval}, NULL},
-    {TIMESTAMPTZARRAYOID, TIMESTAMPTZOID, ',', {text_val, array_binval}, NULL},
-    {TIMEARRAYOID, TIMEOID, ',', {text_val, array_binval}, NULL},
-    {TIMETZARRAYOID, TIMETZOID, ',', {text_val, array_binval}, NULL},
-    {INTERVALARRAYOID, INTERVALOID, ',', {text_val, array_binval}, NULL},
-    {ABSTIMEOID, InvalidOid, ',', {text_val, abstime_binval}, NULL},
-    {RELTIMEOID, InvalidOid, ',', {text_val, reltime_binval}, NULL},
-    {TINTERVALOID, InvalidOid, ',', {text_val, tinterval_binval}, NULL},
-    {ABSTIMEARRAYOID, ABSTIMEOID, ',', {text_val, array_binval}, NULL},
-    {RELTIMEARRAYOID, RELTIMEOID, ',', {text_val, array_binval}, NULL},
-    {TINTERVALARRAYOID, TINTERVALOID, ',', {text_val, array_binval}, NULL},
-    {InvalidOid}
-};
+PoqueValueHandler date_val_handler = {{date_strval, date_binval}, ',', NULL};
+PoqueValueHandler time_val_handler = {{time_strval, time_binval}, ',', NULL};
+PoqueValueHandler timetz_val_handler = {{text_val, timetz_binval}, ',', NULL};
+PoqueValueHandler timestamp_val_handler = {
+        {text_val, timestamp_binval}, ',', NULL};
+PoqueValueHandler timestamptz_val_handler = {
+        {text_val, timestamptz_binval}, ',', NULL};
+PoqueValueHandler interval_val_handler = {
+        {text_val, interval_binval}, ',', NULL};
+PoqueValueHandler abstime_val_handler = {
+        {text_val, abstime_binval}, ',', NULL};
+PoqueValueHandler reltime_val_handler = {
+        {text_val, reltime_binval}, ',', NULL};
+PoqueValueHandler tinterval_val_handler = {
+        {text_val, tinterval_binval}, ',', NULL};
+
+PoqueValueHandler datearray_val_handler = {
+        {array_strval, array_binval}, ',', &date_val_handler};
+PoqueValueHandler timearray_val_handler = {
+        {array_strval, array_binval}, ',', &time_val_handler};
+PoqueValueHandler timetzarray_val_handler = {
+        {text_val, array_binval}, ',', &timetz_val_handler};
+PoqueValueHandler timestamparray_val_handler = {
+        {text_val, array_binval}, ',', &timestamp_val_handler};
+PoqueValueHandler timestamptzarray_val_handler = {
+        {text_val, array_binval}, ',', &timestamptz_val_handler};
+PoqueValueHandler intervalarray_val_handler = {
+        {text_val, array_binval}, ',', &interval_val_handler};
+PoqueValueHandler abstimearray_val_handler = {
+        {text_val, array_binval}, ',', &abstime_val_handler};
+PoqueValueHandler reltimearray_val_handler = {
+        {text_val, array_binval}, ',', &reltime_val_handler};
+PoqueValueHandler tintervalarray_val_handler = {
+        {text_val, array_binval}, ',', &tinterval_val_handler};
 
 
 int
@@ -574,9 +757,6 @@ init_datetime(void)
     if (utc == NULL) {
         return -1;
     }
-
-    /* initialize hash table of value converters */
-    register_value_handler_table(dt_value_handlers);
 
     register_parameter_handler(PyDateTimeAPI->DateType, new_date_param_handler);
     register_parameter_handler(PyDateTimeAPI->DateTimeType,

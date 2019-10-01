@@ -45,21 +45,21 @@ float_tuple_binval(char *data, int len, int n) {
 }
 
 static PyObject *
-point_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+point_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     return float_tuple_binval(data, len, 2);
 }
 
 
 static PyObject *
-line_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+line_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     return float_tuple_binval(data, len, 3);
 }
 
 
 static PyObject *
-lseg_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+lseg_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     PyObject *point, *lseg;
     int i;
@@ -85,7 +85,7 @@ lseg_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 
 
 static PyObject *
-polygon_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+polygon_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     PyObject *points;
     PY_INT32_T npoints, i;
@@ -125,7 +125,7 @@ polygon_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 
 
 static PyObject *
-path_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+path_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     PyObject *path, *points, *closed;
 
@@ -159,7 +159,7 @@ path_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 
 
 static PyObject *
-circle_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
+circle_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     PyObject *circle, *center;
 
@@ -186,28 +186,25 @@ circle_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *unused)
 }
 
 
-static PoqueTypeEntry geometric_value_handlers[] = {
-    {POINTOID, InvalidOid, ',', {text_val, point_binval}, NULL},
-    {LINEOID, InvalidOid, ',', {text_val, line_binval}, NULL},
-    {LSEGOID, InvalidOid, ',', {text_val, lseg_binval}, NULL},
-    {PATHOID, InvalidOid, ',', {text_val, path_binval}, NULL},
-    {BOXOID, InvalidOid, ';', {text_val, lseg_binval}, NULL},
-    {POLYGONOID, InvalidOid, ',', {text_val, polygon_binval}, NULL},
-    {CIRCLEOID, InvalidOid, ',', {text_val, circle_binval}, NULL},
+PoqueValueHandler point_val_handler = {{text_val, point_binval}, ',', NULL};
+PoqueValueHandler line_val_handler = {{text_val, line_binval}, ',', NULL};
+PoqueValueHandler lseg_val_handler = {{text_val, lseg_binval}, ',', NULL};
+PoqueValueHandler path_val_handler = {{text_val, path_binval}, ',', NULL};
+PoqueValueHandler box_val_handler = {{text_val, lseg_binval}, ';', NULL};
+PoqueValueHandler polygon_val_handler = {{text_val, polygon_binval}, ',', NULL};
+PoqueValueHandler circle_val_handler = {{text_val, circle_binval}, ',', NULL};
 
-    {POINTARRAYOID, POINTOID, ',', {text_val, array_binval}, NULL},
-    {LSEGARRAYOID, LSEGOID, ',', {text_val, array_binval}, NULL},
-    {PATHARRAYOID, PATHOID, ',', {text_val, array_binval}, NULL},
-    {BOXARRAYOID, BOXOID, ';', {text_val, array_binval}, NULL},
-    {POLYGONARRAYOID, POLYGONOID, ',', {text_val, array_binval}, NULL},
-    {LINEARRAYOID, LINEOID, ',', {text_val, array_binval}, NULL},
-    {CIRCLEARRAYOID, CIRCLEOID, ',', {text_val, array_binval}, NULL},
-
-    {InvalidOid}
-};
-
-
-int init_geometric(void) {
-    register_value_handler_table(geometric_value_handlers);
-    return 0;
-}
+PoqueValueHandler pointarray_val_handler = {
+        {array_strval, array_binval}, ',', &point_val_handler};
+PoqueValueHandler linearray_val_handler = {
+        {array_strval, array_binval}, ',', &line_val_handler};
+PoqueValueHandler lsegarray_val_handler = {
+        {array_strval, array_binval}, ',', &lseg_val_handler};
+PoqueValueHandler patharray_val_handler = {
+        {array_strval, array_binval}, ',', &path_val_handler};
+PoqueValueHandler boxarray_val_handler = {
+        {array_strval, array_binval}, ';', &box_val_handler};
+PoqueValueHandler polygonarray_val_handler = {
+        {array_strval, array_binval}, ',', &polygon_val_handler};
+PoqueValueHandler circlearray_val_handler = {
+        {array_strval, array_binval}, ',', &circle_val_handler};

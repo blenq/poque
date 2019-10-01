@@ -3,4 +3,25 @@
 
 int init_numeric(void);
 
+extern PoqueValueHandler int2_val_handler;
+extern PoqueValueHandler int4_val_handler;
+extern PoqueValueHandler int8_val_handler;
+extern PoqueValueHandler float4_val_handler;
+extern PoqueValueHandler float8_val_handler;
+extern PoqueValueHandler bool_val_handler;
+extern PoqueValueHandler numeric_val_handler;
+extern PoqueValueHandler cash_val_handler;
+extern PoqueValueHandler id_val_handler;
+extern PoqueValueHandler regproc_val_handler;
+extern PoqueValueHandler int2array_val_handler;
+extern PoqueValueHandler int4array_val_handler;
+extern PoqueValueHandler int8array_val_handler;
+extern PoqueValueHandler float4array_val_handler;
+extern PoqueValueHandler float8array_val_handler;
+extern PoqueValueHandler boolarray_val_handler;
+extern PoqueValueHandler numericarray_val_handler;
+extern PoqueValueHandler casharray_val_handler;
+extern PoqueValueHandler idarray_val_handler;
+extern PoqueValueHandler regprocarray_val_handler;
+
 #endif

@@ -512,8 +512,9 @@ typedef struct {
 
 
 static PyObject *
-get_arr_value(data_crs *crs, PY_INT32_T *arraydims, PoqueTypeEntry *el_entry,
-              PoqueResult *result)
+get_arr_value(
+        data_crs *crs, PY_INT32_T *arraydims, PoqueValueHandler *el_handler,
+        PoqueResult *result)
 {
     /* Get multidimensional array as a nested list of item values
      * crs: The data cursor
@@ -543,8 +544,8 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, PoqueTypeEntry *el_entry,
         }
 
         CHECK_LENGTH_LT(crs->len, item_len, "array", NULL);
-        val = el_entry->readers[FORMAT_BINARY](
-                result, crs->data, item_len, el_entry);
+        val = el_handler->readers[FORMAT_BINARY](
+                result, crs->data, item_len, el_handler->el_handler);
         ADVANCE_DATA(crs->data, crs->len, item_len);
         return val;
     }
@@ -564,7 +565,7 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, PoqueTypeEntry *el_entry,
         arraydims++;
         for (i = 0; i < dim; i++) {
             new_item = get_arr_value(
-                crs, arraydims, el_entry, result);
+                crs, arraydims, el_handler, result);
             if (new_item == NULL) {
                 Py_DECREF(lst);
                 return NULL;
@@ -578,11 +579,12 @@ get_arr_value(data_crs *crs, PY_INT32_T *arraydims, PoqueTypeEntry *el_entry,
 
 PyObject *
 array_binval(
-        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry) {
+        PoqueResult *result, char *data, int len,
+        PoqueValueHandler *el_handler)
+{
     unsigned int i;
     PY_UINT32_T dims;
     PY_INT32_T flags, arraydims[7];
-    Oid elem_type;
     PyObject *val;
     data_crs crs;
 
@@ -591,7 +593,6 @@ array_binval(
     /* read header values */
     dims = read_uint32(data);
     flags = read_int32(data + 4);
-    elem_type = read_uint32(data + 8);
 
     /* check header values */
     if (dims > 6) {
@@ -600,10 +601,6 @@ array_binval(
     }
     if ((flags & 1) != flags) {
         PyErr_SetString(PoqueError, "Invalid value for array flags");
-        return NULL;
-    }
-    if (elem_type != type_entry->el_oid) {
-        PyErr_SetString(PoqueError, "Unexpected element type");
         return NULL;
     }
 
@@ -633,8 +630,7 @@ array_binval(
     /* actually get the array */
     crs.data = data;
     crs.len = len;
-    val = get_arr_value(
-        &crs, arraydims, type_entry->el_entry, result);
+    val = get_arr_value(&crs, arraydims, el_handler, result);
     if (crs.len != 0) {
         Py_DECREF(val);
         PyErr_SetString(PoqueError, "Invalid data format");
@@ -647,7 +643,7 @@ array_binval(
 static int
 array_strvalue(
         PoqueResult *result, PyObject *lst, char *data, char *end, int escaped,
-        PoqueTypeEntry *el_entry) {
+        PoqueValueHandler *el_handler) {
 
     // converts an array item value into the proper Python object
 
@@ -681,7 +677,8 @@ array_strvalue(
     }
 
     // get the array item value
-    val = el_entry->readers[FORMAT_TEXT](result, data, end - data, el_entry);
+    val = el_handler->readers[FORMAT_TEXT](
+            result, data, end - data, el_handler->el_handler);
     if (escaped)
         PyMem_Free(data);
     if (val) {
@@ -694,7 +691,7 @@ array_strvalue(
 static char *
 array_quoted_item(
         PoqueResult *result, PyObject *lst, char *data, char *end,
-        PoqueTypeEntry *el_entry)
+        PoqueValueHandler *el_handler)
 {
     int escaped = 0;
     char *pos;
@@ -716,7 +713,7 @@ array_quoted_item(
         }
         else if (pos[0] == '"') {
             if (array_strvalue(
-                    result, lst, data, pos, escaped, el_entry) < 0)
+                    result, lst, data, pos, escaped, el_handler) < 0)
                 return NULL;
             return pos + 1;
         }
@@ -729,7 +726,7 @@ array_quoted_item(
 static char *
 array_str_item(
         PoqueResult *result, PyObject *lst, char *data, char *end,
-        PoqueTypeEntry *el_entry)
+        PoqueValueHandler *el_handler)
 {
     char *pos = data,
          kar;
@@ -749,14 +746,14 @@ array_str_item(
                 return NULL;
             }
         }
-        if (kar == '}' || kar == el_entry->delim) {
+        if (kar == '}' || kar == el_handler->delim) {
             if (strncmp("NULL", data, 4) == 0) {
                 if (PyList_Append(lst, Py_None) == -1) {
                     return NULL;
                 }
             }
             else if (array_strvalue(
-                        result, lst, data, pos, escaped, el_entry) < 0) {
+                        result, lst, data, pos, escaped, el_handler) < 0) {
                 return NULL;
             }
             return pos;
@@ -771,14 +768,14 @@ array_str_item(
 static char *
 array_strcontents(
         PoqueResult *result, PyObject *lst, char *data, char *end,
-        PoqueTypeEntry *el_entry)
+        PoqueValueHandler *el_handler)
 {
     data++;
 
     while (data < end) {
 
         // invalid characters
-        if (data[0] == '\0' || data[0] == ',') {
+        if (data[0] == '\0' || data[0] == el_handler->delim) {
             PyErr_SetString(PoqueError, "Invalid array format");
             return NULL;
         }
@@ -801,15 +798,15 @@ array_strcontents(
             }
 
             // parse nested array using newly created list
-            data = array_strcontents(result, val, data, end, el_entry);
+            data = array_strcontents(result, val, data, end, el_handler);
         }
         else if (data[0] == '"') {
             // parse quoted value
-            data = array_quoted_item(result, lst, data, end, el_entry);
+            data = array_quoted_item(result, lst, data, end, el_handler);
         }
         else if (data[0] != '}') {
-            // parse unquqoted value
-            data = array_str_item(result, lst, data, end, el_entry);
+            // parse unquoted value
+            data = array_str_item(result, lst, data, end, el_handler);
         }
 
         if (data == NULL) {
@@ -827,7 +824,7 @@ array_strcontents(
             return data + 1;
         }
 
-        if (data[0] == el_entry->delim) {
+        if (data[0] == el_handler->delim) {
             // delimiter found, position after delimiter
             data++;
             if (data == end) {
@@ -853,7 +850,7 @@ array_strcontents(
 
 PyObject *
 array_strval(
-        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     char *pos;
     PyObject *lst;
@@ -868,7 +865,7 @@ array_strval(
         return NULL;
     }
 
-    pos = array_strcontents(result, lst, pos, data + len, type_entry->el_entry);
+    pos = array_strcontents(result, lst, pos, data + len, el_handler);
     if (pos != data + len) {
         // if pos is NULL an error has been set by the array parser
         if (pos != NULL) {
@@ -885,7 +882,7 @@ array_strval(
 
 
 static PyObject *
-tid_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
+tid_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     PY_UINT32_T block_num;
     poque_uint16 offset;
@@ -903,7 +900,7 @@ tid_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 
 
 static PyObject *
-tid_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
+tid_strval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     PyObject *tid, *bl_num;
     char *pend, *tpos;
@@ -922,36 +919,45 @@ tid_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
         PyErr_SetString(PoqueError, "Invalid data format");
         return NULL;
     }
-    tpos[0] = '\0';
-    data[len - 1] = '\0';
 
     tid = PyTuple_New(2);
     if (tid == NULL)
         return NULL;
 
+    tpos[0] = '\0';
+    data[len - 1] = '\0';
+
     bl_num = PyLong_FromString(data + 1, &pend, 10);
     if (bl_num == NULL) {
         Py_DECREF(tid);
-        return NULL;
+        tid = NULL;
+        goto end;
     }
     if (pend != tpos) {
         PyErr_SetString(PoqueError, "Invalid data format");
         Py_DECREF(tid);
-        return NULL;
+        tid = NULL;
+        goto end;
     }
     PyTuple_SET_ITEM(tid, 0, bl_num);
 
     bl_num = PyLong_FromString(tpos + 1, &pend, 10);
     if (bl_num == NULL) {
         Py_DECREF(tid);
-        return NULL;
+        tid = NULL;
+        goto end;
     }
-    if (pend != data + len - 1) {
+    if (pend != data -1 + len) {
         PyErr_SetString(PoqueError, "Invalid tid value");
         Py_DECREF(tid);
-        return NULL;
+        tid = NULL;
+        goto end;
     }
     PyTuple_SET_ITEM(tid, 1, bl_num);
+
+end:
+    tpos[0] = ',';
+    data[len - 1] = ')';
     return tid;
 }
 
@@ -959,7 +965,7 @@ tid_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 static PyObject *json_loads;
 
 static PyObject *
-json_val(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
+json_val(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     return PyObject_CallFunction(json_loads, "s#", data, len);
 }
@@ -967,7 +973,7 @@ json_val(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
 
 static PyObject *
 jsonb_bin_val(
-        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
+        PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     if (data[0] != 1)
         PyErr_SetString(PoqueError, "Invalid jsonb version");
@@ -994,7 +1000,7 @@ inplace_op(PyObject *(*op)(PyObject *, PyObject *),
 
 static PyObject *
 bit_strval(
-        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry) {
+        PoqueResult *result, char *data, int len, PoqueValueHandler *unused) {
     PyObject *val, *one=NULL;
     char *end;
 
@@ -1050,7 +1056,7 @@ error:
 
 static PyObject *
 bit_binval(
-        PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry) {
+        PoqueResult *result, char *data, int len, PoqueValueHandler *unused) {
     /* Reads a bitstring as a Python integer
 
     Format:
@@ -1151,65 +1157,68 @@ error:
 }
 
 
-/* static definition of types with value converters */
-static PoqueTypeEntry type_table[] = {
-    {INT2VECTOROID, INT2OID, ',', {text_val, array_binval}, NULL},
-    {TIDOID, InvalidOid, ',', {tid_strval, tid_binval}, NULL},
-    {OIDVECTOROID, OIDOID, ',', {text_val, array_binval}, NULL},
-    {JSONOID, InvalidOid, ',', {json_val, json_val}, NULL},
-    {JSONBOID, InvalidOid, ',', {json_val, jsonb_bin_val}, NULL},
-    {JSONARRAYOID, JSONOID, ',', {array_strval, array_binval}, NULL},
-    {JSONBARRAYOID, JSONBOID, ',', {array_strval, array_binval}, NULL},
-    {INT2VECTORARRAYOID, INT2VECTOROID, ',', {text_val, array_binval}, NULL},
-    {TIDARRAYOID, TIDOID, ',', {array_strval, array_binval}, NULL},
-    {OIDVECTORARRAYOID, OIDVECTOROID, ',', {text_val, array_binval}, NULL},
-    {BITOID, InvalidOid, ',', {bit_strval, bit_binval}, NULL},
-    {BITARRAYOID, BITOID, ',', {array_strval, array_binval}, NULL},
-    {VARBITOID, InvalidOid, ',', {bit_strval, bit_binval}, NULL},
-    {VARBITARRAYOID, VARBITOID, ',', {array_strval, array_binval}, NULL},
-    {InvalidOid}
-};
-
-#define TYPEMAP_SIZE 128
-
-/* hash table of value converters */
-static PoqueTypeEntry *type_map[TYPEMAP_SIZE];
-
-
-static void
-register_value_handler(PoqueTypeEntry *entry)
+static PyObject *
+vector_strval(
+        PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
-    size_t idx = entry->oid % TYPEMAP_SIZE;
-    PoqueTypeEntry *prev = type_map[idx];
+    PyObject *vec;
+    char *pos;
+    pq_read reader = el_handler->readers[FORMAT_TEXT];
 
-    if (prev == NULL) {
-        type_map[idx] = entry;
+    vec = PyList_New(0);
+    if (vec == NULL) {
+        return NULL;
     }
-    else {
-        /* append to linked list */
-        while (prev->next) {
-            prev = prev->next;
+
+    while (len) {
+        if (data[0] == ' ') {
+            data++;
+            len--;
         }
-        prev->next = entry;
+        pos = memchr(data, ' ', len);
+        if (pos == NULL) {
+            pos = data + len;
+        }
+        PyObject *val = reader(
+                result, data, pos - data, el_handler->el_handler);
+        if (val == NULL) {
+            Py_DECREF(vec);
+            return NULL;
+        }
+        PyList_Append(vec, val);
+
+        len -= (pos - data);
+        data = pos;
     }
+    return vec;
 }
 
 
-void
-register_value_handler_table(PoqueTypeEntry *table) {
-    PoqueTypeEntry *entry;
+PoqueValueHandler int2vector_val_handler = {
+        {vector_strval, array_binval}, ',', &int2_val_handler};
+PoqueValueHandler tid_val_handler = {{tid_strval, tid_binval}, ',', NULL};
+PoqueValueHandler oidvector_val_handler = {
+        {vector_strval, array_binval}, ',', &id_val_handler};
+PoqueValueHandler json_val_handler = {{json_val, json_val}, ',', NULL};
+PoqueValueHandler jsonb_val_handler = {{json_val, jsonb_bin_val}, ',', NULL};
+PoqueValueHandler bit_val_handler = {{bit_strval, bit_binval}, ',', NULL};
 
-    for (entry = table; entry->oid != InvalidOid; entry++) {
-        register_value_handler(entry);
-    }
-}
+PoqueValueHandler int2vectorarray_val_handler = {
+        {array_strval, array_binval}, ',', &int2vector_val_handler};
+PoqueValueHandler tidarray_val_handler = {
+        {array_strval, array_binval}, ',', &tid_val_handler};
+PoqueValueHandler oidvectorarray_val_handler = {
+        {array_strval, array_binval}, ',', &oidvector_val_handler};
+PoqueValueHandler jsonarray_val_handler = {
+        {array_strval, array_binval}, ',', &json_val_handler};
+PoqueValueHandler jsonbarray_val_handler = {
+        {array_strval, array_binval}, ',', &jsonb_val_handler};
+PoqueValueHandler bitarray_val_handler = {
+        {array_strval, array_binval}, ',', &bit_val_handler};
 
 
 int
 init_type_map(void) {
-
-    int i;
-    PoqueTypeEntry *entry;
 
     if (init_numeric() < 0) {
         return -1;
@@ -1226,9 +1235,6 @@ init_type_map(void) {
     if (init_network() < 0) {
         return -1;
     }
-    if (init_geometric() < 0) {
-        return -1;
-    }
 
     register_parameter_handler(&PyList_Type, new_array_param_handler);
 
@@ -1236,32 +1242,222 @@ init_type_map(void) {
     if (json_loads == NULL)
         return -1;
 
-    /* initialize hash table of value converters */
-    register_value_handler_table(type_table);
-
-    /* fill element type entries from element Oid */
-    for (i = 0; i < TYPEMAP_SIZE; i++) {
-        for (entry = type_map[i]; entry; entry = entry->next) {
-            if (entry->el_oid != InvalidOid) {
-                entry->el_entry = get_read_entry(entry->el_oid);
-            }
-        }
-    }
     return 0;
 }
 
 
-PoqueTypeEntry *
-get_read_entry(Oid oid)
+PoqueValueHandler *
+get_value_handler(Oid oid)
 {
-    static PoqueTypeEntry fallback_entry = {
-        InvalidOid, InvalidOid, ',', {text_val, bytea_binval}, NULL
-    };
-    PoqueTypeEntry *entry;
+    static PoqueValueHandler fallback = {{text_val, bytea_binval}, ',', NULL};
 
-    for(entry = type_map[oid % TYPEMAP_SIZE]; entry; entry = entry->next) {
-        if (entry->oid == oid)
-            return entry;
+    switch(oid) {
+
+    // numeric
+    case INT2OID:
+        return &int2_val_handler;
+    case INT4OID:
+        return &int4_val_handler;
+    case INT8OID:
+        return &int8_val_handler;
+    case BOOLOID:
+        return &bool_val_handler;
+    case FLOAT4OID:
+        return &float4_val_handler;
+    case FLOAT8OID:
+        return &float8_val_handler;
+    case NUMERICOID:
+        return &numeric_val_handler;
+    case CASHOID:
+        return &cash_val_handler;
+    case OIDOID:
+    case XIDOID:
+    case CIDOID:
+        return &id_val_handler;
+    case REGPROCOID:
+        return &regproc_val_handler;
+
+    // string
+    case VARCHAROID:
+    case TEXTOID:
+    case XMLOID:
+    case NAMEOID:
+    case CSTRINGOID:
+    case BPCHAROID:
+        return &text_val_handler;
+    case CHAROID:
+        return &char_val_handler;
+    case BYTEAOID:
+        return &bytea_val_handler;
+
+    // uuid
+    case UUIDOID:
+        return &uuid_val_handler;
+
+    // network
+    case MACADDROID:
+        return &mac_val_handler;
+    case MACADDR8OID:
+        return &mac8_val_handler;
+    case INETOID:
+        return &inet_val_handler;
+    case CIDROID:
+        return &cidr_val_handler;
+
+    // datetime
+    case DATEOID:
+        return &date_val_handler;
+    case TIMEOID:
+        return &time_val_handler;
+    case TIMETZOID:
+        return &timetz_val_handler;
+    case TIMESTAMPOID:
+        return &timestamp_val_handler;
+    case TIMESTAMPTZOID:
+        return &timestamptz_val_handler;
+    case INTERVALOID:
+        return &interval_val_handler;
+    case ABSTIMEOID:
+        return &abstime_val_handler;
+    case RELTIMEOID:
+        return &reltime_val_handler;
+    case TINTERVALOID:
+        return &tinterval_val_handler;
+
+    // various
+    case INT2VECTOROID:
+        return &int2vector_val_handler;
+    case TIDOID:
+        return &tid_val_handler;
+    case OIDVECTOROID:
+        return &oidvector_val_handler;
+    case JSONOID:
+        return &json_val_handler;
+    case JSONBOID:
+        return &jsonb_val_handler;
+    case BITOID:
+    case VARBITOID:
+        return &bit_val_handler;
+
+    // geometric
+    case POINTOID:
+        return &point_val_handler;
+    case LINEOID:
+        return &line_val_handler;
+    case LSEGOID:
+        return &lseg_val_handler;
+    case PATHOID:
+        return &path_val_handler;
+    case BOXOID:
+        return &box_val_handler;
+    case POLYGONOID:
+        return &polygon_val_handler;
+    case CIRCLEOID:
+        return &circle_val_handler;
+
+    // numeric array
+    case INT2ARRAYOID:
+        return &int2array_val_handler;
+    case INT4ARRAYOID:
+        return &int4array_val_handler;
+    case INT8ARRAYOID:
+        return &int8array_val_handler;
+    case BOOLARRAYOID:
+        return &boolarray_val_handler;
+    case FLOAT4ARRAYOID:
+        return &float4array_val_handler;
+    case FLOAT8ARRAYOID:
+        return &float8array_val_handler;
+    case NUMERICARRAYOID:
+        return &numericarray_val_handler;
+    case CASHARRAYOID:
+        return &casharray_val_handler;
+    case OIDARRAYOID:
+    case XIDARRAYOID:
+    case CIDARRAYOID:
+        return &idarray_val_handler;
+    case REGPROCARRAYOID:
+        return &regprocarray_val_handler;
+
+    // string array
+    case VARCHARARRAYOID:
+    case TEXTARRAYOID:
+    case XMLARRAYOID:
+    case NAMEARRAYOID:
+    case CSTRINGARRAYOID:
+    case BPCHARARRAYOID:
+        return &textarray_val_handler;
+    case CHARARRAYOID:
+        return &chararray_val_handler;
+    case BYTEAARRAYOID:
+        return &byteaarray_val_handler;
+
+    // uuid arrayTIMESTAMPTZARRAYOID
+    case UUIDARRAYOID:
+        return &uuidarray_val_handler;
+
+    // network array
+    case MACADDRARRAYOID:
+        return &macarray_val_handler;
+    case MACADDR8ARRAYOID:
+        return &mac8array_val_handler;
+    case INETARRAYOID:
+        return &inetarray_val_handler;
+    case CIDRARRAYOID:
+        return &cidrarray_val_handler;
+
+    // datetime
+    case DATEARRAYOID:
+        return &datearray_val_handler;
+    case TIMEARRAYOID:
+        return &timearray_val_handler;
+    case TIMETZARRAYOID:
+        return &timetzarray_val_handler;
+    case TIMESTAMPARRAYOID:
+        return &timestamparray_val_handler;
+    case TIMESTAMPTZARRAYOID:
+        return &timestamptzarray_val_handler;
+    case INTERVALARRAYOID:
+        return &intervalarray_val_handler;
+    case ABSTIMEARRAYOID:
+        return &abstimearray_val_handler;
+    case RELTIMEARRAYOID:
+        return &reltimearray_val_handler;
+    case TINTERVALARRAYOID:
+        return &tintervalarray_val_handler;
+
+    // various array
+    case INT2VECTORARRAYOID:
+        return &int2vectorarray_val_handler;
+    case TIDARRAYOID:
+        return &tidarray_val_handler;
+    case OIDVECTORARRAYOID:
+        return &oidvectorarray_val_handler;
+    case JSONARRAYOID:
+        return &jsonarray_val_handler;
+    case JSONBARRAYOID:
+        return &jsonbarray_val_handler;
+    case BITARRAYOID:
+    case VARBITARRAYOID:
+        return &bitarray_val_handler;
+
+    // geometric array
+    case POINTARRAYOID:
+        return &pointarray_val_handler;
+    case LINEARRAYOID:
+        return &linearray_val_handler;
+    case LSEGARRAYOID:
+        return &lsegarray_val_handler;
+    case PATHARRAYOID:
+        return &patharray_val_handler;
+    case BOXARRAYOID:
+        return &boxarray_val_handler;
+    case POLYGONARRAYOID:
+        return &polygonarray_val_handler;
+    case CIRCLEARRAYOID:
+        return &circlearray_val_handler;
+
+    default:
+        return &fallback;
     }
-    return &fallback_entry;
 }

@@ -27,7 +27,7 @@ PoqueCursor_CheckClosed(PoqueCursor *self)
 
 
 static PGresult *
-_PoqueCursor_execute(PoqueCursor *self, char *sql, PyObject *parameters,
+_PoqueCursor_execute(PoqueCursor *self, PyObject *command, PyObject *parameters,
                      int format)
 {
     PoqueConn *cn;
@@ -40,7 +40,14 @@ _PoqueCursor_execute(PoqueCursor *self, char *sql, PyObject *parameters,
 
     /* check if we should start a transaction */
     if (!cn->autocommit && PQtransactionStatus(cn->conn) == PQTRANS_IDLE) {
-        res = _Conn_execute(cn, "BEGIN", NULL, FORMAT_TEXT);
+        PyObject *begin = PyUnicode_FromString("BEGIN");
+
+        if (begin == NULL) {
+            return NULL;
+        }
+        res = _Conn_execute(cn, begin, NULL, FORMAT_TEXT);
+        Py_DECREF(begin);
+
         if (res == NULL) {
             return NULL;
         }
@@ -48,14 +55,13 @@ _PoqueCursor_execute(PoqueCursor *self, char *sql, PyObject *parameters,
     }
 
     /* execute statement */
-    return _Conn_execute(cn, sql, parameters, format);
+    return _Conn_execute(cn, command, parameters, format);
 }
 
 
 static PyObject *
 PoqueCursor_execute(PoqueCursor *self, PyObject *args, PyObject *kwds) {
-    char *sql;
-    PyObject *parameters = NULL;
+    PyObject *command, *parameters = NULL;
     int format = FORMAT_AUTO;
     PoqueResult *result;
     PGresult *res;
@@ -63,13 +69,13 @@ PoqueCursor_execute(PoqueCursor *self, PyObject *args, PyObject *kwds) {
 
     /* args parsing */
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "s|Oi", kwlist, &sql, &parameters, &format)) {
+            args, kwds, "U|Oi", kwlist, &command, &parameters, &format)) {
         return NULL;
     }
 
     Py_CLEAR(self->result);
 
-    res = _PoqueCursor_execute(self, sql, parameters, format);
+    res = _PoqueCursor_execute(self, command, parameters, format);
     if (res == NULL) {
         return NULL;
     }
@@ -94,8 +100,7 @@ PoqueCursor_execute(PoqueCursor *self, PyObject *args, PyObject *kwds) {
 
 static PyObject *
 PoqueCursor_executemany(PoqueCursor *self, PyObject *args, PyObject *kwds) {
-    char *sql;
-    PyObject *seq_of_parameters = NULL, *parameters;
+    PyObject *command, *seq_of_parameters = NULL, *parameters;
     int format = FORMAT_BINARY;
     Py_ssize_t i, seq_len;
     PGresult *res;
@@ -104,7 +109,7 @@ PoqueCursor_executemany(PoqueCursor *self, PyObject *args, PyObject *kwds) {
 
     /* args parsing */
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "s|Oi", kwlist, &sql, &seq_of_parameters, &format)) {
+            args, kwds, "U|Oi", kwlist, &command, &seq_of_parameters, &format)) {
         return NULL;
     }
     seq_of_parameters = PySequence_Fast(
@@ -114,8 +119,9 @@ PoqueCursor_executemany(PoqueCursor *self, PyObject *args, PyObject *kwds) {
     }
     seq_len = PySequence_Fast_GET_SIZE(seq_of_parameters);
     for (i = 0; i < seq_len; i++) {
+
         parameters = PySequence_Fast_GET_ITEM(seq_of_parameters, i);
-        res = _PoqueCursor_execute(self, sql, parameters, format);
+        res = _PoqueCursor_execute(self, command, parameters, format);
         if (res == NULL) {
             return NULL;
         }
@@ -296,42 +302,41 @@ PoqueCursor_rowcount(PoqueCursor *self, void *val) {
 static inline int
 PoqueCursor_CheckFetch(PoqueCursor *self) {
 
-    int ret = 0;
-
-    if (self->nfields == 0) {
-
-        if (self->result != NULL) {
-            PyErr_SetString(PoqueInterfaceError, "No result set");
-        }
-        else if (PoqueCursor_CheckClosed(self) == 0) {
-            PyErr_SetString(PoqueInterfaceError, "Invalid cursor state");
-        }
-        ret = -1;
+    if (self->nfields) {
+        return 0;
     }
-    return ret;
+
+    if (self->result == NULL) {
+        PyErr_SetString(PoqueInterfaceError, "No result set");
+    }
+    else if (PoqueCursor_CheckClosed(self) == 0) {
+        PyErr_SetString(PoqueInterfaceError, "Invalid cursor state");
+    }
+    return -1;
 }
 
 
 static inline PyObject *
-_PoqueCursor_FetchOne(PoqueCursor *self, int pos) {
+_PoqueCursor_FetchOne(PoqueCursor *self) {
     int i,
-        nfields = self->nfields;
+        nfields = self->nfields,
+        pos = self->pos;
     PyObject *row;
     PoqueResult *result = self->result;
 
     row = PyTuple_New(nfields);
-    if (row) {
-        for (i = 0; i < nfields; i++) {
-            PyObject *val;
-            val = _Result_value(result, pos, i);
-            if (val == NULL) {
-                Py_DECREF(row);
-                row = NULL;
-                break;
-            }
-            PyTuple_SET_ITEM(row, i, val);
-        }
+    if (row == NULL) {
+        return NULL;
     }
+    for (i = 0; i < nfields; i++) {
+        PyObject *val = _Result_value(result, pos, i);
+        if (val == NULL) {
+            Py_DECREF(row);
+            return NULL;
+        }
+        PyTuple_SET_ITEM(row, i, val);
+    }
+    self->pos++;
     return row;
 }
 
@@ -339,19 +344,13 @@ _PoqueCursor_FetchOne(PoqueCursor *self, int pos) {
 static PyObject *
 PoqueCursor_FetchOne(PoqueCursor *self, PyObject *unused) {
 
-    PyObject *row;
-
     if (PoqueCursor_CheckFetch(self) == -1) {
         return NULL;
     }
-	if (self->pos < self->ntuples) {
-        row = _PoqueCursor_FetchOne(self, self->pos);
-        if (row) {
-            self->pos++;
-        }
-        return row;
+	if (self->pos == self->ntuples) {
+	    Py_RETURN_NONE;
 	}
-    Py_RETURN_NONE;
+    return _PoqueCursor_FetchOne(self);
 }
 
 
@@ -366,15 +365,13 @@ _PoqueCursor_FetchMany(PoqueCursor *self, int nrows)
         return NULL;
     }
     for (i = 0; i < nrows; i++) {
-        PyObject *row;
-        row = _PoqueCursor_FetchOne(self, self->pos + i);
+        PyObject *row = _PoqueCursor_FetchOne(self);
         if (row == NULL) {
             Py_DECREF(rows);
             return NULL;
         }
         PyList_SET_ITEM(rows, i, row);
     }
-    self->pos += nrows;
     return rows;
 }
 
@@ -490,8 +487,8 @@ PoqueCursor_dealloc(PoqueCursor *self) {
     /* standard destructor, clear weakrefs, break ref chain and free */
     if (self->wr_list != NULL)
         PyObject_ClearWeakRefs((PyObject *) self);
-    Py_XDECREF(self->result);
-    Py_XDECREF(self->conn);
+    Py_CLEAR(self->result);
+    Py_CLEAR(self->conn);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 

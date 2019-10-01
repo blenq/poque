@@ -87,7 +87,8 @@ bytea_fill_fromescape(char *data, char *end, char *dest) {
 
 
 static PyObject *
-bytea_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+bytea_strval(
+    PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     /* converts the textual representation of a bytea value to a Python
      * bytes value
@@ -149,7 +150,8 @@ bytea_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 PyObject *
-bytea_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+bytea_binval(
+    PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     return Result_getview(result, data, len);
 }
@@ -209,7 +211,7 @@ new_bytes_param_handler(int num_param) {
 /* ======== pg text types =================================================== */
 
 PyObject *
-text_val(PoqueResult *result, char *data, int len, PoqueTypeEntry *type_entry)
+text_val(PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
     return PyUnicode_FromStringAndSize(data, len);
 }
@@ -416,7 +418,8 @@ new_object_param_handler(int num_params) {
 /* ======== pg char type ==================================================== */
 
 static PyObject *
-char_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+char_binval(
+    PoqueResult *result, char *data, int len, PoqueValueHandler *el_handler)
 {
 	if (len != 1) {
         PyErr_SetString(PoqueError, "Invalid char value");
@@ -428,33 +431,21 @@ char_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 /* ======== initialization ================================================== */
 
-static PoqueTypeEntry text_value_handlers[] = {
-    {VARCHAROID, InvalidOid, ',', {text_val, text_val}, NULL},
-    {TEXTOID, InvalidOid, ',', {text_val, text_val}, NULL},
-    {BYTEAOID, InvalidOid, ',', {bytea_strval, bytea_binval}, NULL},
-    {XMLOID, InvalidOid, ',', {text_val, text_val}, NULL},
-    {NAMEOID, InvalidOid, ',', {text_val, text_val}, NULL},
-    {CHAROID, InvalidOid, ',', {char_binval, char_binval}, NULL},
-    {CSTRINGOID, InvalidOid, ',', {text_val, text_val}, NULL},
-    {BPCHAROID, InvalidOid, ',', {text_val, text_val}, NULL},
+PoqueValueHandler text_val_handler = {{text_val, text_val}, ',', NULL};
+PoqueValueHandler char_val_handler = {{char_binval, char_binval}, ',', NULL};
+PoqueValueHandler bytea_val_handler = {{bytea_strval, bytea_binval}, ',', NULL};
 
-    {VARCHARARRAYOID, VARCHAROID, ',', {array_strval, array_binval}, NULL},
-    {TEXTARRAYOID, TEXTOID, ',', {array_strval, array_binval}, NULL},
-    {BYTEAARRAYOID, BYTEAOID, ',', {array_strval, array_binval}, NULL},
-    {XMLARRAYOID, XMLOID, ',', {array_strval, array_binval}, NULL},
-    {NAMEARRAYOID, NAMEOID, ',', {array_strval, array_binval}, NULL},
-    {CHARARRAYOID, CHAROID, ',', {array_strval, array_binval}, NULL},
-    {CSTRINGARRAYOID, CSTRINGOID, ',', {array_strval, array_binval}, NULL},
-    {BPCHARARRAYOID, BPCHAROID, ',', {array_strval, array_binval}, NULL},
-
-    {InvalidOid}
-};
+PoqueValueHandler textarray_val_handler = {
+        {array_strval, array_binval}, ',', &text_val_handler};
+PoqueValueHandler chararray_val_handler = {
+        {array_strval, array_binval}, ',', &char_val_handler};
+PoqueValueHandler byteaarray_val_handler = {
+        {array_strval, array_binval}, ',', &bytea_val_handler};
 
 
 int
 init_text(void)
 {
-    register_value_handler_table(text_value_handlers);
     register_parameter_handler(&PyUnicode_Type, new_text_param_handler);
     register_parameter_handler(&PyBytes_Type, new_bytes_param_handler);
     return 0;

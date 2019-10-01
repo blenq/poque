@@ -4,6 +4,7 @@ from datetime import (
 from .lib import Error
 from .common import BaseParameterHandler
 from .constants import *  # noqa
+from _datetime import MINYEAR
 
 INVALID_ABSTIME = 0x7FFFFFFE
 
@@ -55,8 +56,9 @@ def _date_vals_from_int(jd):
 
 def _time_vals_from_int(tm):
     hour, tm = divmod(tm, USECS_PER_HOUR)
-    if tm < 0 or hour > 23:
+    if tm < 0 or hour > 24:
         raise Error("Invalid time value")
+    hour = hour % 24
     minute, tm = divmod(tm, USECS_PER_MINUTE)
     second, usec = divmod(tm, USECS_PER_SEC)
     return hour, minute, second, usec
@@ -79,6 +81,11 @@ def date_from_pgordinal(pgordinal):
 def read_date_bin(crs):
     jd = crs.advance_single("i")
 
+    if jd == 0x7FFFFFFF:
+        return "infinity"
+    if jd == -0x80000000:
+        return "-infinity"
+
     dt = date_from_pgordinal(jd)
     if dt is not None:
         return dt
@@ -99,38 +106,81 @@ def read_time_bin(crs):
 
 
 def read_timetz_bin(crs):
-    jd, seconds = crs.advance_struct_format("qi")
-    args = _time_vals_from_int(jd)
-    tzinfo = timezone(timedelta(seconds=-seconds))
-    return time(*(args + (tzinfo,)))
+    jd, tz_seconds = crs.advance_struct_format("qi")
+    hour, minute, second, usec = _time_vals_from_int(jd)
+    if tz_seconds % 60 != 0:
+        tz_sign = "+" if tz_seconds < 0 else "-"
+        tz_seconds = abs(tz_seconds)
+        if usec:
+            while usec % 10 == 0:
+                usec = usec // 10
+            usec = ".{}".format(usec)
+        else:
+            usec = ""
+        tz_hour, tz_seconds = divmod(tz_seconds, 3600)
+        tz_minute, tz_seconds = divmod(tz_seconds, 60)
+        return "{:02}:{:02}:{:02}{}{}{:02}:{:02}:{:02}".format(
+            hour, minute, second, usec, tz_sign, tz_hour, tz_minute, tz_seconds
+        )
+
+    tzinfo = timezone(timedelta(seconds=-tz_seconds))
+    return time(hour, minute, second, usec, tzinfo=tzinfo)
 
 
-def read_timestamp_bin(crs):
+def read_timestamp_bin(crs, display_tz=False):
     value = crs.advance_single("q")
+
+    # special values
     if value == 0x7FFFFFFFFFFFFFFF:
         return 'infinity'
     if value == -0x8000000000000000:
         return '-infinity'
-    jd, tm = divmod(value, USECS_PER_DAY)
-    time_vals = _time_vals_from_int(tm)
 
+    # calculate timestamp components
+    jd, tm = divmod(value, USECS_PER_DAY)
+    hour, minute, sec, usec = _time_vals_from_int(tm)
+
+    # calculate datetime within Python range
     dt = date_from_pgordinal(jd)
     if dt is not None:
-        return datetime.combine(dt, time(*time_vals))
+        return datetime.combine(dt, time(hour, minute, sec, usec))
 
+    # Timestamp is outside Python datetime range. Create string similar to
+    # postgres.
+
+    # calculate date components
     year, month, day = _date_vals_from_int(jd)
 
-    if year > MAXYEAR:
-        fmt = "{0}-{1:02}-{2:02} {3:02}:{4:02}:{5:02}.{6:06}"
-    elif year < MINYEAR:
-        year = -1 * (year - 1)  # There is no year zero
-        fmt = "{0:04}-{1:02}-{2:02} {3:02}:{4:02}:{5:02}.{6:06} BC"
-    return fmt.format(year, month, day, *time_vals)
+    if year < MINYEAR:
+        # display value of negative year including correction for non
+        # existing year 0
+        year = -1 * year + 1
+        bc_suffix = " BC"
+    else:
+        bc_suffix = ""
+
+    # strip trailing millisecond zeroes
+    while usec and usec % 10 == 0:
+        usec = usec // 10
+
+    if usec:
+        usec = ".{}".format(usec)
+    else:
+        usec = ""
+    if display_tz:
+        tz = '+00'
+    else:
+        tz = ''
+
+    return "{0:04}-{1:02}-{2:02} {3:02}:{4:02}:{5:02}{6}{7}{8}".format(
+        year, month, day, hour, minute, sec, usec, tz, bc_suffix)
 
 
 def read_timestamptz_bin(crs):
-    return datetime.replace(
-        read_timestamp_bin(crs), tzinfo=timezone.utc)
+    dt = read_timestamp_bin(crs, True)
+    if isinstance(dt, datetime):
+        return datetime.replace(dt, tzinfo=timezone.utc)
+    return dt
 
 
 def read_interval_bin(crs):

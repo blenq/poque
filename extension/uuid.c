@@ -8,7 +8,7 @@ static PyTypeObject *PyUUID_Type;
 
 
 PyObject *
-uuid_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+uuid_binval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     return PyObject_CallFunction(
         (PyObject *)PyUUID_Type, "sy#", NULL, data, len);
@@ -16,7 +16,7 @@ uuid_binval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
 
 
 PyObject *
-uuid_strval(PoqueResult *result, char *data, int len, PoqueTypeEntry *entry)
+uuid_strval(PoqueResult *result, char *data, int len, PoqueValueHandler *unused)
 {
     return PyObject_CallFunction(
         (PyObject *)PyUUID_Type, "s#", data, len);
@@ -59,12 +59,9 @@ new_uuid_param_handler(int num_param) {
     return &uuid_param_handler;
 }
 
-
-static PoqueTypeEntry uuid_value_handlers[] = {
-    {UUIDOID, InvalidOid, ',', {uuid_strval, uuid_binval}, NULL},
-    {UUIDARRAYOID, UUIDOID, ',', {array_strval, array_binval}, NULL},
-    {InvalidOid}
-};
+PoqueValueHandler uuid_val_handler = {{uuid_strval, uuid_binval}, ',', NULL};
+PoqueValueHandler uuidarray_val_handler = {
+        {array_strval, array_binval}, ',', &uuid_val_handler};
 
 
 int
@@ -73,7 +70,6 @@ init_uuid(void) {
     if (PyUUID_Type == NULL) {
         return -1;
     }
-    register_value_handler_table(uuid_value_handlers);
     register_parameter_handler(PyUUID_Type, new_uuid_param_handler);
     return 0;
 }
